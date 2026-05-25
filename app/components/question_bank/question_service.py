@@ -204,10 +204,10 @@ async def ai_generate_questions(
     user_id: str,
 ) -> dict:
     try:
-        import anthropic, json, re
+        import openai, json, re
         from app.core.config import settings
 
-        client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         type_instructions = {
             "mcq_single": "MCQ with exactly one correct answer. Provide 4 options with field 'is_correct': true/false.",
             "mcq_multi": "MCQ with one or more correct answers. Provide 4 options with field 'is_correct': true/false.",
@@ -224,12 +224,12 @@ Return ONLY a valid JSON array. Each object must have:
 
 No markdown, no explanation, just the JSON array."""
 
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
+        message = client.chat.completions.create(
+            model="gpt-4o",
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
-        content = message.content[0].text
+        content = message.choices[0].message.content
         json_match = re.search(r"\[.*\]", content, re.DOTALL)
         if json_match:
             questions_data = json.loads(json_match.group())
