@@ -1,0 +1,111 @@
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from bson import ObjectId
+from typing import Optional
+from app.common.exceptions import NotFoundException, ForbiddenException
+from app.common.utils import utcnow, serialize_doc, serialize_docs, paginate_query, build_pagination_meta
+
+
+async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
+    now = utcnow()
+    doc = {
+        "name": data["name"],
+        "description": data.get("description", ""),
+        "created_by": ObjectId(created_by),
+        "members": [{"user_id": ObjectId(created_by), "role": "super_admin"}],
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.workspaces.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return serialize_doc(doc)
+
+
+async def get_workspaces(
+    db: AsyncIOMotorDatabase,
+    user_id: str,
+    user_role: str,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict:
+    skip, limit = paginate_query(page, page_size)
+    query = {} if user_role == "super_admin" else {"members.user_id": ObjectId(user_id)}
+    total = await db.workspaces.count_documents(query)
+    docs = await db.workspaces.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return {
+        "workspaces": serialize_docs(docs),
+        "pagination": build_pagination_meta(total, page, page_size),
+    }
+
+
+async def get_workspace(
+    db: AsyncIOMotorDatabase, workspace_id: str, user_id: str, user_role: str
+) -> dict:
+    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        raise NotFoundException("Workspace not found")
+    if user_role != "super_admin":
+        member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
+        if user_id not in member_ids:
+            raise ForbiddenException("No access to this workspace")
+    return serialize_doc(workspace)
+
+
+async def update_workspace(
+    db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str, user_role: str
+) -> dict:
+    await get_workspace(db, workspace_id, user_id, user_role)
+    update = {k: v for k, v in data.items() if v is not None}
+    update["updated_at"] = utcnow()
+    await db.workspaces.update_one({"_id": ObjectId(workspace_id)}, {"$set": update})
+    updated = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    return serialize_doc(updated)
+
+
+async def invite_members(
+    db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list, current_user_id: str
+) -> dict:
+    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        raise NotFoundException("Workspace not found")
+
+    existing_ids = {str(m["user_id"]) for m in workspace.get("members", [])}
+    new_members = []
+
+    for uid in user_ids:
+        if uid not in existing_ids:
+            user = await db.users.find_one(
+                {"_id": ObjectId(uid), "role": {"$in": ["admin", "super_admin"]}}
+            )
+            if user:
+                new_members.append({"user_id": ObjectId(uid), "role": user["role"]})
+
+    if new_members:
+        await db.workspaces.update_one(
+            {"_id": ObjectId(workspace_id)},
+            {
+                "$push": {"members": {"$each": new_members}},
+                "$set": {"updated_at": utcnow()},
+            },
+        )
+
+    updated = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    return serialize_doc(updated)
+
+
+async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
+    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        raise NotFoundException("Workspace not found")
+
+    member_ids = [m["user_id"] for m in workspace.get("members", [])]
+    users = await db.users.find(
+        {"_id": {"$in": member_ids}}, {"password_hash": 0}
+    ).to_list(200)
+    return serialize_docs(users)
+
+
+async def get_all_admin_users(db: AsyncIOMotorDatabase) -> list:
+    users = await db.users.find(
+        {"role": {"$in": ["admin", "super_admin"]}}, {"password_hash": 0}
+    ).to_list(200)
+    return serialize_docs(users)
