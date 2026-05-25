@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
 from app.core.config import settings
@@ -8,15 +8,12 @@ from app.common.constants.app_constants import UserRole
 from app.common.exceptions import UnauthorizedException, ConflictException
 from app.common.utils import utcnow, hash_token, generate_secure_token, serialize_doc
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def create_access_token(data: dict) -> str:

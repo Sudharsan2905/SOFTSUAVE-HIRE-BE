@@ -121,8 +121,8 @@ cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 
 # 5. View auto-generated API docs
-# Swagger UI: http://localhost:8000/docs
-# ReDoc:      http://localhost:8000/redoc
+# Swagger UI: http://localhost:8000/api/docs
+# ReDoc:      http://localhost:8000/api/redoc
 ```
 
 ---
