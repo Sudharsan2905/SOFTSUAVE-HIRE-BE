@@ -1,8 +1,8 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from typing import Optional
 from app.common.exceptions import NotFoundException, ForbiddenException
 from app.common.utils import utcnow, serialize_doc, serialize_docs, paginate_query, build_pagination_meta
+
 
 
 async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
@@ -11,7 +11,7 @@ async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str
         "name": data["name"],
         "description": data.get("description", ""),
         "created_by": ObjectId(created_by),
-        "members": [{"user_id": ObjectId(created_by), "role": "super_admin"}],
+        "members": [],
         "created_at": now,
         "updated_at": now,
     }
@@ -30,7 +30,7 @@ async def get_workspaces(
     skip, limit = paginate_query(page, page_size)
     query = {} if user_role == "super_admin" else {"members.user_id": ObjectId(user_id)}
     total = await db.workspaces.count_documents(query)
-    docs = await db.workspaces.find(query).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    docs = await db.workspaces.find(query).sort([("created_at", -1)]).skip(skip).limit(limit).to_list(limit)
     return {
         "workspaces": serialize_docs(docs),
         "pagination": build_pagination_meta(total, page, page_size),
@@ -77,7 +77,7 @@ async def invite_members(
                 {"_id": ObjectId(uid), "role": {"$in": ["admin", "super_admin"]}}
             )
             if user:
-                new_members.append({"user_id": ObjectId(uid), "role": user["role"]})
+                new_members.append({"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]})
 
     if new_members:
         await db.workspaces.update_one(
