@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, Query, UploadFile, File
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.dependencies import get_db
 from app.components.auth.auth_dependencies import require_admin
@@ -12,7 +12,6 @@ from app.components.question_bank.question_schemas import (
     AIGenerateRequest,
 )
 from app.common.responses import success_response
-import json
 
 router = APIRouter()
 
@@ -126,30 +125,16 @@ async def ai_generate(
     return success_response("AI questions generated", result)
 
 
-@router.post("/categories/{category_id}/excel-columns")
-async def get_excel_columns(
-    category_id: str,
-    file: UploadFile = File(...),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
-):
-    file_data = await file.read()
-    columns = await question_service.get_excel_columns(file_data)
-    return success_response("Columns extracted", {"columns": columns})
-
-
 @router.post("/categories/{category_id}/excel-import")
 async def excel_import(
     category_id: str,
     file: UploadFile = File(...),
-    mapping: str = Form(...),
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
     file_data = await file.read()
-    mapping_dict = json.loads(mapping)
     result = await question_service.process_excel_import(
-        db, category_id, file_data, mapping_dict, current_user["_id"]
+        db, category_id, file_data, current_user["_id"]
     )
     return success_response("Excel import completed", result)
 
