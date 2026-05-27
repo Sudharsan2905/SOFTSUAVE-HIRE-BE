@@ -70,6 +70,7 @@ async def invite_members(
 
     existing_ids = {str(m["user_id"]) for m in workspace.get("members", [])}
     new_members = []
+    newly_added_users = []
 
     for uid in user_ids:
         if uid not in existing_ids:
@@ -78,6 +79,7 @@ async def invite_members(
             )
             if user:
                 new_members.append({"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]})
+                newly_added_users.append(uid)
 
     if new_members:
         await db.workspaces.update_one(
@@ -87,6 +89,13 @@ async def invite_members(
                 "$set": {"updated_at": utcnow()},
             },
         )
+        # Sync each newly added user's workspaces array
+        ws_ref = {"id": workspace_id, "name": workspace["name"], "is_default": False}
+        for uid in newly_added_users:
+            await db.users.update_one(
+                {"_id": ObjectId(uid), "workspaces.id": {"$ne": workspace_id}},
+                {"$push": {"workspaces": ws_ref}},
+            )
 
     updated = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     return serialize_doc(updated)
@@ -106,6 +115,6 @@ async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
 
 async def get_all_admin_users(db: AsyncIOMotorDatabase) -> list:
     users = await db.users.find(
-        {"role": {"$in": ["admin", "super_admin"]}}, {"password_hash": 0}
+        {"role": "admin"}, {"password_hash": 0}
     ).to_list(200)
     return serialize_docs(users)

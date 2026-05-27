@@ -16,7 +16,7 @@ async def update_me(
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    result = await user_service.update_me(db, current_user["id"], request.model_dump(exclude_none=True))
+    result = await user_service.update_me(db, current_user["_id"], request.model_dump(exclude_none=True))
     return success_response("Profile updated", result)
 
 
