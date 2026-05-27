@@ -1,11 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from jose import JWTError, jwt
 import bcrypt
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from bson import ObjectId
 from app.core.config import settings
 from app.common.constants.app_constants import UserRole
-from app.common.exceptions import UnauthorizedException, ConflictException
+from app.common.exceptions import UnauthorizedException, ConflictException, ForbiddenException
 from app.common.utils import utcnow, hash_token, generate_secure_token, serialize_doc
 
 def verify_password(plain: str, hashed: str) -> bool:
@@ -65,6 +64,8 @@ async def admin_login(db: AsyncIOMotorDatabase, email: str, password: str) -> di
     user = await db.users.find_one({"email": email, "role": {"$in": ["super_admin", "admin"]}})
     if not user or not verify_password(password, user.get("password_hash", "")):
         raise UnauthorizedException("Invalid email or password")
+    if not user.get("is_active", True):
+        raise UnauthorizedException("Your account has been deactivated. Contact your super admin.")
     return await _issue_tokens(db, user)
 
 
@@ -141,3 +142,37 @@ async def refresh_access_token(db: AsyncIOMotorDatabase, refresh_token: str) -> 
 
 async def logout(db: AsyncIOMotorDatabase, refresh_token: str):
     await db.refresh_tokens.delete_one({"token_hash": hash_token(refresh_token)})
+
+
+async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
+    if await db.users.find_one({"role": "super_admin"}):
+        raise ForbiddenException("Setup already complete. A super admin already exists.")
+
+    now = utcnow()
+
+    # 1. Create super admin (workspaces always empty — super admins have global access)
+    user_doc = {
+        "name": data["name"],
+        "email": data["email"],
+        "password_hash": hash_password(data["password"]),
+        "role": "super_admin",
+        "is_active": True,
+        "workspaces": [],
+        "created_at": now,
+        "updated_at": now,
+    }
+    user_result = await db.users.insert_one(user_doc)
+    user_id = user_result.inserted_id
+
+    # 2. Create Common Workspace (no super admin in members)
+    await db.workspaces.insert_one({
+        "name": "Common",
+        "description": "Shared workspace accessible to all users by default.",
+        "created_by": user_id,
+        "members": [],
+        "created_at": now,
+        "updated_at": now,
+    })
+
+    user_doc["_id"] = user_id
+    return await _issue_tokens(db, user_doc)

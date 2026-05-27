@@ -3,6 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.dependencies import get_db
 from app.components.auth import auth_service
 from app.components.auth.auth_schemas import (
+    SetupRequest,
     AdminLoginRequest,
     CandidateLoginRequest,
     CandidateRegisterRequest,
@@ -12,6 +13,12 @@ from app.components.auth.auth_dependencies import get_current_user
 from app.common.responses import success_response
 
 router = APIRouter()
+
+
+@router.post("/setup")
+async def setup(request: SetupRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
+    result = await auth_service.setup_super_admin(db, request.model_dump())
+    return success_response("Super admin created successfully", result)
 
 
 @router.post("/admin/login")

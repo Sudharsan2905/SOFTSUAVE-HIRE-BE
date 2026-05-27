@@ -3,6 +3,12 @@ from typing import Optional
 import re
 
 
+class SetupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+
+
 class AdminLoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
