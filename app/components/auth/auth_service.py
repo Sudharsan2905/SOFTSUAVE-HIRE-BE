@@ -89,7 +89,7 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         raise UnauthorizedException("Passwords do not match")
 
     password_hash = hash_password(data.pop("password"))
-    assessment_uuid = data.pop("assessment_uuid", None)
+    data.pop("assessment_uuid", None)
     now = utcnow()
 
     user_doc = {
