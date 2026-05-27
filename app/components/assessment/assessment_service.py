@@ -180,7 +180,8 @@ async def get_submissions(
     if search:
         pipeline.append(
             {"$match": {"$or": [
-                {"candidate.name": {"$regex": search, "$options": "i"}},
+                {"candidate.first_name": {"$regex": search, "$options": "i"}},
+                {"candidate.last_name": {"$regex": search, "$options": "i"}},
                 {"candidate.email": {"$regex": search, "$options": "i"}},
             ]}}
         )
@@ -231,7 +232,7 @@ async def export_submissions(
         {"$lookup": {"from": "candidates", "localField": "candidate_id", "foreignField": "user_id", "as": "profile"}},
         {"$unwind": {"path": "$profile", "preserveNullAndEmpty": True}},
         {"$project": {
-            "name": "$candidate.name",
+            "name": {"$concat": ["$candidate.first_name", " ", {"$ifNull": ["$candidate.last_name", ""]}]},
             "email": "$candidate.email",
             "phone": "$profile.phone",
             "percentage": 1,

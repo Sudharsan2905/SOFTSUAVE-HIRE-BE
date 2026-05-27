@@ -322,7 +322,8 @@ async def get_live_interviews(
     if search:
         pipeline.append(
             {"$match": {"$or": [
-                {"candidate.name": {"$regex": search, "$options": "i"}},
+                {"candidate.first_name": {"$regex": search, "$options": "i"}},
+                {"candidate.last_name": {"$regex": search, "$options": "i"}},
                 {"assessment.name": {"$regex": search, "$options": "i"}},
             ]}}
         )

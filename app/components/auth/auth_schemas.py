@@ -4,7 +4,8 @@ import re
 
 
 class SetupRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: Optional[str] = Field(None, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
 
@@ -15,7 +16,8 @@ class AdminLoginRequest(BaseModel):
 
 
 class CandidateRegisterRequest(BaseModel):
-    name: str = Field(..., min_length=2, max_length=100)
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: Optional[str] = Field(None, max_length=50)
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=8)

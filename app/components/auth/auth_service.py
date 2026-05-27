@@ -94,7 +94,8 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     user_doc = {
         "email": data["email"],
-        "name": data["name"],
+        "first_name": data["first_name"],
+        "last_name": data.get("last_name") or "",
         "role": UserRole.CANDIDATE,
         "password_hash": password_hash,
         "created_at": now,
@@ -152,7 +153,8 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     # 1. Create super admin (workspaces always empty — super admins have global access)
     user_doc = {
-        "name": data["name"],
+        "first_name": data["first_name"],
+        "last_name": data.get("last_name") or "",
         "email": data["email"],
         "password_hash": hash_password(data["password"]),
         "role": "super_admin",

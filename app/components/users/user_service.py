@@ -19,7 +19,8 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     now = utcnow()
     doc = {
-        "name": data["name"],
+        "first_name": data["first_name"],
+        "last_name": data.get("last_name") or "",
         "email": data["email"],
         "password_hash": hash_password(data["password"]),
         "role": role,
@@ -79,8 +80,10 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
 
     update: dict = {}
 
-    if data.get("name") is not None:
-        update["name"] = data["name"]
+    if data.get("first_name") is not None:
+        update["first_name"] = data["first_name"]
+    if data.get("last_name") is not None:
+        update["last_name"] = data["last_name"]
 
     if data.get("is_active") is not None:
         if user["role"] == "super_admin":
@@ -162,18 +165,27 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
 
     update: dict = {}
 
-    if data.get("name"):
-        update["name"] = data["name"]
+    if data.get("first_name"):
+        update["first_name"] = data["first_name"]
+    if data.get("last_name") is not None:
+        update["last_name"] = data["last_name"]
 
     if data.get("password"):
         update["password_hash"] = hash_password(data["password"])
 
     if data.get("workspace_id"):
         workspace_id = data["workspace_id"]
+        workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+        if not workspace:
+            raise NotFoundException("Workspace not found")
+        member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
+        if user_id not in member_ids:
+            raise ForbiddenException("You are not a member of this workspace")
         workspaces = user.get("workspaces", [])
-        if not any(w["id"] == workspace_id for w in workspaces):
-            raise NotFoundException("Workspace not found in user's assignments")
-        update["workspaces"] = [{**w, "is_default": w["id"] == workspace_id} for w in workspaces]
+        # Ensure the workspace is in user.workspaces (may be missing if added via invite)
+        if not any(w.get("id") == workspace_id for w in workspaces):
+            workspaces = workspaces + [{"id": workspace_id, "name": workspace["name"], "is_default": False}]
+        update["workspaces"] = [{**w, "is_default": w.get("id") == workspace_id} for w in workspaces]
 
     if update:
         update["updated_at"] = utcnow()
