@@ -218,11 +218,11 @@ async def ai_generate_questions(
 Question type: {question_type} - {type_instructions.get(question_type, '')}
 
 Return ONLY a valid JSON array. Each object must have:
-- question_text (string)
+- question_text (string) — if the question contains code, wrap it in a markdown fenced code block with the appropriate language tag (e.g. ```python\\n...\\n```)
 - options (array of {{id, text, is_correct}}) — only for MCQ types
 - correct_answer (string) — only for essay type
 
-No markdown, no explanation, just the JSON array."""
+No extra explanation outside the JSON array. Return only the JSON array."""
 
         message = client.chat.completions.create(
             model="gpt-4o",
@@ -244,54 +244,86 @@ No markdown, no explanation, just the JSON array."""
     return {"created": 0, "error": "AI generation failed or unavailable"}
 
 
-async def get_excel_columns(file_data: bytes) -> list:
-    import openpyxl, io
-    wb = openpyxl.load_workbook(io.BytesIO(file_data))
-    ws = wb.active
-    return [cell.value for cell in ws[1] if cell.value is not None]
+def _find_column(headers_lower: list, name: str):
+    """Case-insensitive column lookup; returns original-case header or None."""
+    for h in headers_lower:
+        if h and h.lower() == name.lower():
+            return h
+    return None
+
+
+def _classify_and_build(options_raw, answer_raw):
+    """Return (question_type, options_list, correct_answer_text)."""
+    options_str = str(options_raw).strip() if options_raw else ""
+    answer_str = str(answer_raw).strip() if answer_raw is not None else ""
+
+    if not options_str:
+        # No options → essay
+        return "essay", [], answer_str or None
+
+    # Split options by comma
+    option_texts = [p.strip() for p in options_str.split(",") if p.strip()]
+
+    # Determine correct indices (1-based numbers in answer)
+    correct_indices: set[int] = set()
+    for part in answer_str.split(","):
+        try:
+            correct_indices.add(int(part.strip()))
+        except ValueError:
+            pass
+
+    question_type = "mcq_multi" if len(correct_indices) > 1 else "mcq_single"
+
+    import uuid
+    options = [
+        {"id": str(uuid.uuid4()), "text": text, "is_correct": (i + 1) in correct_indices}
+        for i, text in enumerate(option_texts)
+    ]
+    return question_type, options, None
 
 
 async def process_excel_import(
     db: AsyncIOMotorDatabase,
     category_id: str,
     file_data: bytes,
-    mapping: dict,
     user_id: str,
 ) -> dict:
     import openpyxl, io
 
     wb = openpyxl.load_workbook(io.BytesIO(file_data))
     ws = wb.active
-    headers = [cell.value for cell in ws[1]]
+    raw_headers = [cell.value for cell in ws[1]]
+
+    # Locate fixed columns (case-insensitive)
+    col_question = _find_column(raw_headers, "question")
+    col_options = _find_column(raw_headers, "options")
+    col_answer = _find_column(raw_headers, "answer")
+    col_complexity = _find_column(raw_headers, "complexity")
+
+    if not col_question:
+        return {"created": 0, "error": "Missing 'Question' column"}
 
     questions = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        row_dict = dict(zip(headers, row))
-        question_text = row_dict.get(mapping.get("question_column"))
+        row_dict = dict(zip(raw_headers, row))
+
+        question_text = row_dict.get(col_question)
         if not question_text:
             continue
 
-        complexity = (
-            str(row_dict.get(mapping.get("complexity_column", ""), "")).lower()
-            or mapping.get("default_complexity", "medium")
-        )
-        question_type = (
-            str(row_dict.get(mapping.get("question_type_column", ""), "")).lower()
-            or mapping.get("default_question_type", "essay")
-        )
-        answer = row_dict.get(mapping.get("answer_column", ""), "")
+        options_raw = row_dict.get(col_options) if col_options else None
+        answer_raw = row_dict.get(col_answer) if col_answer else None
+        complexity_raw = str(row_dict.get(col_complexity, "")).lower() if col_complexity else ""
+        complexity = complexity_raw if complexity_raw in ("low", "medium", "high") else "medium"
 
-        complexity = complexity if complexity in ["low", "medium", "high"] else mapping.get("default_complexity", "medium")
-        question_type = question_type if question_type in ["mcq_single", "mcq_multi", "essay"] else mapping.get("default_question_type", "essay")
+        question_type, options, correct_answer = _classify_and_build(options_raw, answer_raw)
 
-        questions.append(
-            {
-                "question_text": str(question_text),
-                "question_type": question_type,
-                "complexity": complexity,
-                "correct_answer": str(answer) if answer else None,
-                "options": [],
-            }
-        )
+        questions.append({
+            "question_text": str(question_text).strip(),
+            "question_type": question_type,
+            "complexity": complexity,
+            "options": options,
+            "correct_answer": correct_answer,
+        })
 
     return await bulk_create_questions(db, category_id, questions, user_id)
