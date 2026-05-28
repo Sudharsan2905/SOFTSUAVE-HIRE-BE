@@ -1,14 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.common.exception_handlers import register_exception_handlers
+from app.components.assessment.assessment_router import router as assessment_router
+from app.components.auth.auth_router import router as auth_router
+from app.components.candidate.candidate_router import router as candidate_router
+from app.components.question_bank.question_router import router as question_router
+from app.components.users.user_router import router as user_router
+from app.components.workspace.workspace_router import router as workspace_router
 from app.core.config import settings
 from app.core.lifespan import lifespan
-from app.common.exception_handlers import register_exception_handlers
-from app.components.auth.auth_router import router as auth_router
-from app.components.workspace.workspace_router import router as workspace_router
-from app.components.question_bank.question_router import router as question_router
-from app.components.assessment.assessment_router import router as assessment_router
-from app.components.candidate.candidate_router import router as candidate_router
-from app.components.users.user_router import router as user_router
 
 
 def create_application() -> FastAPI:
