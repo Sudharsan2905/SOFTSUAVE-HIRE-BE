@@ -151,7 +151,6 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     now = utcnow()
 
-    # 1. Create super admin (workspaces always empty — super admins have global access)
     user_doc = {
         "first_name": data["first_name"],
         "last_name": data.get("last_name") or "",
@@ -160,21 +159,11 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "role": "super_admin",
         "is_active": True,
         "workspaces": [],
+        "default_workspace_id": None,
         "created_at": now,
         "updated_at": now,
     }
     user_result = await db.users.insert_one(user_doc)
     user_id = user_result.inserted_id
-
-    # 2. Create Common Workspace (no super admin in members)
-    await db.workspaces.insert_one({
-        "name": "Common",
-        "description": "Shared workspace accessible to all users by default.",
-        "created_by": user_id,
-        "members": [],
-        "created_at": now,
-        "updated_at": now,
-    })
-
     user_doc["_id"] = user_id
     return await _issue_tokens(db, user_doc)
