@@ -11,6 +11,7 @@ from app.components.auth.auth_schemas import (
 )
 from app.components.auth.auth_dependencies import get_current_user
 from app.common.responses import success_response
+from app.common.utils import serialize_doc
 
 router = APIRouter()
 
@@ -59,4 +60,4 @@ async def logout(request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depend
 
 @router.get("/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
-    return success_response("User retrieved", current_user)
+    return success_response("User retrieved", serialize_doc(current_user))
