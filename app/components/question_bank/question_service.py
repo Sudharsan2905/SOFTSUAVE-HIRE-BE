@@ -281,20 +281,20 @@ def _split_outside_brackets(text: str) -> list[str]:
     result = []
     current: list[str] = []
     stack: list[str] = []
-    pairs = {')': '(', ']': '[', '}': '{'}
+    pairs = {")": "(", "]": "[", "}": "{"}
     for ch in text:
         if ch in "([{":
             stack.append(ch)
         elif ch in ")]}":
             if stack and stack[-1] == pairs[ch]:
                 stack.pop()
-        if ch == ',' and not stack:
-            result.append(''.join(current).strip())
+        if ch == "," and not stack:
+            result.append("".join(current).strip())
             current = []
         else:
             current.append(ch)
     if current:
-        result.append(''.join(current).strip())
+        result.append("".join(current).strip())
     return result
 
 
@@ -346,10 +346,10 @@ async def process_excel_import(
 
     # Use explicit column_map first, fall back to case-insensitive auto-detect
     col_map = column_map or {}
-    col_question = col_map.get('question') or _find_column(raw_headers, "question")
-    col_options = col_map.get('options') or _find_column(raw_headers, "options")
-    col_answer = col_map.get('answer') or _find_column(raw_headers, "answer")
-    col_complexity = col_map.get('complexity') or _find_column(raw_headers, "complexity")
+    col_question = col_map.get("question") or _find_column(raw_headers, "question")
+    col_options = col_map.get("options") or _find_column(raw_headers, "options")
+    col_answer = col_map.get("answer") or _find_column(raw_headers, "answer")
+    col_complexity = col_map.get("complexity") or _find_column(raw_headers, "complexity")
 
     if not col_question:
         return {"created": 0, "error": "Missing 'Question' column"}
