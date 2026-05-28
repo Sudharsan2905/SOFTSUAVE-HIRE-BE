@@ -1,11 +1,12 @@
-from fastapi import Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.dependencies import get_db
-from app.components.auth.auth_service import decode_access_token
-from app.common.constants.app_constants import UserRole, ADMIN_ROLES
-from app.common.exceptions import UnauthorizedException, ForbiddenException
 from bson import ObjectId
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.common.constants.app_constants import ADMIN_ROLES, UserRole
+from app.common.exceptions import ForbiddenException, UnauthorizedException
+from app.components.auth.auth_service import decode_access_token
+from app.core.dependencies import get_db
 
 _security = HTTPBearer()
 

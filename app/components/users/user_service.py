@@ -1,8 +1,8 @@
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from typing import Optional
-from app.common.exceptions import ConflictException, NotFoundException, ForbiddenException
-from app.common.utils import utcnow, serialize_doc, serialize_docs
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.common.exceptions import ConflictException, ForbiddenException, NotFoundException
+from app.common.utils import serialize_doc, serialize_docs, utcnow
 from app.components.auth.auth_service import hash_password
 
 
@@ -47,7 +47,9 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
             await db.workspaces.update_one(
                 {"_id": ws["_id"]},
                 {
-                    "$push": {"members": {"user_id": user_id, "email": data["email"], "role": role}},
+                    "$push": {
+                        "members": {"user_id": user_id, "email": data["email"], "role": role}
+                    },
                     "$set": {"updated_at": utcnow()},
                 },
             )
@@ -59,8 +61,8 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
 async def list_users(
     db: AsyncIOMotorDatabase,
-    role_filter: Optional[str] = None,
-    is_active_filter: Optional[bool] = None,
+    role_filter: str | None = None,
+    is_active_filter: bool | None = None,
 ) -> list:
     query: dict = {"role": {"$in": ["admin", "super_admin"]}}
     if role_filter:
@@ -112,7 +114,13 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
                 await db.workspaces.update_one(
                     {"_id": ws["_id"]},
                     {
-                        "$push": {"members": {"user_id": ObjectId(user_id), "email": user["email"], "role": user["role"]}},
+                        "$push": {
+                            "members": {
+                                "user_id": ObjectId(user_id),
+                                "email": user["email"],
+                                "role": user["role"],
+                            }
+                        },
                         "$set": {"updated_at": utcnow()},
                     },
                 )
@@ -126,8 +134,7 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
                 )
 
         update["workspaces"] = [
-            {"id": wid, "name": ws_map[wid]["name"]}
-            for wid in workspace_ids if wid in ws_map
+            {"id": wid, "name": ws_map[wid]["name"]} for wid in workspace_ids if wid in ws_map
         ]
 
         # Update default_workspace_id if the current default was removed

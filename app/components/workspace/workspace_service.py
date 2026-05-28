@@ -1,8 +1,14 @@
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from app.common.exceptions import NotFoundException, ForbiddenException
-from app.common.utils import utcnow, serialize_doc, serialize_docs, paginate_query, build_pagination_meta
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.common.exceptions import ForbiddenException, NotFoundException
+from app.common.utils import (
+    build_pagination_meta,
+    paginate_query,
+    serialize_doc,
+    serialize_docs,
+    utcnow,
+)
 
 
 async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
@@ -30,7 +36,13 @@ async def get_workspaces(
     skip, limit = paginate_query(page, page_size)
     query = {} if user_role == "super_admin" else {"members.user_id": ObjectId(user_id)}
     total = await db.workspaces.count_documents(query)
-    docs = await db.workspaces.find(query).sort([("created_at", -1)]).skip(skip).limit(limit).to_list(limit)
+    docs = (
+        await db.workspaces.find(query)
+        .sort([("created_at", -1)])
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
     return {
         "workspaces": serialize_docs(docs),
         "pagination": build_pagination_meta(total, page, page_size),
@@ -79,7 +91,9 @@ async def invite_members(
                 {"_id": ObjectId(uid), "role": {"$in": ["admin", "super_admin"]}}
             )
             if user:
-                new_members.append({"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]})
+                new_members.append(
+                    {"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]}
+                )
                 newly_added_users.append(uid)
                 newly_added_user_docs[uid] = user
 
@@ -116,15 +130,11 @@ async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
         raise NotFoundException("Workspace not found")
 
     member_ids = [m["user_id"] for m in workspace.get("members", [])]
-    users = await db.users.find(
-        {"_id": {"$in": member_ids}}, {"password_hash": 0}
-    ).to_list(200)
+    users = await db.users.find({"_id": {"$in": member_ids}}, {"password_hash": 0}).to_list(200)
     return serialize_docs(users)
 
 
-async def delete_workspace(
-    db: AsyncIOMotorDatabase, workspace_id: str
-) -> None:
+async def delete_workspace(db: AsyncIOMotorDatabase, workspace_id: str) -> None:
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         raise NotFoundException("Workspace not found")
@@ -149,7 +159,5 @@ async def delete_workspace(
 
 
 async def get_all_admin_users(db: AsyncIOMotorDatabase) -> list:
-    users = await db.users.find(
-        {"role": "admin"}, {"password_hash": 0}
-    ).to_list(200)
+    users = await db.users.find({"role": "admin"}, {"password_hash": 0}).to_list(200)
     return serialize_docs(users)

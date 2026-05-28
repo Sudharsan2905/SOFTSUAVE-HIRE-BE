@@ -1,14 +1,14 @@
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from typing import Optional
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
 from app.common.exceptions import NotFoundException
 from app.common.utils import (
-    utcnow,
-    serialize_doc,
-    serialize_docs,
-    paginate_query,
     build_pagination_meta,
     generate_uuid,
+    paginate_query,
+    serialize_doc,
+    serialize_docs,
+    utcnow,
 )
 
 
@@ -56,7 +56,7 @@ async def create_assessment(
 async def get_assessments(
     db: AsyncIOMotorDatabase,
     workspace_id: str,
-    search: Optional[str],
+    search: str | None,
     sort_by: str,
     sort_order: str,
     page: int,
@@ -90,9 +90,7 @@ async def get_assessments(
     }
 
 
-async def get_assessment(
-    db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str
-) -> dict:
+async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str) -> dict:
     doc = await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     )
@@ -161,7 +159,7 @@ async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str
 async def get_submissions(
     db: AsyncIOMotorDatabase,
     assessment_id: str,
-    search: Optional[str],
+    search: str | None,
     sort_by: str,
     sort_order: str,
     page: int,
@@ -169,24 +167,41 @@ async def get_submissions(
 ) -> dict:
     skip, limit = paginate_query(page, page_size)
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = sort_by if sort_by in ["percentage", "created_at", "updated_at", "completed_at"] else "created_at"
+    sort_field = (
+        sort_by
+        if sort_by in ["percentage", "created_at", "updated_at", "completed_at"]
+        else "created_at"
+    )
 
     pipeline = [
         {"$match": {"assessment_id": ObjectId(assessment_id)}},
-        {"$lookup": {"from": "users", "localField": "candidate_id", "foreignField": "_id", "as": "candidate"}},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "candidate_id",
+                "foreignField": "_id",
+                "as": "candidate",
+            }
+        },
         {"$unwind": {"path": "$candidate", "preserveNullAndEmpty": True}},
         {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
     ]
     if search:
         pipeline.append(
-            {"$match": {"$or": [
-                {"candidate.first_name": {"$regex": search, "$options": "i"}},
-                {"candidate.last_name": {"$regex": search, "$options": "i"}},
-                {"candidate.email": {"$regex": search, "$options": "i"}},
-            ]}}
+            {
+                "$match": {
+                    "$or": [
+                        {"candidate.first_name": {"$regex": search, "$options": "i"}},
+                        {"candidate.last_name": {"$regex": search, "$options": "i"}},
+                        {"candidate.email": {"$regex": search, "$options": "i"}},
+                    ]
+                }
+            }
         )
 
-    count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(1)
+    count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(
+        1
+    )
     total = count_res[0]["total"] if count_res else 0
 
     pipeline += [{"$sort": {sort_field: sort_dir}}, {"$skip": skip}, {"$limit": limit}]
@@ -222,24 +237,44 @@ async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str):
     )
 
 
-async def export_submissions(
-    db: AsyncIOMotorDatabase, assessment_id: str
-) -> list:
+async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> list:
     pipeline = [
         {"$match": {"assessment_id": ObjectId(assessment_id)}},
-        {"$lookup": {"from": "users", "localField": "candidate_id", "foreignField": "_id", "as": "candidate"}},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "candidate_id",
+                "foreignField": "_id",
+                "as": "candidate",
+            }
+        },
         {"$unwind": "$candidate"},
-        {"$lookup": {"from": "candidates", "localField": "candidate_id", "foreignField": "user_id", "as": "profile"}},
+        {
+            "$lookup": {
+                "from": "candidates",
+                "localField": "candidate_id",
+                "foreignField": "user_id",
+                "as": "profile",
+            }
+        },
         {"$unwind": {"path": "$profile", "preserveNullAndEmpty": True}},
-        {"$project": {
-            "name": {"$concat": ["$candidate.first_name", " ", {"$ifNull": ["$candidate.last_name", ""]}]},
-            "email": "$candidate.email",
-            "phone": "$profile.phone",
-            "percentage": 1,
-            "status": 1,
-            "completed_at": 1,
-            "rounds_count": {"$size": "$rounds_data"},
-        }},
+        {
+            "$project": {
+                "name": {
+                    "$concat": [
+                        "$candidate.first_name",
+                        " ",
+                        {"$ifNull": ["$candidate.last_name", ""]},
+                    ]
+                },
+                "email": "$candidate.email",
+                "phone": "$profile.phone",
+                "percentage": 1,
+                "status": 1,
+                "completed_at": 1,
+                "rounds_count": {"$size": "$rounds_data"},
+            }
+        },
     ]
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
     return serialize_docs(docs)

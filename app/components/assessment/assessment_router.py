@@ -1,13 +1,14 @@
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.dependencies import get_db
-from app.components.auth.auth_dependencies import require_admin
+
+from app.common.responses import success_response
 from app.components.assessment import assessment_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
     UpdateAssessmentRequest,
 )
-from app.common.responses import success_response
+from app.components.auth.auth_dependencies import require_admin
+from app.core.dependencies import get_db
 
 router = APIRouter()
 
