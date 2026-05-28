@@ -17,6 +17,7 @@ class UpdateUserRequest(BaseModel):
     last_name: Optional[str] = Field(None, max_length=50)
     is_active: Optional[bool] = None
     workspace_ids: Optional[List[str]] = None
+    default_workspace_id: Optional[str] = None
 
 
 class UpdateMeRequest(BaseModel):

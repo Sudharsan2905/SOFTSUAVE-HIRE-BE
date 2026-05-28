@@ -71,6 +71,7 @@ async def invite_members(
     existing_ids = {str(m["user_id"]) for m in workspace.get("members", [])}
     new_members = []
     newly_added_users = []
+    newly_added_user_docs: dict = {}
 
     for uid in user_ids:
         if uid not in existing_ids:
@@ -80,6 +81,7 @@ async def invite_members(
             if user:
                 new_members.append({"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]})
                 newly_added_users.append(uid)
+                newly_added_user_docs[uid] = user
 
     if new_members:
         await db.workspaces.update_one(
@@ -89,12 +91,19 @@ async def invite_members(
                 "$set": {"updated_at": utcnow()},
             },
         )
-        # Sync each newly added user's workspaces array
+        # Sync each newly added user's workspaces array and set default if unset
         ws_ref = {"id": workspace_id, "name": workspace["name"]}
         for uid in newly_added_users:
+            user_doc = newly_added_user_docs[uid]
+            set_fields: dict = {"updated_at": utcnow()}
+            if not user_doc.get("default_workspace_id"):
+                set_fields["default_workspace_id"] = workspace_id
             await db.users.update_one(
                 {"_id": ObjectId(uid), "workspaces.id": {"$ne": workspace_id}},
-                {"$push": {"workspaces": ws_ref}},
+                {
+                    "$push": {"workspaces": ws_ref},
+                    "$set": set_fields,
+                },
             )
 
     updated = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})

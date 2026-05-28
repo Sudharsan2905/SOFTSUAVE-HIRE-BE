@@ -135,6 +135,12 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
         if current_default not in workspace_ids:
             update["default_workspace_id"] = workspace_ids[0] if workspace_ids else None
 
+    if data.get("default_workspace_id") is not None:
+        requested_default = data["default_workspace_id"]
+        final_ws_ids = [w["id"] for w in update.get("workspaces", user.get("workspaces", []))]
+        if requested_default in final_ws_ids:
+            update["default_workspace_id"] = requested_default
+
     if update:
         update["updated_at"] = utcnow()
         await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
@@ -162,9 +168,10 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
         workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
         if not workspace:
             raise NotFoundException("Workspace not found")
-        member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
-        if user_id not in member_ids:
-            raise ForbiddenException("You are not a member of this workspace")
+        if user.get("role") != "super_admin":
+            member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
+            if user_id not in member_ids:
+                raise ForbiddenException("You are not a member of this workspace")
         update["default_workspace_id"] = workspace_id
 
     if update:
