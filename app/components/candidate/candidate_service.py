@@ -1,16 +1,17 @@
-from motor.motor_asyncio import AsyncIOMotorDatabase
-from bson import ObjectId
-from typing import Optional
 import random
-from app.common.exceptions import NotFoundException, ForbiddenException
+
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.common.constants.app_constants import SubmissionStatus
+from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
-    utcnow,
+    build_pagination_meta,
+    paginate_query,
     serialize_doc,
     serialize_docs,
-    paginate_query,
-    build_pagination_meta,
+    utcnow,
 )
-from app.common.constants.app_constants import SubmissionStatus
 
 
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
@@ -23,9 +24,7 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
     return safe
 
 
-async def start_assessment(
-    db: AsyncIOMotorDatabase, share_link: str, candidate_id: str
-) -> dict:
+async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_id: str) -> dict:
     assessment = await db.assessments.find_one({"share_link": share_link})
     if not assessment:
         raise NotFoundException("Assessment not found")
@@ -48,7 +47,13 @@ async def start_assessment(
         if status == SubmissionStatus.PENDING:
             await db.assessment_submissions.update_one(
                 {"_id": existing["_id"]},
-                {"$set": {"status": SubmissionStatus.IN_PROGRESS, "started_at": utcnow(), "updated_at": utcnow()}},
+                {
+                    "$set": {
+                        "status": SubmissionStatus.IN_PROGRESS,
+                        "started_at": utcnow(),
+                        "updated_at": utcnow(),
+                    }
+                },
             )
             updated = await db.assessment_submissions.find_one({"_id": existing["_id"]})
             return serialize_doc(updated)
@@ -64,17 +69,16 @@ async def start_assessment(
             else question_ids
         )
 
-        questions_raw = await db.questions.find(
-            {"_id": {"$in": selected_ids}}
-        ).to_list(len(selected_ids))
+        questions_raw = await db.questions.find({"_id": {"$in": selected_ids}}).to_list(
+            len(selected_ids)
+        )
 
         safe_questions = []
         for q in questions_raw:
             sq = serialize_doc(q)
             if sq.get("question_type") in ["mcq_single", "mcq_multi"]:
                 opts = [
-                    {k: v for k, v in o.items() if k != "is_correct"}
-                    for o in sq.get("options", [])
+                    {k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])
                 ]
                 random.shuffle(opts)
                 sq["options"] = opts
@@ -267,7 +271,7 @@ async def flag_malpractice(
     share_link: str,
     candidate_id: str,
     reason: str,
-    details: Optional[str] = None,
+    details: str | None = None,
 ):
     assessment = await db.assessments.find_one({"share_link": share_link})
     if not assessment:
@@ -298,8 +302,8 @@ async def flag_malpractice(
 
 async def get_live_interviews(
     db: AsyncIOMotorDatabase,
-    search: Optional[str],
-    monitoring_type: Optional[str],
+    search: str | None,
+    monitoring_type: str | None,
     sort_by: str,
     sort_order: str,
     page: int,
@@ -310,9 +314,23 @@ async def get_live_interviews(
 
     pipeline = [
         {"$match": {"status": "in_progress"}},
-        {"$lookup": {"from": "assessments", "localField": "assessment_id", "foreignField": "_id", "as": "assessment"}},
+        {
+            "$lookup": {
+                "from": "assessments",
+                "localField": "assessment_id",
+                "foreignField": "_id",
+                "as": "assessment",
+            }
+        },
         {"$unwind": "$assessment"},
-        {"$lookup": {"from": "users", "localField": "candidate_id", "foreignField": "_id", "as": "candidate"}},
+        {
+            "$lookup": {
+                "from": "users",
+                "localField": "candidate_id",
+                "foreignField": "_id",
+                "as": "candidate",
+            }
+        },
         {"$unwind": "$candidate"},
         {"$project": {"candidate.password_hash": 0, "rounds_data": 0}},
     ]
@@ -321,16 +339,20 @@ async def get_live_interviews(
         pipeline.append({"$match": {"assessment.accessibility": monitoring_type}})
     if search:
         pipeline.append(
-            {"$match": {"$or": [
-                {"candidate.first_name": {"$regex": search, "$options": "i"}},
-                {"candidate.last_name": {"$regex": search, "$options": "i"}},
-                {"assessment.name": {"$regex": search, "$options": "i"}},
-            ]}}
+            {
+                "$match": {
+                    "$or": [
+                        {"candidate.first_name": {"$regex": search, "$options": "i"}},
+                        {"candidate.last_name": {"$regex": search, "$options": "i"}},
+                        {"assessment.name": {"$regex": search, "$options": "i"}},
+                    ]
+                }
+            }
         )
 
-    count_res = await db.assessment_submissions.aggregate(
-        pipeline + [{"$count": "total"}]
-    ).to_list(1)
+    count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(
+        1
+    )
     total = count_res[0]["total"] if count_res else 0
 
     pipeline += [{"$sort": {"started_at": sort_dir}}, {"$skip": skip}, {"$limit": limit}]

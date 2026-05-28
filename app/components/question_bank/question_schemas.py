@@ -1,16 +1,16 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
-from app.common.constants.app_constants import QuestionType, Complexity
+
+from app.common.constants.app_constants import Complexity, QuestionType
 
 
 class CreateCategoryRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    description: Optional[str] = Field(None, max_length=500)
+    description: str | None = Field(None, max_length=500)
 
 
 class UpdateCategoryRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=2, max_length=100)
-    description: Optional[str] = None
+    name: str | None = Field(None, min_length=2, max_length=100)
+    description: str | None = None
 
 
 class QuestionOption(BaseModel):
@@ -23,28 +23,28 @@ class CreateQuestionRequest(BaseModel):
     question_text: str = Field(..., min_length=5)
     question_type: QuestionType
     complexity: Complexity
-    options: Optional[List[QuestionOption]] = None
-    correct_answer: Optional[str] = None
+    options: list[QuestionOption] | None = None
+    correct_answer: str | None = None
 
 
 class UpdateQuestionRequest(BaseModel):
-    question_text: Optional[str] = None
-    question_type: Optional[QuestionType] = None
-    complexity: Optional[Complexity] = None
-    options: Optional[List[QuestionOption]] = None
-    correct_answer: Optional[str] = None
+    question_text: str | None = None
+    question_type: QuestionType | None = None
+    complexity: Complexity | None = None
+    options: list[QuestionOption] | None = None
+    correct_answer: str | None = None
 
 
 class BulkQuestionItem(BaseModel):
     question_text: str
     question_type: QuestionType
     complexity: Complexity
-    options: Optional[List[QuestionOption]] = None
-    correct_answer: Optional[str] = None
+    options: list[QuestionOption] | None = None
+    correct_answer: str | None = None
 
 
 class BulkCreateRequest(BaseModel):
-    questions: List[BulkQuestionItem] = Field(..., min_length=1)
+    questions: list[BulkQuestionItem] = Field(..., min_length=1)
 
 
 class AIGenerateRequest(BaseModel):
@@ -56,8 +56,8 @@ class AIGenerateRequest(BaseModel):
 
 class ExcelColumnMappingRequest(BaseModel):
     question_column: str
-    answer_column: Optional[str] = None
-    complexity_column: Optional[str] = None
-    question_type_column: Optional[str] = None
-    default_complexity: Optional[Complexity] = Complexity.MEDIUM
-    default_question_type: Optional[QuestionType] = QuestionType.ESSAY
+    answer_column: str | None = None
+    complexity_column: str | None = None
+    question_type_column: str | None = None
+    default_complexity: Complexity | None = Complexity.MEDIUM
+    default_question_type: QuestionType | None = QuestionType.ESSAY

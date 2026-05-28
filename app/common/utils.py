@@ -1,13 +1,13 @@
-from datetime import datetime, timezone
-from bson import ObjectId
-from typing import Any
-import uuid
 import hashlib
 import secrets
+import uuid
+from datetime import UTC, datetime
+
+from bson import ObjectId
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def generate_uuid() -> str:
@@ -35,7 +35,9 @@ def serialize_doc(doc: dict | None) -> dict | None:
             result[key] = value.isoformat()
         elif isinstance(value, list):
             result[key] = [
-                serialize_doc(v) if isinstance(v, dict) else (str(v) if isinstance(v, ObjectId) else v)
+                serialize_doc(v)
+                if isinstance(v, dict)
+                else (str(v) if isinstance(v, ObjectId) else v)
                 for v in value
             ]
         elif isinstance(value, dict):

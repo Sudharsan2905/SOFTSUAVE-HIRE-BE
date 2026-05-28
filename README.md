@@ -23,26 +23,27 @@ FastAPI + Python backend for the SoftSuave Hire interview platform.
 15. [Candidate Module](#candidate-module)
 16. [Email Service](#email-service)
 17. [Adding a New Module](#adding-a-new-module)
+18. [Code Quality & Linting](#code-quality--linting)
 
 ---
 
 ## Tech Stack
 
-| Package            | Version  | Purpose                                   |
-|--------------------|----------|-------------------------------------------|
-| FastAPI            | 0.115.x  | Web framework (async, OpenAPI auto-docs)  |
-| Uvicorn            | 0.32.x   | ASGI server                               |
-| Motor              | 3.x      | Async MongoDB driver                      |
-| PyMongo            | 4.x      | MongoDB utilities (used by Motor)         |
-| Pydantic v2        | 2.x      | Data validation and settings              |
-| pydantic-settings  | 2.x      | `.env` file loading via `BaseSettings`    |
-| python-jose        | 3.x      | JWT encode/decode (HS256)                 |
-| passlib[bcrypt]    | 1.x      | Password hashing                          |
-| python-multipart   | 0.0.x    | Multipart form data (file uploads)        |
-| openpyxl           | 3.x      | Excel file parsing for question import    |
-| anthropic          | 0.x      | AI question generation (Claude API)       |
-| aiofiles           | 24.x     | Async file I/O                            |
-| httpx              | 0.27.x   | Async HTTP (Google OAuth)                 |
+| Package           | Version | Purpose                                  |
+| ----------------- | ------- | ---------------------------------------- |
+| FastAPI           | 0.115.x | Web framework (async, OpenAPI auto-docs) |
+| Uvicorn           | 0.32.x  | ASGI server                              |
+| Motor             | 3.x     | Async MongoDB driver                     |
+| PyMongo           | 4.x     | MongoDB utilities (used by Motor)        |
+| Pydantic v2       | 2.x     | Data validation and settings             |
+| pydantic-settings | 2.x     | `.env` file loading via `BaseSettings`   |
+| python-jose       | 3.x     | JWT encode/decode (HS256)                |
+| passlib[bcrypt]   | 1.x     | Password hashing                         |
+| python-multipart  | 0.0.x   | Multipart form data (file uploads)       |
+| openpyxl          | 3.x     | Excel file parsing for question import   |
+| openai            | 2.x     | AI question generation (OpenAI API)      |
+| aiofiles          | 24.x    | Async file I/O                           |
+| httpx             | 0.27.x  | Async HTTP (Google OAuth)                |
 
 ---
 
@@ -60,7 +61,7 @@ app/
 │   └── dependencies.py              # get_db(request) → AsyncIOMotorDatabase
 │
 ├── common/
-│   ├── exceptions.py                # AppException hierarchy (401/403/404/409/422)
+│   ├── exceptions.py                # AppException  hierarchy (401/403/404/409/422)
 │   ├── exception_handlers.py        # Registers handlers → uniform JSON error shape
 │   ├── responses.py                 # success_response() / error_response() helpers
 │   ├── utils.py                     # utcnow, generate_uuid, hash_token,
@@ -108,19 +109,24 @@ app/
 
 ```bash
 # 1. Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
-# 2. Install dependencies
+# 2. Install runtime dependencies
 pip install -r requirements.txt
 
-# 3. Copy and configure environment file
+# 3. Install dev dependencies and set up pre-commit hooks
+pip install -r requirements-dev.txt
+pre-commit install
+detect-secrets scan > .secrets.baseline   # first-time only
+
+# 4. Copy and configure environment file
 cp .env.example .env
 
-# 4. Start the development server
+# 5. Start the development server
 uvicorn app.main:app --reload --port 8000
 
-# 5. View auto-generated API docs
+# 6. View auto-generated API docs
 # Swagger UI: http://localhost:8000/api/docs
 # ReDoc:      http://localhost:8000/api/redoc
 ```
@@ -139,18 +145,21 @@ DATABASE_NAME=softsuvehire
 # JWT
 JWT_SECRET_KEY=your_very_long_random_secret_here
 JWT_ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_HOURS=6
+ACCESS_TOKEN_EXPIRE_MINUTES=360
 REFRESH_TOKEN_EXPIRE_DAYS=1
 
-# AI (Anthropic Claude)
-ANTHROPIC_API_KEY=sk-ant-api03-...
+# AI (OpenAI)
+OPENAI_API_KEY=sk-...
+
+# Google OAuth (Optional)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
 
 # Email (SMTP)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=you@gmail.com
 SMTP_PASSWORD=your_app_password
-FROM_EMAIL=noreply@softsuvehire.com
 
 # CORS — JSON array string
 CORS_ORIGINS=["http://localhost:5173","https://yourdomain.com"]
@@ -166,17 +175,17 @@ CORS_ORIGINS=["http://localhost:5173","https://yourdomain.com"]
 
 1. Instantiates `FastAPI` with `lifespan` context manager
 2. Adds `CORSMiddleware` (reads `settings.CORS_ORIGINS`)
-3. Registers exception handlers (AppException, RequestValidationError, generic Exception)
+3. Registers exception handlers (AppException , RequestValidationError, generic Exception)
 4. Mounts all routers with prefixes:
 
-| Prefix | Router | Notes |
-|--------|--------|-------|
-| `/api/auth` | auth_router | Public + JWT-protected endpoints |
-| `/api/users` | user_router | Super admin only |
-| `/api/workspaces` | workspace_router | Admin + Super admin |
-| `/api/questions` | question_router | Admin + Super admin |
-| `/api/assessments` | assessment_router | Admin + Super admin |
-| `/api/candidate` | candidate_router | Candidate JWT + some public |
+| Prefix             | Router            | Notes                            |
+| ------------------ | ----------------- | -------------------------------- |
+| `/api/auth`        | auth_router       | Public + JWT-protected endpoints |
+| `/api/users`       | user_router       | Super admin only                 |
+| `/api/workspaces`  | workspace_router  | Admin + Super admin              |
+| `/api/questions`   | question_router   | Admin + Super admin              |
+| `/api/assessments` | assessment_router | Admin + Super admin              |
+| `/api/candidate`   | candidate_router  | Candidate JWT + some public      |
 
 ---
 
@@ -186,18 +195,18 @@ The Motor client connects on startup via `app/core/lifespan.py` and is stored in
 
 ### MongoDB Collections & Indexes
 
-| Collection | Index | Type |
-|------------|-------|------|
-| `users` | `email` | Unique |
-| `refresh_tokens` | `expires_at` | TTL (auto-delete expired tokens) |
-| `refresh_tokens` | `token_hash` | Unique |
-| `workspaces` | `members.user_id` | Regular (member lookup) |
-| `question_categories` | `name` | Unique |
-| `questions` | `category_id + created_at` | Compound |
-| `assessments` | `share_link` | Unique |
-| `assessments` | `workspace_id + created_at` | Compound |
-| `submissions` | `candidate_id + assessment_id` | Unique (prevents double-entry) |
-| `submissions` | `assessment_id + status` | Compound |
+| Collection            | Index                          | Type                             |
+| --------------------- | ------------------------------ | -------------------------------- |
+| `users`               | `email`                        | Unique                           |
+| `refresh_tokens`      | `expires_at`                   | TTL (auto-delete expired tokens) |
+| `refresh_tokens`      | `token_hash`                   | Unique                           |
+| `workspaces`          | `members.user_id`              | Regular (member lookup)          |
+| `question_categories` | `name`                         | Unique                           |
+| `questions`           | `category_id + created_at`     | Compound                         |
+| `assessments`         | `share_link`                   | Unique                           |
+| `assessments`         | `workspace_id + created_at`    | Compound                         |
+| `submissions`         | `candidate_id + assessment_id` | Unique (prevents double-entry)   |
+| `submissions`         | `assessment_id + status`       | Compound                         |
 
 All indexes are created idempotently in `lifespan.py` at application startup.
 
@@ -231,6 +240,7 @@ require_candidate     # user.role == 'candidate'
 ```
 
 Usage in a router:
+
 ```python
 from app.components.auth.auth_dependencies import require_admin, get_current_user
 
@@ -245,6 +255,7 @@ async def list_items(
 ### Password Validation (Candidate Registration)
 
 Pydantic `field_validator` on `CandidateRegisterRequest.password` enforces:
+
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
@@ -257,80 +268,80 @@ Pydantic `field_validator` on `CandidateRegisterRequest.password` enforces:
 
 ### Auth — `/api/auth`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/admin/login` | Public | Admin login → tokens |
-| POST | `/login` | Public | Candidate login → tokens |
-| POST | `/register` | Public | Candidate registration |
-| POST | `/refresh` | Public (refresh token) | Issue new access token |
-| POST | `/logout` | JWT | Revoke refresh token |
-| GET | `/me` | JWT | Get current user profile |
+| Method | Path           | Auth                   | Description              |
+| ------ | -------------- | ---------------------- | ------------------------ |
+| POST   | `/admin/login` | Public                 | Admin login → tokens     |
+| POST   | `/login`       | Public                 | Candidate login → tokens |
+| POST   | `/register`    | Public                 | Candidate registration   |
+| POST   | `/refresh`     | Public (refresh token) | Issue new access token   |
+| POST   | `/logout`      | JWT                    | Revoke refresh token     |
+| GET    | `/me`          | JWT                    | Get current user profile |
 
 ### Users — `/api/users`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/` | Super Admin | List admin users (paginated) |
-| POST | `/` | Super Admin | Create admin user |
-| GET | `/:id` | Super Admin | Get user by ID |
-| PUT | `/:id` | Super Admin | Update user |
+| Method | Path   | Auth        | Description                  |
+| ------ | ------ | ----------- | ---------------------------- |
+| GET    | `/`    | Super Admin | List admin users (paginated) |
+| POST   | `/`    | Super Admin | Create admin user            |
+| GET    | `/:id` | Super Admin | Get user by ID               |
+| PUT    | `/:id` | Super Admin | Update user                  |
 
 ### Workspaces — `/api/workspaces`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/` | Admin | List accessible workspaces |
-| POST | `/` | Super Admin | Create workspace |
-| GET | `/:id` | Admin | Get workspace |
-| PUT | `/:id` | Super Admin | Update workspace |
-| DELETE | `/:id` | Super Admin | Delete workspace |
-| POST | `/:id/invite` | Super Admin | Invite admin members |
-| GET | `/:id/members` | Admin | List members |
-| GET | `/admin-users` | Super Admin | List all admin users (for invite) |
+| Method | Path           | Auth        | Description                       |
+| ------ | -------------- | ----------- | --------------------------------- |
+| GET    | `/`            | Admin       | List accessible workspaces        |
+| POST   | `/`            | Super Admin | Create workspace                  |
+| GET    | `/:id`         | Admin       | Get workspace                     |
+| PUT    | `/:id`         | Super Admin | Update workspace                  |
+| DELETE | `/:id`         | Super Admin | Delete workspace                  |
+| POST   | `/:id/invite`  | Super Admin | Invite admin members              |
+| GET    | `/:id/members` | Admin       | List members                      |
+| GET    | `/admin-users` | Super Admin | List all admin users (for invite) |
 
 ### Question Bank — `/api/questions`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/categories` | Admin | List categories (paginated + search + sort) |
-| POST | `/categories` | Admin | Create category |
-| PUT | `/categories/:id` | Admin | Update category |
-| DELETE | `/categories/:id` | Admin | Delete category + all its questions |
-| GET | `/` | Admin | List questions (filter by category_id, complexity, type) |
-| POST | `/` | Admin | Create single question |
-| PUT | `/:id` | Admin | Update question |
-| DELETE | `/:id` | Admin | Delete question |
-| POST | `/bulk` | Admin | Bulk create questions (JSON array) |
-| POST | `/ai-generate` | Admin | AI generation via Anthropic (topic + count + type) |
-| POST | `/excel-columns` | Admin | Upload `.xlsx` → returns column names |
-| POST | `/excel-import` | Admin | Upload `.xlsx` + column mapping → import questions |
+| Method | Path              | Auth  | Description                                              |
+| ------ | ----------------- | ----- | -------------------------------------------------------- |
+| GET    | `/categories`     | Admin | List categories (paginated + search + sort)              |
+| POST   | `/categories`     | Admin | Create category                                          |
+| PUT    | `/categories/:id` | Admin | Update category                                          |
+| DELETE | `/categories/:id` | Admin | Delete category + all its questions                      |
+| GET    | `/`               | Admin | List questions (filter by category_id, complexity, type) |
+| POST   | `/`               | Admin | Create single question                                   |
+| PUT    | `/:id`            | Admin | Update question                                          |
+| DELETE | `/:id`            | Admin | Delete question                                          |
+| POST   | `/bulk`           | Admin | Bulk create questions (JSON array)                       |
+| POST   | `/ai-generate`    | Admin | AI generation via OpenAI (topic + count + type)       |
+| POST   | `/excel-columns`  | Admin | Upload `.xlsx` → returns column names                    |
+| POST   | `/excel-import`   | Admin | Upload `.xlsx` + column mapping → import questions       |
 
 ### Assessments — `/api/assessments`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/` | Admin | List assessments for a workspace |
-| POST | `/` | Admin | Create assessment (with rounds + question_ids) |
-| PUT | `/:id` | Admin | Update assessment |
-| DELETE | `/:id` | Admin | Delete assessment |
-| POST | `/:id/clone` | Admin | Clone assessment (new share_link UUID) |
-| GET | `/:id/submissions` | Admin | Paginated submissions with candidate lookup |
-| GET | `/:id/submissions/export` | Admin | Export submissions as `.xlsx` |
-| GET | `/submissions/:id` | Admin | Single submission detail |
-| POST | `/submissions/:id/reaccess` | Admin | Grant candidate re-entry |
+| Method | Path                        | Auth  | Description                                    |
+| ------ | --------------------------- | ----- | ---------------------------------------------- |
+| GET    | `/`                         | Admin | List assessments for a workspace               |
+| POST   | `/`                         | Admin | Create assessment (with rounds + question_ids) |
+| PUT    | `/:id`                      | Admin | Update assessment                              |
+| DELETE | `/:id`                      | Admin | Delete assessment                              |
+| POST   | `/:id/clone`                | Admin | Clone assessment (new share_link UUID)         |
+| GET    | `/:id/submissions`          | Admin | Paginated submissions with candidate lookup    |
+| GET    | `/:id/submissions/export`   | Admin | Export submissions as `.xlsx`                  |
+| GET    | `/submissions/:id`          | Admin | Single submission detail                       |
+| POST   | `/submissions/:id/reaccess` | Admin | Grant candidate re-entry                       |
 
 ### Candidate — `/api/candidate`
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/assessment/:shareLink` | Public | Assessment info (no correct answers) |
-| POST | `/assessment/:shareLink/start` | Candidate | Start → creates/resumes submission |
-| GET | `/submission/:id/round` | Candidate | Current round questions (randomized, stripped) |
-| POST | `/submission/:id/answer` | Candidate | Save answer (dot-notation upsert) |
-| POST | `/submission/:id/finish-round` | Candidate | Submit round → advance or complete |
-| POST | `/submission/:id/screenshot` | Candidate | Upload screenshot (multipart) |
-| POST | `/submission/:id/malpractice` | Candidate | Flag a malpractice event |
-| GET | `/live-interviews` | Admin | Aggregated active sessions list |
+| Method | Path                           | Auth      | Description                                    |
+| ------ | ------------------------------ | --------- | ---------------------------------------------- |
+| GET    | `/assessment/:shareLink`       | Public    | Assessment info (no correct answers)           |
+| POST   | `/assessment/:shareLink/start` | Candidate | Start → creates/resumes submission             |
+| GET    | `/submission/:id/round`        | Candidate | Current round questions (randomized, stripped) |
+| POST   | `/submission/:id/answer`       | Candidate | Save answer (dot-notation upsert)              |
+| POST   | `/submission/:id/finish-round` | Candidate | Submit round → advance or complete             |
+| POST   | `/submission/:id/screenshot`   | Candidate | Upload screenshot (multipart)                  |
+| POST   | `/submission/:id/malpractice`  | Candidate | Flag a malpractice event                       |
+| GET    | `/live-interviews`             | Admin     | Aggregated active sessions list                |
 
 ---
 
@@ -383,23 +394,25 @@ Always use these helpers in route handlers instead of returning raw dicts.
 `app/common/exceptions.py` defines:
 
 ```python
-class AppException(Exception):
+class AppException (Exception):
     status_code: int
     message: str
 
-class UnauthorizedException(AppException)  # 401
-class ForbiddenException(AppException)     # 403
-class NotFoundException(AppException)      # 404
-class ConflictException(AppException)      # 409
-class ValidationException(AppException)    # 422
+class UnauthorizedException(AppException )  # 401
+class ForbiddenException(AppException )     # 403
+class NotFoundException(AppException )      # 404
+class ConflictException(AppException )      # 409
+class ValidationException(AppException )    # 422
 ```
 
 `app/common/exception_handlers.py` registers handlers for:
-- `AppException` — returns `error_response()` with the exception's status code
+
+- `AppException ` — returns `error_response()` with the exception's status code
 - `RequestValidationError` (Pydantic) — 422 with field-level detail
 - `Exception` (catch-all) — 500 with sanitized message
 
 All errors return the same shape:
+
 ```json
 {
   "success": false,
@@ -414,6 +427,7 @@ All errors return the same shape:
 ## Response Format
 
 Every successful response:
+
 ```json
 {
   "success": true,
@@ -423,6 +437,7 @@ Every successful response:
 ```
 
 Paginated responses include a `pagination` key inside `data`:
+
 ```json
 {
   "success": true,
@@ -448,7 +463,8 @@ Paginated responses include a `pagination` key inside `data`:
 ### AI Generation
 
 `question_service.py → ai_generate_questions()`:
-1. Calls Anthropic API (Claude) with a structured prompt requesting JSON output.
+
+1. Calls OpenAI API with a structured prompt requesting JSON output.
 2. Parses the JSON response (strips markdown fences if present).
 3. Returns a list of question dicts for the frontend to confirm before saving.
 4. Confirmed questions are saved via `bulk_create_questions`.
@@ -458,12 +474,14 @@ Paginated responses include a `pagination` key inside `data`:
 Two-step flow:
 
 **Step 1 — Column extraction:**
+
 ```
 POST /api/questions/excel-columns  (multipart: file)
 → { columns: ["Question", "Option A", "Option B", ...] }
 ```
 
 **Step 2 — Import with mapping:**
+
 ```
 POST /api/questions/excel-import  (multipart: file + Form: mapping JSON)
 mapping = {
@@ -485,6 +503,7 @@ mapping = {
 ### Question Randomization
 
 When a candidate starts an assessment:
+
 1. `question_ids` pool per round can be larger than `question_count` — this allows random selection.
 2. `random.sample(question_ids_pool, question_count)` picks the subset.
 3. MCQ options are shuffled per question.
@@ -493,6 +512,7 @@ When a candidate starts an assessment:
 ### Score Calculation
 
 `_calculate_score()` in `candidate_service.py`:
+
 - MCQ single: 1 point if selected answer matches correct option text.
 - MCQ multiple: 1 point only if all selected answers exactly match all correct options.
 - Essay: skipped (manual review required).
@@ -537,6 +557,7 @@ This makes individual answer saves atomic and avoids overwriting other answers.
 ### Live Interviews Aggregation
 
 `get_live_interviews()` uses a MongoDB aggregation pipeline:
+
 1. Match `status: in_progress`
 2. `$lookup` → `assessments` (join on `assessment_id`)
 3. `$lookup` → `users` (join on `candidate_id`)
@@ -565,6 +586,7 @@ Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite em
 3. Create `<module>_schemas.py` — define Pydantic request/response models
 4. Create `<module>_service.py` — implement async functions that take `db` as first argument
 5. Create `<module>_router.py`:
+
    ```python
    from fastapi import APIRouter, Depends
    from app.core.dependencies import get_db
@@ -576,6 +598,7 @@ Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite em
    async def list_items(db=Depends(get_db), _=Depends(require_admin)):
        ...
    ```
+
 6. Register the router in `app/factory.py`:
    ```python
    from app.components.<module>.<module>_router import router as <module>_router
@@ -586,12 +609,69 @@ Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite em
 
 ## Scripts
 
-| Command | Description |
-|---------|-------------|
-| `uvicorn app.main:app --reload` | Start dev server with hot reload |
-| `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start |
-| `pip install -r requirements.txt` | Install all dependencies |
-| `pip freeze > requirements.txt` | Update requirements after adding packages |
+| Command                                           | Description                               |
+| ------------------------------------------------- | ----------------------------------------- |
+| `uvicorn app.main:app --reload`                   | Start dev server with hot reload          |
+| `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start                          |
+| `pip install -r requirements.txt`                 | Install runtime dependencies              |
+| `pip install -r requirements-dev.txt`             | Install dev tools (ruff, pre-commit, etc) |
+| `pip freeze > requirements.txt`                   | Update requirements after adding packages |
+| `ruff check . --fix`                              | Lint and auto-fix where possible          |
+| `ruff format .`                                   | Format all Python files                   |
+| `pre-commit run --all-files`                      | Run all hooks against every file manually |
+
+---
+
+## Code Quality & Linting
+
+Tooling is configured in `pyproject.toml`. Pre-commit hooks run automatically on every `git commit`.
+
+### Ruff — Lint
+
+```bash
+ruff check .           # check only
+ruff check . --fix     # check and auto-fix safe violations
+```
+
+Rules enforced: unused imports/variables, bare `except`, boolean comparisons, import order (isort), modern Python syntax (pyupgrade), PEP8 naming, McCabe complexity ≤ 15, basic security (bandit).
+
+### Ruff — Format
+
+```bash
+ruff format .          # format all files
+ruff format --check .  # check formatting without writing changes (CI)
+```
+
+Settings: 100-character line limit · double quotes · 4-space indentation.
+
+### Pre-commit Hooks
+
+Installed hooks run on every `git commit`:
+
+| Hook             | What it catches                                          |
+| ---------------- | -------------------------------------------------------- |
+| `ruff`           | Lint violations (auto-fixes where possible)              |
+| `ruff-format`    | Formatting drift                                         |
+| `detect-secrets` | API keys, tokens, high-entropy strings in staged files   |
+
+```bash
+pre-commit install              # wire hooks into git (once per clone)
+pre-commit run --all-files      # run manually against every file
+```
+
+If `detect-secrets` flags a false positive, update the baseline:
+```bash
+detect-secrets scan > .secrets.baseline
+git add .secrets.baseline
+```
+
+### Dev Dependencies
+
+All dev tools are in `requirements-dev.txt` (separate from runtime `requirements.txt`):
+
+```
+pre-commit, detect-secrets, ruff, pytest, pytest-asyncio
+```
 
 ---
 

@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.dependencies import get_db
+
+from app.common.responses import success_response
+from app.common.utils import serialize_doc
 from app.components.auth import auth_service
+from app.components.auth.auth_dependencies import get_current_user
 from app.components.auth.auth_schemas import (
-    SetupRequest,
     AdminLoginRequest,
     CandidateLoginRequest,
     CandidateRegisterRequest,
     RefreshTokenRequest,
+    SetupRequest,
 )
-from app.components.auth.auth_dependencies import get_current_user
-from app.common.responses import success_response
-from app.common.utils import serialize_doc
+from app.core.dependencies import get_db
 
 router = APIRouter()
 
@@ -45,9 +46,7 @@ async def register_candidate(
 
 
 @router.post("/refresh")
-async def refresh_token(
-    request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)
-):
+async def refresh_token(request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
     result = await auth_service.refresh_access_token(db, request.refresh_token)
     return success_response("Token refreshed", result)
 

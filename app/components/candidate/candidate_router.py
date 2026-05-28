@@ -1,15 +1,16 @@
 from fastapi import APIRouter, Depends, Query
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.dependencies import get_db
-from app.components.auth.auth_dependencies import require_admin, get_current_user
+
+from app.common.responses import success_response
+from app.components.auth.auth_dependencies import get_current_user, require_admin
 from app.components.candidate import candidate_service
 from app.components.candidate.candidate_schemas import (
-    SubmitAnswerRequest,
     FinishRoundRequest,
-    ScreenshotRequest,
     MalpracticeRequest,
+    ScreenshotRequest,
+    SubmitAnswerRequest,
 )
-from app.common.responses import success_response
+from app.core.dependencies import get_db
 
 router = APIRouter()
 
@@ -38,8 +39,12 @@ async def submit_answer(
     current_user: dict = Depends(get_current_user),
 ):
     result = await candidate_service.submit_answer(
-        db, share_link, current_user["_id"],
-        request.question_id, request.answer, request.round_number
+        db,
+        share_link,
+        current_user["_id"],
+        request.question_id,
+        request.answer,
+        request.round_number,
     )
     return success_response("Answer saved", result)
 
