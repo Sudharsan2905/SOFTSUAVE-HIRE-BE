@@ -83,6 +83,16 @@ async def invite_members(
     return success_response("Members invited", result)
 
 
+@router.delete("/{workspace_id}")
+async def delete_workspace(
+    workspace_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(require_super_admin),
+):
+    await workspace_service.delete_workspace(db, workspace_id)
+    return success_response("Workspace deleted", None)
+
+
 @router.get("/{workspace_id}/members")
 async def get_members(
     workspace_id: str,

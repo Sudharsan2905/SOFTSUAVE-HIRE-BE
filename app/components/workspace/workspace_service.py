@@ -90,7 +90,7 @@ async def invite_members(
             },
         )
         # Sync each newly added user's workspaces array
-        ws_ref = {"id": workspace_id, "name": workspace["name"], "is_default": False}
+        ws_ref = {"id": workspace_id, "name": workspace["name"]}
         for uid in newly_added_users:
             await db.users.update_one(
                 {"_id": ObjectId(uid), "workspaces.id": {"$ne": workspace_id}},
@@ -111,6 +111,32 @@ async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
         {"_id": {"$in": member_ids}}, {"password_hash": 0}
     ).to_list(200)
     return serialize_docs(users)
+
+
+async def delete_workspace(
+    db: AsyncIOMotorDatabase, workspace_id: str
+) -> None:
+    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
+    if not workspace:
+        raise NotFoundException("Workspace not found")
+
+    # Find all users who belong to this workspace
+    affected_users = await db.users.find(
+        {"workspaces.id": workspace_id}, {"_id": 1, "workspaces": 1, "default_workspace_id": 1}
+    ).to_list(500)
+
+    for user in affected_users:
+        user_id = user["_id"]
+        remaining = [w for w in user.get("workspaces", []) if w["id"] != workspace_id]
+        update: dict = {"workspaces": remaining, "updated_at": utcnow()}
+
+        current_default = user.get("default_workspace_id")
+        if current_default == workspace_id:
+            update["default_workspace_id"] = remaining[0]["id"] if remaining else None
+
+        await db.users.update_one({"_id": user_id}, {"$set": update})
+
+    await db.workspaces.delete_one({"_id": ObjectId(workspace_id)})
 
 
 async def get_all_admin_users(db: AsyncIOMotorDatabase) -> list:
