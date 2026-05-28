@@ -1,5 +1,6 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
-from typing import Optional, Any
 
 
 class SubmitAnswerRequest(BaseModel):
@@ -19,4 +20,4 @@ class ScreenshotRequest(BaseModel):
 
 class MalpracticeRequest(BaseModel):
     reason: str
-    details: Optional[str] = None
+    details: str | None = None

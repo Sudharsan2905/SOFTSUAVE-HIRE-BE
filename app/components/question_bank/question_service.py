@@ -1,12 +1,20 @@
-from motor.motor_asyncio import AsyncIOMotorDatabase
 from bson import ObjectId
-from typing import Optional
-from app.common.exceptions import NotFoundException, ConflictException
-from app.common.utils import utcnow, serialize_doc, serialize_docs, paginate_query, build_pagination_meta
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.common.exceptions import ConflictException, NotFoundException
+from app.common.utils import (
+    build_pagination_meta,
+    paginate_query,
+    serialize_doc,
+    serialize_docs,
+    utcnow,
+)
 
 
 async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) -> dict:
-    if await db.question_categories.find_one({"name": {"$regex": f"^{data['name']}$", "$options": "i"}}):
+    if await db.question_categories.find_one(
+        {"name": {"$regex": f"^{data['name']}$", "$options": "i"}}
+    ):
         raise ConflictException(f"Category '{data['name']}' already exists")
 
     now = utcnow()
@@ -25,7 +33,7 @@ async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) ->
 
 async def get_categories(
     db: AsyncIOMotorDatabase,
-    search: Optional[str],
+    search: str | None,
     sort_by: str,
     sort_order: str,
     page: int,
@@ -37,7 +45,11 @@ async def get_categories(
         query["name"] = {"$regex": search, "$options": "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = sort_by if sort_by in ["name", "created_at", "updated_at", "question_count"] else "created_at"
+    sort_field = (
+        sort_by
+        if sort_by in ["name", "created_at", "updated_at", "question_count"]
+        else "created_at"
+    )
 
     total = await db.question_categories.count_documents(query)
     docs = (
@@ -72,9 +84,9 @@ async def delete_category(db: AsyncIOMotorDatabase, category_id: str):
 async def get_questions(
     db: AsyncIOMotorDatabase,
     category_id: str,
-    search: Optional[str],
-    complexity: Optional[str],
-    question_type: Optional[str],
+    search: str | None,
+    complexity: str | None,
+    question_type: str | None,
     sort_by: str,
     sort_order: str,
     page: int,
@@ -204,21 +216,33 @@ async def ai_generate_questions(
     user_id: str,
 ) -> dict:
     try:
-        import openai, json, re
+        import json
+        import re
+
+        import openai
+
         from app.core.config import settings
 
         client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         type_instructions = {
-            "mcq_single": "MCQ with exactly one correct answer. Provide 4 options with field 'is_correct': true/false.",
-            "mcq_multi": "MCQ with one or more correct answers. Provide 4 options with field 'is_correct': true/false.",
+            "mcq_single": (
+                "MCQ with exactly one correct answer. "
+                "Provide 4 options with field 'is_correct': true/false."
+            ),
+            "mcq_multi": (
+                "MCQ with one or more correct answers. "
+                "Provide 4 options with field 'is_correct': true/false."
+            ),
             "essay": "Open-ended essay question. Provide a 'correct_answer' with a model answer.",
         }
 
-        prompt = f"""Generate {count} {complexity}-difficulty technical interview questions on the topic: "{topic}".
-Question type: {question_type} - {type_instructions.get(question_type, '')}
+        prompt = f"""
+Generate {count} {complexity}-difficulty technical interview questions on the topic: "{topic}".
+Question type: {question_type} - {type_instructions.get(question_type, "")}
 
 Return ONLY a valid JSON array. Each object must have:
-- question_text (string) — if the question contains code, wrap it in a markdown fenced code block with the appropriate language tag (e.g. ```python\\n...\\n```)
+- question_text (string) — if the question contains code, wrap it in a markdown fenced code block
+    with the appropriate language tag (e.g. ```python\\n...\\n```)
 - options (array of {{id, text, is_correct}}) — only for MCQ types
 - correct_answer (string) — only for essay type
 
@@ -275,6 +299,7 @@ def _classify_and_build(options_raw, answer_raw):
     question_type = "mcq_multi" if len(correct_indices) > 1 else "mcq_single"
 
     import uuid
+
     options = [
         {"id": str(uuid.uuid4()), "text": text, "is_correct": (i + 1) in correct_indices}
         for i, text in enumerate(option_texts)
@@ -288,7 +313,9 @@ async def process_excel_import(
     file_data: bytes,
     user_id: str,
 ) -> dict:
-    import openpyxl, io
+    import io
+
+    import openpyxl
 
     wb = openpyxl.load_workbook(io.BytesIO(file_data))
     ws = wb.active
@@ -305,7 +332,7 @@ async def process_excel_import(
 
     questions = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        row_dict = dict(zip(raw_headers, row))
+        row_dict = dict(zip(raw_headers, row, strict=False))
 
         question_text = row_dict.get(col_question)
         if not question_text:
@@ -318,12 +345,14 @@ async def process_excel_import(
 
         question_type, options, correct_answer = _classify_and_build(options_raw, answer_raw)
 
-        questions.append({
-            "question_text": str(question_text).strip(),
-            "question_type": question_type,
-            "complexity": complexity,
-            "options": options,
-            "correct_answer": correct_answer,
-        })
+        questions.append(
+            {
+                "question_text": str(question_text).strip(),
+                "question_type": question_type,
+                "complexity": complexity,
+                "options": options,
+                "correct_answer": correct_answer,
+            }
+        )
 
     return await bulk_create_questions(db, category_id, questions, user_id)

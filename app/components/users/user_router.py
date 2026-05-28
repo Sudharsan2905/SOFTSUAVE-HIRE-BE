@@ -1,11 +1,15 @@
 from fastapi import APIRouter, Depends, Query
-from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from app.core.dependencies import get_db
-from app.components.auth.auth_dependencies import require_super_admin, get_current_user
-from app.components.users import user_service
-from app.components.users.user_schemas import CreateAdminUserRequest, UpdateUserRequest, UpdateMeRequest
+
 from app.common.responses import success_response
+from app.components.auth.auth_dependencies import get_current_user, require_super_admin
+from app.components.users import user_service
+from app.components.users.user_schemas import (
+    CreateAdminUserRequest,
+    UpdateMeRequest,
+    UpdateUserRequest,
+)
+from app.core.dependencies import get_db
 
 router = APIRouter()
 
@@ -16,7 +20,9 @@ async def update_me(
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    result = await user_service.update_me(db, current_user["_id"], request.model_dump(exclude_none=True))
+    result = await user_service.update_me(
+        db, current_user["_id"], request.model_dump(exclude_none=True)
+    )
     return success_response("Profile updated", result)
 
 
@@ -32,8 +38,8 @@ async def create_user(
 
 @router.get("")
 async def list_users(
-    role: Optional[str] = Query(None),
-    is_active: Optional[bool] = Query(None),
+    role: str | None = Query(None),
+    is_active: bool | None = Query(None),
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(require_super_admin),
 ):

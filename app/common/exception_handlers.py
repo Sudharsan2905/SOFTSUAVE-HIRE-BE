@@ -1,8 +1,8 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
 from app.common.exceptions import AppException
-import traceback
 
 
 def register_exception_handlers(app: FastAPI):
