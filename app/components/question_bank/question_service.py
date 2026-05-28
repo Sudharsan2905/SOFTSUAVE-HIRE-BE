@@ -276,6 +276,28 @@ def _find_column(headers_lower: list, name: str):
     return None
 
 
+def _split_outside_brackets(text: str) -> list[str]:
+    """Split on commas that are not inside any bracket pair ( [ {."""
+    result = []
+    current: list[str] = []
+    stack: list[str] = []
+    pairs = {")": "(", "]": "[", "}": "{"}
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in ")]}":
+            if stack and stack[-1] == pairs[ch]:
+                stack.pop()
+        if ch == "," and not stack:
+            result.append("".join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        result.append("".join(current).strip())
+    return result
+
+
 def _classify_and_build(options_raw, answer_raw):
     """Return (question_type, options_list, correct_answer_text)."""
     options_str = str(options_raw).strip() if options_raw else ""
@@ -285,8 +307,8 @@ def _classify_and_build(options_raw, answer_raw):
         # No options → essay
         return "essay", [], answer_str or None
 
-    # Split options by comma
-    option_texts = [p.strip() for p in options_str.split(",") if p.strip()]
+    # Split on commas outside brackets so options like print("a, b") stay intact
+    option_texts = [p for p in _split_outside_brackets(options_str) if p]
 
     # Determine correct indices (1-based numbers in answer)
     correct_indices: set[int] = set()
@@ -312,6 +334,7 @@ async def process_excel_import(
     category_id: str,
     file_data: bytes,
     user_id: str,
+    column_map: dict = None,
 ) -> dict:
     import io
 
@@ -321,11 +344,12 @@ async def process_excel_import(
     ws = wb.active
     raw_headers = [cell.value for cell in ws[1]]
 
-    # Locate fixed columns (case-insensitive)
-    col_question = _find_column(raw_headers, "question")
-    col_options = _find_column(raw_headers, "options")
-    col_answer = _find_column(raw_headers, "answer")
-    col_complexity = _find_column(raw_headers, "complexity")
+    # Use explicit column_map first, fall back to case-insensitive auto-detect
+    col_map = column_map or {}
+    col_question = col_map.get("question") or _find_column(raw_headers, "question")
+    col_options = col_map.get("options") or _find_column(raw_headers, "options")
+    col_answer = col_map.get("answer") or _find_column(raw_headers, "answer")
+    col_complexity = col_map.get("complexity") or _find_column(raw_headers, "complexity")
 
     if not col_question:
         return {"created": 0, "error": "Missing 'Question' column"}

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+import json
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.responses import success_response
@@ -130,12 +132,17 @@ async def ai_generate(
 async def excel_import(
     category_id: str,
     file: UploadFile = File(...),
+    column_map: str = Form(default="{}"),
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(require_admin),
 ):
     file_data = await file.read()
+    try:
+        col_map = json.loads(column_map)
+    except Exception:
+        col_map = {}
     result = await question_service.process_excel_import(
-        db, category_id, file_data, current_user["_id"]
+        db, category_id, file_data, current_user["_id"], col_map
     )
     return success_response("Excel import completed", result)
 
