@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.common.exceptions import NotFoundException
 from app.common.utils import (
     build_pagination_meta,
-    generate_uuid,
+    generate_sharelink,
     paginate_query,
     serialize_doc,
     serialize_docs,
@@ -43,7 +43,7 @@ async def create_assessment(
         "rounds": _build_rounds(data.get("rounds", [])),
         "accessibility": data["accessibility"],
         "monitoring_config": monitoring,
-        "share_link": generate_uuid(),
+        "share_link": generate_sharelink(workspace_id),
         "created_by": ObjectId(user_id),
         "created_at": now,
         "updated_at": now,

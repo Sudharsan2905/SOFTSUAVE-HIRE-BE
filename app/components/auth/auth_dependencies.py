@@ -29,19 +29,19 @@ async def get_current_user(
     return user
 
 
-async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") not in [r.value for r in ADMIN_ROLES]:
         raise ForbiddenException("Admin access required")
     return current_user
 
 
-async def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
+def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") != UserRole.SUPER_ADMIN.value:
         raise ForbiddenException("Super admin access required")
     return current_user
 
 
-async def require_candidate(current_user: dict = Depends(get_current_user)) -> dict:
+def require_candidate(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") != UserRole.CANDIDATE.value:
         raise ForbiddenException("Candidate access required")
     return current_user
