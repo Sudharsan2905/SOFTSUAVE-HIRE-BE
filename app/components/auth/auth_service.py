@@ -1,11 +1,16 @@
 from datetime import timedelta
 
 import bcrypt
+import httpx
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import UserRole
-from app.common.exceptions import ConflictException, ForbiddenException, UnauthorizedException
+from app.common.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    UnauthorizedException,
+)
 from app.common.utils import generate_secure_token, hash_token, serialize_doc, utcnow
 from app.core.config import settings
 
@@ -88,9 +93,6 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
     if await db.users.find_one({"email": data["email"]}):
         raise ConflictException("Email already registered")
 
-    if data["password"] != data.pop("confirm_password"):
-        raise UnauthorizedException("Passwords do not match")
-
     password_hash = hash_password(data.pop("password"))
     data.pop("assessment_uuid", None)
     now = utcnow()
@@ -146,6 +148,55 @@ async def refresh_access_token(db: AsyncIOMotorDatabase, refresh_token: str) -> 
 
 async def logout(db: AsyncIOMotorDatabase, refresh_token: str):
     await db.refresh_tokens.delete_one({"token_hash": hash_token(refresh_token)})
+
+
+async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": credential},
+        )
+
+    if resp.status_code != 200:
+        raise UnauthorizedException("Invalid Google credential")
+
+    info = resp.json()
+    if info.get("aud") != settings.GOOGLE_CLIENT_ID:
+        raise UnauthorizedException("Google token audience mismatch")
+
+    email = info.get("email")
+    if not email:
+        raise UnauthorizedException("Email not found in Google token")
+
+    user = await db.users.find_one({"email": email})
+    now = utcnow()
+
+    if not user:
+        user_doc = {
+            "email": email,
+            "first_name": info.get("given_name") or info.get("name", "User"),
+            "last_name": info.get("family_name", ""),
+            "role": UserRole.CANDIDATE,
+            "google_id": info.get("sub"),
+            "password_hash": "",
+            "created_at": now,
+            "updated_at": now,
+        }
+        result = await db.users.insert_one(user_doc)
+        user_id = result.inserted_id
+
+        await db.candidates.insert_one({"user_id": user_id, "created_at": now, "updated_at": now})
+
+        user_doc["_id"] = user_id
+        user = user_doc
+    elif user.get("role") != UserRole.CANDIDATE:
+        raise ForbiddenException("This Google account is not registered as a candidate")
+
+    result = await _issue_tokens(db, user)
+    candidate = await db.candidates.find_one({"user_id": user["_id"]})
+    if candidate:
+        result["user"]["profile"] = serialize_doc(candidate)
+    return result
 
 
 async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:

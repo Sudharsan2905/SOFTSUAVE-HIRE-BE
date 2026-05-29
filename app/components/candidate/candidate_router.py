@@ -1,15 +1,10 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.responses import success_response
 from app.components.auth.auth_dependencies import get_current_user, require_admin
 from app.components.candidate import candidate_service
-from app.components.candidate.candidate_schemas import (
-    FinishRoundRequest,
-    MalpracticeRequest,
-    ScreenshotRequest,
-    SubmitAnswerRequest,
-)
+from app.components.candidate.candidate_schemas import MalpracticeRequest, SubmitAnswerRequest
 from app.core.dependencies import get_db
 
 router = APIRouter()
@@ -31,60 +26,59 @@ async def start_assessment(
     return success_response("Assessment started", result)
 
 
-@router.post("/assessment/{share_link}/submit-answer")
+@router.get("/submission/{submission_id}/round")
+async def get_current_round(
+    submission_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    result = await candidate_service.get_current_round(db, submission_id, current_user["_id"])
+    return success_response("Round retrieved", result)
+
+
+@router.post("/submission/{submission_id}/answer")
 async def submit_answer(
-    share_link: str,
+    submission_id: str,
     request: SubmitAnswerRequest,
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     result = await candidate_service.submit_answer(
-        db,
-        share_link,
-        current_user["_id"],
-        request.question_id,
-        request.answer,
-        request.round_number,
+        db, submission_id, current_user["_id"], request.question_id, request.answer
     )
     return success_response("Answer saved", result)
 
 
-@router.post("/assessment/{share_link}/finish-round")
+@router.post("/submission/{submission_id}/finish-round")
 async def finish_round(
-    share_link: str,
-    request: FinishRoundRequest,
+    submission_id: str,
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    result = await candidate_service.finish_round(
-        db, share_link, current_user["_id"], request.round_number
-    )
+    result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
     return success_response("Round finished", result)
 
 
-@router.post("/assessment/{share_link}/screenshot")
+@router.post("/submission/{submission_id}/screenshot")
 async def save_screenshot(
-    share_link: str,
-    request: ScreenshotRequest,
+    submission_id: str,
+    file: UploadFile = File(...),
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    await candidate_service.save_screenshot(
-        db, share_link, current_user["_id"], request.screenshot_data, request.round_number
-    )
+    content = await file.read()
+    await candidate_service.save_screenshot(db, submission_id, current_user["_id"], content)
     return success_response("Screenshot saved")
 
 
-@router.post("/assessment/{share_link}/malpractice")
+@router.post("/submission/{submission_id}/malpractice")
 async def flag_malpractice(
-    share_link: str,
+    submission_id: str,
     request: MalpracticeRequest,
     db: AsyncIOMotorDatabase = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    await candidate_service.flag_malpractice(
-        db, share_link, current_user["_id"], request.reason, request.details
-    )
+    await candidate_service.flag_malpractice(db, submission_id, current_user["_id"], request.type)
     return success_response("Activity flagged")
 
 

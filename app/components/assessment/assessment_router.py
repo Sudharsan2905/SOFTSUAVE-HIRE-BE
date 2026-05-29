@@ -68,19 +68,6 @@ async def update_assessment(
     return success_response("Assessment updated", result)
 
 
-@router.post("/workspaces/{workspace_id}/assessments/{assessment_id}/clone")
-async def clone_assessment(
-    workspace_id: str,
-    assessment_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
-):
-    result = await assessment_service.clone_assessment(
-        db, workspace_id, assessment_id, current_user["_id"]
-    )
-    return success_response("Assessment cloned", result)
-
-
 @router.get("/workspaces/{workspace_id}/assessments/{assessment_id}/submissions")
 async def list_submissions(
     workspace_id: str,

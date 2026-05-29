@@ -1,3 +1,4 @@
+import base64
 import random
 
 from bson import ObjectId
@@ -121,21 +122,49 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     return serialize_doc(submission)
 
 
+async def get_current_round(
+    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str
+) -> dict:
+    sub = await db.assessment_submissions.find_one(
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+    )
+    if not sub:
+        raise NotFoundException("Submission not found")
+
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    current = sub.get("current_round", 1)
+    idx = current - 1
+    rounds_data = sub.get("rounds_data", [])
+
+    if idx >= len(rounds_data):
+        raise NotFoundException("Round not found")
+
+    rd = rounds_data[idx]
+    tab_monitoring = False
+    if assessment:
+        monitoring = assessment.get("monitoring_config") or {}
+        tab_monitoring = monitoring.get("tab_monitoring", False)
+
+    return {
+        "round": {
+            "round_number": current,
+            "questions": rd.get("questions", []),
+            "max_duration_minutes": rd.get("max_duration_minutes", 30),
+        },
+        "tab_monitoring": tab_monitoring,
+    }
+
+
 async def submit_answer(
     db: AsyncIOMotorDatabase,
-    share_link: str,
+    submission_id: str,
     candidate_id: str,
     question_id: str,
     answer,
-    round_number: int,
 ) -> dict:
-    assessment = await db.assessments.find_one({"share_link": share_link})
-    if not assessment:
-        raise NotFoundException("Assessment not found")
-
     sub = await db.assessment_submissions.find_one(
         {
-            "assessment_id": assessment["_id"],
+            "_id": ObjectId(submission_id),
             "candidate_id": ObjectId(candidate_id),
             "status": SubmissionStatus.IN_PROGRESS,
         }
@@ -143,7 +172,7 @@ async def submit_answer(
     if not sub:
         raise NotFoundException("Active submission not found")
 
-    idx = round_number - 1
+    idx = sub.get("current_round", 1) - 1
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
         {
@@ -156,16 +185,10 @@ async def submit_answer(
     return {"saved": True}
 
 
-async def finish_round(
-    db: AsyncIOMotorDatabase, share_link: str, candidate_id: str, round_number: int
-) -> dict:
-    assessment = await db.assessments.find_one({"share_link": share_link})
-    if not assessment:
-        raise NotFoundException("Assessment not found")
-
+async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
     sub = await db.assessment_submissions.find_one(
         {
-            "assessment_id": assessment["_id"],
+            "_id": ObjectId(submission_id),
             "candidate_id": ObjectId(candidate_id),
             "status": SubmissionStatus.IN_PROGRESS,
         }
@@ -173,10 +196,15 @@ async def finish_round(
     if not sub:
         raise NotFoundException("Active submission not found")
 
-    total_rounds = len(assessment.get("rounds", []))
-    idx = round_number - 1
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    if not assessment:
+        raise NotFoundException("Assessment not found")
 
-    if round_number >= total_rounds:
+    current = sub.get("current_round", 1)
+    total_rounds = len(assessment.get("rounds", []))
+    idx = current - 1
+
+    if current >= total_rounds:
         score, percentage = await _calculate_score(db, sub)
         await db.assessment_submissions.update_one(
             {"_id": sub["_id"]},
@@ -197,13 +225,13 @@ async def finish_round(
             {"_id": sub["_id"]},
             {
                 "$set": {
-                    "current_round": round_number + 1,
+                    "current_round": current + 1,
                     "updated_at": utcnow(),
                     f"rounds_data.{idx}.completed": True,
                 }
             },
         )
-        return {"completed": False, "next_round": round_number + 1}
+        return {"completed": False, "next_round": current + 1}
 
 
 async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[int, float]:
@@ -238,22 +266,18 @@ async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[
 
 
 async def save_screenshot(
-    db: AsyncIOMotorDatabase,
-    share_link: str,
-    candidate_id: str,
-    screenshot_data: str,
-    round_number: int,
+    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, file_bytes: bytes
 ):
-    assessment = await db.assessments.find_one({"share_link": share_link})
-    if not assessment:
+    sub = await db.assessment_submissions.find_one(
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+    )
+    if not sub:
         return
 
+    screenshot_data = base64.b64encode(file_bytes).decode()
+    round_number = sub.get("current_round", 1)
     await db.assessment_submissions.update_one(
-        {
-            "assessment_id": assessment["_id"],
-            "candidate_id": ObjectId(candidate_id),
-            "status": SubmissionStatus.IN_PROGRESS,
-        },
+        {"_id": sub["_id"]},
         {
             "$push": {
                 "screenshots": {
@@ -267,32 +291,31 @@ async def save_screenshot(
 
 
 async def flag_malpractice(
-    db: AsyncIOMotorDatabase,
-    share_link: str,
-    candidate_id: str,
-    reason: str,
-    details: str | None = None,
+    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, malpractice_type: str
 ):
-    assessment = await db.assessments.find_one({"share_link": share_link})
-    if not assessment:
-        raise NotFoundException("Assessment not found")
-
-    monitoring_config = assessment.get("monitoring_config") or {}
-    if not monitoring_config.get("tab_monitoring", True):
-        return
-
-    await db.assessment_submissions.update_one(
+    sub = await db.assessment_submissions.find_one(
         {
-            "assessment_id": assessment["_id"],
+            "_id": ObjectId(submission_id),
             "candidate_id": ObjectId(candidate_id),
             "status": SubmissionStatus.IN_PROGRESS,
-        },
+        }
+    )
+    if not sub:
+        raise NotFoundException("Active submission not found")
+
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    if assessment:
+        monitoring_config = assessment.get("monitoring_config") or {}
+        if not monitoring_config.get("tab_monitoring", True):
+            return
+
+    await db.assessment_submissions.update_one(
+        {"_id": sub["_id"]},
         {
             "$set": {
                 "status": SubmissionStatus.MALPRACTICE,
                 "is_malpractice": True,
-                "malpractice_reason": reason,
-                "malpractice_details": details,
+                "malpractice_reason": malpractice_type,
                 "completed_at": utcnow(),
                 "updated_at": utcnow(),
             }
