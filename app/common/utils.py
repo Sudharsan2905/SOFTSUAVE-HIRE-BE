@@ -14,6 +14,11 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+def generate_sharelink(id: str) -> str:
+    current_time = datetime.now().strftime("%Y%m%d%H%M%S")
+    return f"{id}-{current_time}"
+
+
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -35,9 +40,11 @@ def serialize_doc(doc: dict | None) -> dict | None:
             result[key] = value.isoformat()
         elif isinstance(value, list):
             result[key] = [
-                serialize_doc(v)
-                if isinstance(v, dict)
-                else (str(v) if isinstance(v, ObjectId) else v)
+                (
+                    serialize_doc(v)
+                    if isinstance(v, dict)
+                    else (str(v) if isinstance(v, ObjectId) else v)
+                )
                 for v in value
             ]
         elif isinstance(value, dict):

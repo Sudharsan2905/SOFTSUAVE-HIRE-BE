@@ -4,7 +4,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.common.responses import success_response
 from app.components.auth.auth_dependencies import get_current_user, require_admin
 from app.components.candidate import candidate_service
-from app.components.candidate.candidate_schemas import MalpracticeRequest, SubmitAnswerRequest
+from app.components.candidate.candidate_schemas import (
+    MalpracticeRequest,
+    SubmitAnswerRequest,
+)
 from app.core.dependencies import get_db
 
 router = APIRouter()
