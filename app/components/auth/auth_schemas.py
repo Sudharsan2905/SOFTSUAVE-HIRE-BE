@@ -21,7 +21,6 @@ class CandidateRegisterRequest(BaseModel):
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=8)
-    confirm_password: str
     father_name: str = Field(..., min_length=2, max_length=100)
     gender: str = Field(..., pattern="^(male|female|other)$")
     dob: str | None = None
@@ -57,8 +56,7 @@ class CandidateLoginRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    code: str
-    assessment_uuid: str | None = None
+    credential: str
 
 
 class RefreshTokenRequest(BaseModel):

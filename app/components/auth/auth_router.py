@@ -9,6 +9,7 @@ from app.components.auth.auth_schemas import (
     AdminLoginRequest,
     CandidateLoginRequest,
     CandidateRegisterRequest,
+    GoogleAuthRequest,
     RefreshTokenRequest,
     SetupRequest,
 )
@@ -24,9 +25,7 @@ async def setup(request: SetupRequest, db: AsyncIOMotorDatabase = Depends(get_db
 
 
 @router.post("/admin/login")
-async def admin_login(
-    request: AdminLoginRequest, db: AsyncIOMotorDatabase = Depends(get_db)
-):
+async def admin_login(request: AdminLoginRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
     result = await auth_service.admin_login(db, request.email, request.password)
     return success_response("Login successful", result)
 
@@ -47,18 +46,20 @@ async def register_candidate(
     return success_response("Registration successful", result)
 
 
+@router.post("/google")
+async def google_login(request: GoogleAuthRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
+    result = await auth_service.google_auth(db, request.credential)
+    return success_response("Google login successful", result)
+
+
 @router.post("/refresh")
-async def refresh_token(
-    request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)
-):
+async def refresh_token(request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
     result = await auth_service.refresh_access_token(db, request.refresh_token)
     return success_response("Token refreshed", result)
 
 
 @router.post("/logout")
-async def logout(
-    request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)
-):
+async def logout(request: RefreshTokenRequest, db: AsyncIOMotorDatabase = Depends(get_db)):
     await auth_service.logout(db, request.refresh_token)
     return success_response("Logged out successfully")
 

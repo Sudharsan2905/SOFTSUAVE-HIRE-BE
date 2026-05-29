@@ -124,28 +124,6 @@ async def update_assessment(
     return serialize_doc(await db.assessments.find_one({"_id": ObjectId(assessment_id)}))
 
 
-async def clone_assessment(
-    db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str, user_id: str
-) -> dict:
-    doc = await db.assessments.find_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
-    )
-    if not doc:
-        raise NotFoundException("Assessment not found")
-
-    doc.pop("_id")
-    doc["name"] = f"Copy of {doc['name']}"
-    doc["share_link"] = generate_uuid()
-    doc["created_by"] = ObjectId(user_id)
-    now = utcnow()
-    doc["created_at"] = now
-    doc["updated_at"] = now
-
-    result = await db.assessments.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return serialize_doc(doc)
-
-
 async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     doc = await db.assessments.find_one({"share_link": share_link})
     if not doc:
