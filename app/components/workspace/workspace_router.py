@@ -84,9 +84,7 @@ async def invite_members(
     db: DB,
     current_user: SuperAdminUser,
 ) -> dict:
-    result = await workspace_service.invite_members(
-        db, workspace_id, request.user_ids, current_user["_id"]
-    )
+    result = await workspace_service.invite_members(db, workspace_id, request.user_ids)
     return success_response("Members invited", result)
 
 

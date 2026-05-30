@@ -18,6 +18,13 @@ from app.common.utils import (
 from app.core.config import settings
 from app.core.logging import logger
 
+_ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
+_MATCH = "$match"
+_LOOKUP = "$lookup"
+_UNWIND = "$unwind"
+_REGEX = "$regex"
+_OPTIONS = "$options"
+
 
 def _build_rounds(rounds_data: list) -> list:
     result = []
@@ -75,7 +82,7 @@ async def get_assessments(
     skip, limit = paginate_query(page, page_size)
     query: dict = {"workspace_id": ObjectId(workspace_id)}
     if search:
-        query["name"] = {"$regex": safe_regex(search), "$options": "i"}
+        query["name"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
     total, docs = await list_paginated(
@@ -109,7 +116,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     )
     if not doc:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     return serialize_doc(doc)
 
 
@@ -124,7 +131,7 @@ async def update_assessment(
     if not await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     ):
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
     update: dict = {"updated_at": utcnow()}
     if data.get("name"):
@@ -151,7 +158,7 @@ async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str
     """
     doc = await db.assessments.find_one({"share_link": share_link})
     if not doc:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     safe = serialize_doc(doc)
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
@@ -181,27 +188,27 @@ async def get_submissions(
     )
 
     pipeline: list[Any] = [
-        {"$match": {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
         {
-            "$lookup": {
+            _LOOKUP: {
                 "from": "users",
                 "localField": "candidate_id",
                 "foreignField": "_id",
                 "as": "candidate",
             }
         },
-        {"$unwind": {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
+        {_UNWIND: {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
         {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
     ]
     if search:
         escaped = safe_regex(search)
         pipeline.append(
             {
-                "$match": {
+                _MATCH: {
                     "$or": [
-                        {"candidate.first_name": {"$regex": escaped, "$options": "i"}},
-                        {"candidate.last_name": {"$regex": escaped, "$options": "i"}},
-                        {"candidate.email": {"$regex": escaped, "$options": "i"}},
+                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
@@ -219,6 +226,27 @@ async def get_submissions(
         "submissions": serialize_docs(docs),
         "pagination": build_pagination_meta(total, page, page_size),
     }
+
+
+async def _enrich_question(db: AsyncIOMotorDatabase, q: dict, answers: dict) -> None:
+    """Augment a question dict in-place with correct-answer and candidate-answer data."""
+    qid = q["id"]
+    raw_answer = answers.get(qid, [])
+    candidate_answer = [raw_answer] if isinstance(raw_answer, str) else raw_answer
+
+    original = await db.questions.find_one({"_id": ObjectId(qid)})
+    if original and original.get("question_type") in (
+        QuestionType.MCQ_SINGLE,
+        QuestionType.MCQ_MULTI,
+    ):
+        correct_ids = [str(o["id"]) for o in original.get("options", []) if o.get("is_correct")]
+        q["correct_option_ids"] = correct_ids
+        q["is_correct"] = bool(candidate_answer) and set(candidate_answer) == set(correct_ids)
+    else:
+        q["correct_option_ids"] = []
+        q["is_correct"] = None
+
+    q["candidate_answer"] = candidate_answer
 
 
 async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
@@ -243,29 +271,7 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     for rd in result.get("rounds_data", []):
         answers = rd.get("answers", {})
         for q in rd.get("questions", []):
-            qid = q["id"]
-            raw_answer = answers.get(qid, [])
-            candidate_answer = [raw_answer] if isinstance(raw_answer, str) else raw_answer
-
-            original = await db.questions.find_one({"_id": ObjectId(qid)})
-            if original:
-                q_type = original.get("question_type", "essay")
-                if q_type in (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI):
-                    correct_ids = [
-                        str(o["id"]) for o in original.get("options", []) if o.get("is_correct")
-                    ]
-                    q["correct_option_ids"] = correct_ids
-                    q["is_correct"] = bool(candidate_answer) and set(candidate_answer) == set(
-                        correct_ids
-                    )
-                else:
-                    q["correct_option_ids"] = []
-                    q["is_correct"] = None
-            else:
-                q["correct_option_ids"] = []
-                q["is_correct"] = None
-
-            q["candidate_answer"] = candidate_answer
+            await _enrich_question(db, q, answers)
 
     return result
 
@@ -297,25 +303,16 @@ async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
 async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> list:
     """Return all submissions for an assessment in a flat format suitable for Excel export."""
     pipeline: list[Any] = [
-        {"$match": {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
         {
-            "$lookup": {
+            _LOOKUP: {
                 "from": "users",
                 "localField": "candidate_id",
                 "foreignField": "_id",
                 "as": "candidate",
             }
         },
-        {"$unwind": "$candidate"},
-        {
-            "$lookup": {
-                "from": "candidates",
-                "localField": "candidate_id",
-                "foreignField": "user_id",
-                "as": "profile",
-            }
-        },
-        {"$unwind": {"path": "$profile", "preserveNullAndEmptyArrays": True}},
+        {_UNWIND: "$candidate"},
         {
             "$project": {
                 "name": {
@@ -326,7 +323,7 @@ async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> li
                     ]
                 },
                 "email": "$candidate.email",
-                "phone": "$profile.phone",
+                "phone": "$candidate.candidate_data.phone",
                 "percentage": 1,
                 "status": 1,
                 "completed_at": 1,

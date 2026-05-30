@@ -20,6 +20,10 @@ from app.common.utils import (
 from app.components.auth.auth_service import hash_password, verify_password
 from app.core.logging import logger
 
+_ERR_USER_NOT_FOUND = "User not found"
+_REGEX = "$regex"
+_OPTIONS = "$options"
+
 
 async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
     """Create an admin or super_admin user and sync their workspace memberships.
@@ -110,7 +114,7 @@ async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> dict:
     """
     doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
     if not doc:
-        raise NotFoundException("User not found")
+        raise NotFoundException(_ERR_USER_NOT_FOUND)
     return serialize_doc(doc)
 
 
@@ -127,9 +131,9 @@ async def list_candidates(
     if search:
         pattern = safe_regex(search)
         query["$or"] = [
-            {"first_name": {"$regex": pattern, "$options": "i"}},
-            {"last_name": {"$regex": pattern, "$options": "i"}},
-            {"email": {"$regex": pattern, "$options": "i"}},
+            {"first_name": {_REGEX: pattern, _OPTIONS: "i"}},
+            {"last_name": {_REGEX: pattern, _OPTIONS: "i"}},
+            {"email": {_REGEX: pattern, _OPTIONS: "i"}},
         ]
     if is_active is not None:
         query["is_active"] = is_active
@@ -290,7 +294,7 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
     """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
-        raise NotFoundException("User not found")
+        raise NotFoundException(_ERR_USER_NOT_FOUND)
 
     _validate_super_admin_constraints(user, data)
     update: dict = {}
@@ -335,7 +339,7 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
     return serialize_doc(await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0}))
 
 
-async def _apply_password_change(user: dict, data: dict, update: dict) -> None:
+def _apply_password_change(user: dict, data: dict, update: dict) -> None:
     current_pw = data.get("current_password")
     if not current_pw:
         raise ValidationException("Current password is required to change password")
@@ -359,11 +363,12 @@ async def _apply_default_workspace(
 
 def _apply_candidate_data(data: dict, update: dict) -> None:
     raw = data.get("candidate_data") or {}
-    cd = (
-        raw
-        if isinstance(raw, dict)
-        else (raw.model_dump(exclude_none=True) if hasattr(raw, "model_dump") else {})
-    )
+    if isinstance(raw, dict):
+        cd = raw
+    elif hasattr(raw, "model_dump"):
+        cd = raw.model_dump(exclude_none=True)
+    else:
+        cd = {}
     for field in ("candidate_type", "phone", "dob", "gender", "institution", "location"):
         if cd.get(field) is not None:
             update[f"candidate_data.{field}"] = cd[field]
@@ -381,7 +386,7 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
     """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
-        raise NotFoundException("User not found")
+        raise NotFoundException(_ERR_USER_NOT_FOUND)
 
     update: dict = {}
 
@@ -394,7 +399,7 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
         await _apply_email_update(db, user_id, user, data["email"], update)
 
     if data.get("password"):
-        await _apply_password_change(user, data, update)
+        _apply_password_change(user, data, update)
 
     if data.get("default_workspace_id"):
         await _apply_default_workspace(db, user, user_id, data["default_workspace_id"], update)
