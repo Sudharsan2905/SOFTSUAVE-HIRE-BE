@@ -10,49 +10,74 @@ FastAPI + Python backend for the SoftSuave Hire interview platform.
 2. [Project Structure](#project-structure)
 3. [Getting Started](#getting-started)
 4. [Environment Variables](#environment-variables)
-5. [Application Factory](#application-factory)
-6. [Database & Indexes](#database--indexes)
-7. [Authentication & RBAC](#authentication--rbac)
-8. [Request Validation](#request-validation)
-9. [Response Format](#response-format)
-10. [Error Handling](#error-handling)
-11. [Rate Limiting](#rate-limiting)
-12. [API Reference](#api-reference)
-13. [Component Architecture](#component-architecture)
-14. [Common Utilities](#common-utilities)
-15. [Question Bank Module](#question-bank-module)
-16. [Assessment Module](#assessment-module)
-17. [Candidate Module](#candidate-module)
-18. [Email Service](#email-service)
-19. [Adding a New Module](#adding-a-new-module)
-20. [Code Quality & Linting](#code-quality--linting)
+5. [Docker](#docker)
+6. [Application Factory](#application-factory)
+7. [Database & Indexes](#database--indexes)
+8. [Authentication & RBAC](#authentication--rbac)
+9. [Request Validation](#request-validation)
+10. [Response Format](#response-format)
+11. [Error Handling](#error-handling)
+12. [Rate Limiting](#rate-limiting)
+13. [API Reference](#api-reference)
+14. [Component Architecture](#component-architecture)
+15. [Common Utilities](#common-utilities)
+16. [Question Bank Module](#question-bank-module)
+17. [Assessment Module](#assessment-module)
+18. [Candidate Module](#candidate-module)
+19. [Email Service](#email-service)
+20. [Adding a New Module](#adding-a-new-module)
+21. [Code Quality & Linting](#code-quality--linting)
 
 ---
 
 ## Tech Stack
 
-| Package           | Version  | Purpose                                  |
-| ----------------- | -------- | ---------------------------------------- |
-| FastAPI           | 0.115.x  | Web framework (async, OpenAPI auto-docs) |
-| Uvicorn           | 0.32.x   | ASGI server                              |
-| Motor             | 3.x      | Async MongoDB driver                     |
-| PyMongo           | 4.x      | MongoDB utilities (used by Motor)        |
-| Pydantic v2       | 2.x      | Data validation and settings             |
-| pydantic-settings | 2.x      | `.env` file loading via `BaseSettings`   |
-| python-jose       | 3.x      | JWT encode/decode (HS256)                |
-| passlib[bcrypt]   | 1.x      | Password hashing                         |
-| slowapi           | 0.1.9    | Rate limiting (wraps limits-per-IP)      |
-| python-multipart  | 0.0.x    | Multipart form data (file uploads)       |
-| openpyxl          | 3.x      | Excel file parsing for question import   |
-| openai            | 2.x      | AI question generation (OpenAI API)      |
-| aiofiles          | 24.x     | Async file I/O                           |
-| httpx             | 0.27.x   | Async HTTP (Google OAuth)                |
+| Package           | Version   | Purpose                                  |
+| ----------------- | --------- | ---------------------------------------- |
+| Python            | 3.12      | Runtime (pinned via `.python-version`)   |
+| FastAPI           | 0.136.x   | Web framework (async, OpenAPI auto-docs) |
+| Uvicorn           | 0.48.x    | ASGI server                              |
+| uv                | latest    | Package manager + venv (replaces pip)    |
+| Motor             | 3.7.x     | Async MongoDB driver                     |
+| PyMongo           | 4.17.x    | MongoDB utilities (used by Motor)        |
+| Pydantic v2       | 2.13.x    | Data validation and settings             |
+| pydantic-settings | 2.14.x    | `.env` file loading via `BaseSettings`   |
+| python-jose       | 3.x       | JWT encode/decode (HS256)                |
+| passlib[bcrypt]   | 1.x       | Password hashing                         |
+| slowapi           | 0.1.9     | Rate limiting (wraps limits-per-IP)      |
+| python-multipart  | 0.0.x     | Multipart form data (file uploads)       |
+| openpyxl          | 3.x       | Excel file parsing for question import   |
+| openai            | 2.x       | AI question generation (OpenAI API)      |
+| aiofiles          | 25.x      | Async file I/O                           |
+| aiosmtplib        | 3.x       | Async SMTP email sending                 |
+| loguru            | 0.7.x     | Structured logging                       |
+| httpx             | 0.28.x    | Async HTTP (Google OAuth)                |
 
 ---
 
 ## Project Structure
 
 ```
+.python-version                      # Pins Python 3.12 (read by uv, editors)
+requirements/
+├── base.txt                         # Production dependencies (pinned)
+└── dev.txt                          # Dev tools: ruff, pytest, mypy, etc.
+                                     #   (-r base.txt included)
+setup/
+├── linux/
+│   ├── setup.sh                     # Install uv, create venv, install deps,
+│   │                                #   copy .env, install pre-commit hooks
+│   └── start.sh                     # Activate venv + start uvicorn dev server
+├── mac/
+│   ├── setup.sh
+│   └── start.sh
+└── windows/
+    ├── setup.bat
+    └── start.bat
+docker/
+├── Dockerfile                       # Multi-stage build (Python 3.12-slim + uv)
+└── docker-compose.yml               # API + MongoDB services
+
 app/
 ├── main.py                          # Entry point — imports app from factory
 ├── factory.py                       # create_application(): middleware, handlers,
@@ -61,7 +86,7 @@ app/
 ├── core/
 │   ├── config.py                    # Settings (BaseSettings, reads .env)
 │   ├── lifespan.py                  # Startup: _validate_settings(), DB connect,
-│   │                                #   index creation on startup
+│   │                                #   screenshots dir creation, index creation
 │   ├── limiter.py                   # Module-level slowapi Limiter singleton
 │   ├── logging.py                   # Structured logger (loguru) + setup_logging()
 │   └── dependencies.py              # get_db(request) → AsyncIOMotorDatabase
@@ -88,63 +113,76 @@ app/
 │   └── services/
 │       └── email_service.py         # send_email() + send_assessment_invite()
 │
+├── uploads/
+│   └── screenshots/                 # Local screenshot storage (gitignored except .gitkeep)
+│                                    #   Files: uploads/screenshots/{submission_id}/round{N}_{ts}.jpg
+│
 └── components/                      # Feature modules (each self-contained)
     ├── auth/
-    │   ├── auth_schemas.py
-    │   ├── auth_service.py
-    │   ├── auth_dependencies.py     # CurrentUser / AdminUser / SuperAdminUser
-    │   │                            #   / CandidateUser Annotated dependency aliases
-    │   └── auth_router.py
     ├── workspace/
-    │   ├── workspace_schemas.py
-    │   ├── workspace_service.py
-    │   └── workspace_router.py
     ├── question_bank/
-    │   ├── question_schemas.py
-    │   ├── question_service.py
-    │   └── question_router.py
     ├── assessment/
-    │   ├── assessment_schemas.py
-    │   ├── assessment_service.py
-    │   └── assessment_router.py
     ├── candidate/
-    │   ├── candidate_schemas.py
-    │   ├── candidate_service.py
-    │   └── candidate_router.py
     └── users/
-        ├── user_schemas.py
-        ├── user_service.py
-        └── user_router.py
 ```
 
 ---
 
 ## Getting Started
 
+### Option A — Setup scripts (recommended)
+
+The `setup/` scripts install uv, create a Python 3.12 venv, install all dependencies, copy `.env`, and wire pre-commit hooks in one step.
+
 ```bash
-# 1. Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+# Linux
+bash setup/linux/setup.sh
+bash setup/linux/start.sh
 
-# 2. Install runtime dependencies
-pip install -r requirements/base.txt
+# macOS
+bash setup/mac/setup.sh
+bash setup/mac/start.sh
 
-# 3. Install dev dependencies and set up pre-commit hooks
-pip install -r requirements/dev.txt
-pre-commit install
-detect-secrets scan --baseline .secrets.baseline   # first-time only
-git add .secrets.baseline
+# Windows
+setup\windows\setup.bat
+setup\windows\start.bat
+```
 
-# 4. Copy and configure environment file
+### Option B — Manual setup
+
+```bash
+# 1. Install uv (if not already installed)
+#    Linux / macOS
+curl -LsSf https://astral.sh/uv/install.sh | sh
+#    Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 2. Create virtual environment pinned to Python 3.12
+#    uv downloads Python 3.12 automatically if not on your machine
+uv venv --python 3.12
+
+# 3. Activate it
+source .venv/bin/activate          # Linux / macOS
+.venv\Scripts\activate             # Windows
+
+# 4. Install all dependencies (runtime + dev tools)
+uv pip install -r requirements/dev.txt
+
+# 5. Copy and configure environment file
 cp .env.example .env
 
-# 5. Start the development server
+# 6. Install pre-commit hooks
+pre-commit install
+detect-secrets scan --baseline .secrets.baseline   # first-time only
+
+# 7. Start the development server
 uvicorn app.main:app --reload --port 8000
 
-# 6. View auto-generated API docs
 # Swagger UI: http://localhost:8000/api/docs
 # ReDoc:      http://localhost:8000/api/redoc
 ```
+
+> **Why uv?** It's 10–100× faster than pip and manages Python versions automatically. It's a drop-in replacement — all `uv pip` commands accept the same flags as `pip`.
 
 ---
 
@@ -187,6 +225,7 @@ SMTP_PASSWORD=your-smtp-password
 # App behaviour
 LOG_LEVEL=INFO
 MAX_REACCESS_COUNT=3
+SCREENSHOTS_DIR=uploads/screenshots
 ```
 
 > **Never commit `.env` to version control.** The `.env.example` file serves as the canonical template.
@@ -195,11 +234,58 @@ On startup, `_validate_settings()` in `lifespan.py` raises `RuntimeError` immedi
 
 ---
 
+## Docker
+
+Docker files live in the `docker/` folder. The build context is always the project root.
+
+### Services
+
+| Service | Image             | Port  | Description                       |
+| ------- | ----------------- | ----- | --------------------------------- |
+| `api`   | Built from source | 8000  | FastAPI app (Python 3.12-slim)    |
+| `mongo` | mongo:7.0         | 27017 | MongoDB with health check         |
+
+### Dockerfile
+
+Two-stage build:
+- **Stage 1 (builder)** — installs `uv`, then uses `uv pip install --system` for fast dependency installation.
+- **Stage 2 (runtime)** — `python:3.12-slim`, copies only installed packages, runs as non-root `appuser`.
+
+### Commands
+
+```bash
+# Build and start (foreground)
+docker compose -f docker/docker-compose.yml up --build
+
+# Start in background
+docker compose -f docker/docker-compose.yml up --build -d
+
+# View API logs
+docker compose -f docker/docker-compose.yml logs -f api
+
+# Stop
+docker compose -f docker/docker-compose.yml down
+
+# Stop and wipe all volumes (DB data + screenshots)
+docker compose -f docker/docker-compose.yml down -v
+```
+
+> **Note:** `MONGODB_URL` in `.env` is overridden inside Docker to `mongodb://mongo:27017` (the internal service name). Your local `.env` URL is only used for local development.
+
+### Volumes
+
+| Volume       | Mounted at                   | Purpose                         |
+| ------------ | ---------------------------- | ------------------------------- |
+| `mongo_data` | `/data/db` (mongo container) | Persists MongoDB data           |
+| `screenshots`| `/app/uploads/screenshots`   | Persists screenshot files       |
+
+---
+
 ## Application Factory
 
 `app/factory.py` → `create_application()`:
 
-1. Instantiates `FastAPI` with the `lifespan` context manager (DB connect + index creation).
+1. Instantiates `FastAPI` with the `lifespan` context manager (DB connect + screenshots dir + index creation).
 2. Wires the `slowapi` rate limiter (`app.state.limiter`) and registers a custom `_rate_limit_handler` for 429 responses — same `{success, message, data, detail}` shape as all other errors.
 3. Adds `RequestLoggingMiddleware` (structured request logs with `X-Request-ID`).
 4. Adds `CORSMiddleware` (reads `settings.CORS_ORIGINS`).
@@ -615,16 +701,16 @@ column_map example:
 
 ### Question Randomization
 
-When a candidate starts an assessment:
+When a candidate starts an assessment, `_build_round_data()` and `_sanitize_question()` in `candidate_service.py` handle sampling:
 
 1. `question_ids` pool per round can exceed `question_count` — enables random selection.
-2. `random.sample(pool, question_count)` picks the subset.
-3. MCQ options are shuffled per question.
-4. `is_correct` flag and `correct_answer` are stripped before sending to the candidate.
+2. `_rng.sample(pool, question_count)` picks the subset (`_rng = random.SystemRandom()` — OS-backed entropy).
+3. MCQ options are shuffled per question; `is_correct` flag and `correct_answer` are stripped.
+4. Questions within each round are shuffled before delivery.
 
 ### Score Calculation
 
-`_calculate_score()` in `candidate_service.py`:
+`_calculate_score()` delegates per-question scoring to `_score_question()`:
 
 - MCQ single: 1 point if selected option ID matches the correct one.
 - MCQ multi: 1 point only if all selected IDs exactly match all correct IDs.
@@ -650,7 +736,7 @@ pending → in_progress → completed
                     ↘ malpractice
 ```
 
-- `start_assessment` — creates `in_progress` submission (or resumes existing).
+- `start_assessment` — creates `in_progress` submission (or resumes existing). Delegates existing-submission handling to `_handle_existing_submission()`.
 - `finish_round` — advances `current_round` or sets `status: completed` on last round.
 - `flag_malpractice` — sets `status: malpractice`. Silently skips if `tab_monitoring` is `false`. `type` must be one of: `tab_switch`, `multiple_faces`, `no_face`, `background_noise`, `copy_paste`.
 - `grant_reaccess` (admin) — resets to `pending`, increments `reaccess_count`. Capped at `settings.MAX_REACCESS_COUNT`.
@@ -668,11 +754,29 @@ db.assessment_submissions.update_one(
 
 `answer` is `str` (essay / mcq_single) or `list[str]` (mcq_multi).
 
-### Screenshot Upload
+### Screenshot Storage
 
 `POST /submission/:id/screenshot` validates before processing:
 - Content-Type must be `image/jpeg` or `image/png` — returns 422 otherwise.
 - File size must not exceed 2 MB — returns 422 otherwise.
+
+Files are saved to the local filesystem via `save_screenshot()`:
+
+```
+uploads/screenshots/{submission_id}/round{N}_{YYYYMMDD_HHmmss_ffffff}.jpg
+```
+
+The file path (not the raw bytes) is stored in the submission document:
+
+```json
+{
+  "path": "uploads/screenshots/abc123/round1_20240101_120000_000000.jpg",
+  "round": 1,
+  "taken_at": "2024-01-01T12:00:00Z"
+}
+```
+
+The `SCREENSHOTS_DIR` setting controls the storage root (default: `uploads/screenshots`). In Docker, it is overridden to `/app/uploads/screenshots` which is backed by a named volume.
 
 ---
 
@@ -685,7 +789,7 @@ await send_email(to: str, subject: str, html_body: str)
 await send_assessment_invite(to: str, candidate_name: str, assessment_name: str, share_url: str)
 ```
 
-Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite email contains a branded HTML template with the assessment share link.
+Uses async SMTP (`aiosmtplib`) with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite email contains a branded HTML template with the assessment share link.
 
 ---
 
@@ -724,13 +828,20 @@ All tooling is configured in `pyproject.toml`. Pre-commit hooks run automaticall
 
 ### Pre-commit hooks
 
-| Hook             | What it checks                                              |
-| ---------------- | ----------------------------------------------------------- |
-| `ruff`           | Lint violations (auto-fixes where safe)                     |
-| `ruff-format`    | Formatting drift (100-char limit, double quotes)            |
-| `detect-secrets` | API keys, tokens, high-entropy strings in staged files      |
-| `bandit`         | Security anti-patterns (skips B101 asserts, B104 binding)  |
-| `mypy`           | Static type checking on `app/` only (strict untyped defs)  |
+| Hook                   | What it checks                                              |
+| ---------------------- | ----------------------------------------------------------- |
+| `ruff`                 | Lint violations (auto-fixes where safe)                     |
+| `ruff-format`          | Formatting drift (100-char limit, double quotes)            |
+| `trailing-whitespace`  | Trailing spaces on any line                                 |
+| `end-of-file-fixer`    | Missing newline at end of file                              |
+| `check-yaml`           | YAML syntax (docker-compose, pre-commit config)             |
+| `check-toml`           | TOML syntax (pyproject.toml)                                |
+| `check-added-large-files` | Blocks files over 1 MB                                   |
+| `check-merge-conflict` | Blocks unresolved `<<<<<<< HEAD` markers                    |
+| `debug-statements`     | Blocks `pdb` / `breakpoint()` left in code                  |
+| `detect-secrets`       | API keys, tokens, high-entropy strings in staged files      |
+| `bandit`               | Security anti-patterns (skips B101 asserts, B104 binding)   |
+| `mypy`                 | Static type checking on `app/` only (strict untyped defs)   |
 
 ```bash
 pre-commit install              # wire hooks into git (once per clone)
@@ -759,7 +870,7 @@ Rules: unused imports/variables, bare `except`, boolean comparisons, import orde
 mypy app/
 ```
 
-Configured in `mypy.ini`: `disallow_untyped_defs = true`, `warn_return_any = true`, `warn_unused_ignores = true`. Test files are excluded. The pre-commit hook runs mypy in an isolated environment with `motor`, `pymongo`, and `slowapi` stubs pinned.
+Configured in `mypy.ini`: `python_version = 3.12`, `disallow_untyped_defs = true`, `warn_return_any = true`, `warn_unused_ignores = true`. Test files are excluded. The pre-commit hook runs mypy in an isolated environment with `motor`, `pymongo`, and `slowapi` stubs pinned.
 
 ### bandit
 
@@ -772,24 +883,29 @@ Skips: `B101` (assert statements in tests), `B104` (binding to all interfaces in
 ### pytest
 
 ```bash
-pytest                          # run all tests (parallel via pytest-xdist)
+pytest                               # run all tests (parallel via pytest-xdist)
 pytest --cov=app --cov-report=html   # with coverage report
 ```
 
-Tests run in parallel with `addopts = "-n auto"` (pytest-xdist). 270 tests, ~18 s wall-clock. All tests use `mongomock_motor` — no real MongoDB required.
+Tests run in parallel with `addopts = "-n auto"` (pytest-xdist). All tests use `mongomock_motor` — no real MongoDB required.
 
 ### Commands reference
 
-| Command                                           | Description                               |
-| ------------------------------------------------- | ----------------------------------------- |
-| `uvicorn app.main:app --reload`                   | Start dev server with hot reload          |
-| `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start                          |
-| `pip install -r requirements/base.txt`            | Install runtime dependencies              |
-| `pip install -r requirements/dev.txt`             | Install dev tools                         |
-| `ruff check . --fix && ruff format .`             | Lint + format (run before committing)     |
-| `mypy app/`                                       | Type-check app source                     |
-| `pytest`                                          | Run full test suite                       |
-| `pytest --cov=app --cov-report=html`              | Run tests with HTML coverage report       |
-| `pre-commit run --all-files`                      | Run all hooks against every file          |
-| `pre-commit run pip-audit --hook-stage manual`    | Scan dependencies for known CVEs          |
-| `detect-secrets scan --baseline .secrets.baseline` | Regenerate secrets baseline              |
+| Command                                                          | Description                               |
+| ---------------------------------------------------------------- | ----------------------------------------- |
+| `uvicorn app.main:app --reload`                                  | Start dev server with hot reload          |
+| `uv pip install -r requirements/dev.txt`                         | Install all dependencies (runtime + dev)  |
+| `uv pip install -r requirements/base.txt`                        | Install runtime dependencies only         |
+| `uv pip install <package>`                                       | Install a single package                  |
+| `ruff check . --fix && ruff format .`                            | Lint + format (run before committing)     |
+| `mypy app/`                                                      | Type-check app source                     |
+| `pytest`                                                         | Run full test suite                       |
+| `pytest --cov=app --cov-report=html`                             | Run tests with HTML coverage report       |
+| `pre-commit run --all-files`                                     | Run all hooks against every file          |
+| `pre-commit run pip-audit --hook-stage manual`                   | Scan dependencies for known CVEs          |
+| `detect-secrets scan --baseline .secrets.baseline`               | Regenerate secrets baseline               |
+| `docker compose -f docker/docker-compose.yml up --build`         | Build and start Docker services           |
+| `docker compose -f docker/docker-compose.yml up --build -d`      | Start Docker services in background       |
+| `docker compose -f docker/docker-compose.yml logs -f api`        | Tail API logs                             |
+| `docker compose -f docker/docker-compose.yml down`               | Stop Docker services                      |
+| `docker compose -f docker/docker-compose.yml down -v`            | Stop and wipe all volumes                 |
