@@ -138,34 +138,41 @@ uvicorn app.main:app --reload --port 8000
 All settings are loaded by `app/core/config.py` via pydantic-settings. Create `.env` in the project root:
 
 ```env
+# App configuration
+APP_NAME=Softsuave Hire
+APP_VERSION=1.0.0
+APP_DESCRIPTION=Softsuave Hire is a platform to manage the hiring process for Softsuave.
+
 # MongoDB
 MONGODB_URL=mongodb://localhost:27017
-DATABASE_NAME=softsuvehire
+DATABASE_NAME=your_database_name
 
-# JWT
-JWT_SECRET_KEY=your_very_long_random_secret_here
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=360
 REFRESH_TOKEN_EXPIRE_DAYS=1
 
-# SonarQube Token
-SONAR_TOKEN=your-sonar-token-here
+# ── CORS ─────────────────────────────────────────────────────────────────────
+# JSON array of allowed origins
+CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 
-# AI (OpenAI)
-OPENAI_API_KEY=sk-...
-
-# Google OAuth Credentials
+# ── Google OAuth (optional) ──────────────────────────────────────────────────
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 
-# Email (SMTP)
+# ── OpenAI (optional — required for AI question generation) ─────────────────
+OPENAI_API_KEY=your-openai-api-key
+
+# ── Email / SMTP (optional — required for sending invite emails) ─────────────
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=you@gmail.com
-SMTP_PASSWORD=your_app_password
+SMTP_USER=your-smtp-user
+SMTP_PASSWORD=your-smtp-password
 
-# CORS — JSON array string
-CORS_ORIGINS=["http://localhost:5173","https://yourdomain.com"]
+# ── App behaviour ────────────────────────────────────────────────────────────
+LOG_LEVEL=INFO
+MAX_REACCESS_COUNT=3
 ```
 
 **Never commit `.env` to version control.**
