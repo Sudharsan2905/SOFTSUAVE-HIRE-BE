@@ -21,9 +21,9 @@ from app.core.limiter import limiter
 
 def create_application() -> FastAPI:
     app = FastAPI(
-        title="SoftSuave Hire API",
-        description="Enterprise Interview Platform API",
-        version="1.0.0",
+        title=settings.APP_NAME,
+        description=settings.APP_DESCRIPTION,
+        version=settings.APP_VERSION,
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         lifespan=lifespan,

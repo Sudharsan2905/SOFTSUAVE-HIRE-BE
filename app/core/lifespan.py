@@ -21,7 +21,7 @@ def _validate_settings() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging(settings.LOG_LEVEL)
     _validate_settings()
-    logger.info("Starting SoftSuave Hire API")
+    logger.info(f"Starting {settings.APP_NAME} API")
     client: AsyncIOMotorClient = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.DATABASE_NAME]
     app.state.db = db
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Database indexes verified")
     yield
     client.close()
-    logger.info("SoftSuave Hire API shut down")
+    logger.info(f"{settings.APP_NAME} API shut down")
 
 
 async def _create_indexes(db: AsyncIOMotorDatabase) -> None:

@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    APP_NAME: str = ""
+    APP_VERSION: str = ""
+    APP_DESCRIPTION: str = ""
     MONGODB_URL: str = ""
     DATABASE_NAME: str = ""
     JWT_SECRET_KEY: str = ""
@@ -15,7 +18,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_SECRET: str = ""
     CORS_ORIGINS: list[str] = []
     OPENAI_API_KEY: str = ""
-    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""

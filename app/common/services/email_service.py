@@ -40,7 +40,7 @@ async def send_assessment_invite(
     html = f"""
     <div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:12px">
       <div style="background:#2563EB;padding:20px 32px;border-radius:8px 8px 0 0">
-        <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700">SoftSuave Hire</h1>
+        <h1 style="color:#fff;margin:0;font-size:22px;font-weight:700">{settings.APP_NAME}</h1>
       </div>
       <div style="background:#fff;padding:32px;border-radius:0 0 8px 8px;border:1px solid #e2e8f0">
         <p style="font-size:16px;color:#1e293b">Dear <strong>{candidate_name}</strong>,</p>
