@@ -36,6 +36,11 @@ class SortOrder(str, Enum):
     DESC = "desc"
 
 
+class CandidateType(str, Enum):
+    STUDENT = "student"
+    PROFESSIONAL = "professional"
+
+
 ADMIN_ROLES = [UserRole.SUPER_ADMIN, UserRole.ADMIN]
 
 

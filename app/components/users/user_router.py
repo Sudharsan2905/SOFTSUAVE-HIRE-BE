@@ -3,10 +3,11 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 
 from app.common.responses import ApiResponse, success_response
-from app.components.auth.auth_dependencies import CurrentUser, SuperAdminUser
+from app.components.auth.auth_dependencies import AdminUser, CurrentUser, SuperAdminUser
 from app.components.users import user_service
 from app.components.users.user_schemas import (
     CreateAdminUserRequest,
+    UpdateCandidateRequest,
     UpdateMeRequest,
     UpdateUserRequest,
 )
@@ -16,16 +17,73 @@ from app.core.limiter import limiter
 router = APIRouter()
 
 
+# ── Self ──────────────────────────────────────────────────────────────────────
+
+
 @router.patch("/me", response_model=ApiResponse)
 async def update_me(
     request: UpdateMeRequest,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     result = await user_service.update_me(
         db, current_user["_id"], request.model_dump(exclude_none=True)
     )
     return success_response("Profile updated", result)
+
+
+# ── Candidates (fixed paths — must be before /{user_id}) ─────────────────────
+
+
+@router.get("/candidates", response_model=ApiResponse)
+async def list_candidates(
+    db: DB,
+    current_user: AdminUser,
+    search: Annotated[str | None, Query()] = None,
+    is_active: Annotated[bool | None, Query()] = None,
+    candidate_type: Annotated[str | None, Query()] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> dict:
+    result = await user_service.list_candidates(
+        db, search, is_active, candidate_type, page, page_size
+    )
+    return success_response("Candidates retrieved", result)
+
+
+@router.get("/candidates/{user_id}", response_model=ApiResponse)
+async def get_candidate(
+    user_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await user_service.get_candidate(db, user_id)
+    return success_response("Candidate retrieved", result)
+
+
+@router.put("/candidates/{user_id}", response_model=ApiResponse)
+async def update_candidate(
+    user_id: str,
+    request: UpdateCandidateRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await user_service.update_candidate(db, user_id, request.model_dump(exclude_none=True))
+    return success_response("Candidate updated", result)
+
+
+@router.patch("/candidates/{user_id}", response_model=ApiResponse)
+async def patch_candidate(
+    user_id: str,
+    request: UpdateCandidateRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await user_service.update_candidate(db, user_id, request.model_dump(exclude_none=True))
+    return success_response("Candidate updated", result)
+
+
+# ── Admins / Super admins (parameterised — must be after fixed paths) ─────────
 
 
 @router.post("", response_model=ApiResponse)
@@ -35,7 +93,7 @@ async def create_user(
     request: CreateAdminUserRequest,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await user_service.create_admin_user(db, request.model_dump())
     return success_response("User created", result)
 
@@ -46,7 +104,7 @@ async def list_users(
     current_user: SuperAdminUser,
     role: Annotated[str | None, Query()] = None,
     is_active: Annotated[bool | None, Query()] = None,
-):
+) -> dict:
     result = await user_service.list_users(db, current_user["_id"], role, is_active)
     return success_response("Users retrieved", result)
 
@@ -56,7 +114,7 @@ async def get_user(
     user_id: str,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await user_service.get_user(db, user_id)
     return success_response("User retrieved", result)
 
@@ -67,7 +125,7 @@ async def update_user(
     request: UpdateUserRequest,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await user_service.update_user(db, user_id, request.model_dump(exclude_none=True))
     return success_response("User updated", result)
 
@@ -78,6 +136,6 @@ async def patch_user(
     request: UpdateUserRequest,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await user_service.update_user(db, user_id, request.model_dump(exclude_none=True))
     return success_response("User updated", result)
