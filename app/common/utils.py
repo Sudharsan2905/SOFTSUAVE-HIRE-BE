@@ -1,7 +1,9 @@
 import hashlib
+import re
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from bson import ObjectId
 
@@ -27,10 +29,10 @@ def generate_secure_token() -> str:
     return secrets.token_urlsafe(64)
 
 
-def serialize_doc(doc: dict | None) -> dict | None:
+def serialize_doc(doc: dict | None) -> dict:
     if doc is None:
-        return None
-    result = {}
+        return {}
+    result: dict[str, Any] = {}
     for key, value in doc.items():
         if key == "_id":
             result["id"] = str(value)
@@ -63,6 +65,11 @@ def paginate_query(page: int = 1, page_size: int = 20) -> tuple[int, int]:
     return skip, page_size
 
 
+def safe_regex(term: str) -> str:
+    """Escape user input for safe use in MongoDB $regex queries (prevents ReDoS)."""
+    return re.escape(term)
+
+
 def build_pagination_meta(total: int, page: int, page_size: int) -> dict:
     return {
         "total": total,
@@ -72,3 +79,40 @@ def build_pagination_meta(total: int, page: int, page_size: int) -> dict:
         "has_next": page * page_size < total,
         "has_prev": page > 1,
     }
+
+
+async def list_paginated(
+    collection: Any,
+    query: dict,
+    sort_field: str,
+    sort_dir: int,
+    skip: int,
+    limit: int,
+    allowed_sort_fields: list[str],
+    default_sort: str = "created_at",
+) -> tuple[int, list[dict]]:
+    """Run a paginated, sorted MongoDB find query.
+
+    Args:
+        collection: Motor collection to query.
+        query: MongoDB filter document.
+        sort_field: Requested sort field (validated against allowed_sort_fields).
+        sort_dir: 1 for ascending, -1 for descending.
+        skip: Number of documents to skip.
+        limit: Maximum documents to return.
+        allowed_sort_fields: Whitelist of valid sort fields.
+        default_sort: Fallback sort field when sort_field is invalid.
+
+    Returns:
+        Tuple of (total_count, list_of_documents).
+    """
+    safe_sort = sort_field if sort_field in allowed_sort_fields else default_sort
+    total = await collection.count_documents(query)
+    docs = (
+        await collection.find(query)
+        .sort(safe_sort, sort_dir)
+        .skip(skip)
+        .limit(limit)
+        .to_list(limit)
+    )
+    return total, docs

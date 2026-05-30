@@ -1,25 +1,26 @@
-from fastapi import APIRouter, Depends, Query
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from typing import Annotated
 
-from app.common.responses import success_response
-from app.components.auth.auth_dependencies import require_admin, require_super_admin
+from fastapi import APIRouter, Query
+
+from app.common.responses import ApiResponse, success_response
+from app.components.auth.auth_dependencies import AdminUser, SuperAdminUser
 from app.components.workspace import workspace_service
 from app.components.workspace.workspace_schemas import (
     CreateWorkspaceRequest,
     InviteMemberRequest,
     UpdateWorkspaceRequest,
 )
-from app.core.dependencies import get_db
+from app.core.dependencies import DB
 
 router = APIRouter()
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse)
 async def list_workspaces(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     result = await workspace_service.get_workspaces(
         db, current_user["_id"], current_user["role"], page, page_size
@@ -27,30 +28,30 @@ async def list_workspaces(
     return success_response("Workspaces retrieved", result)
 
 
-@router.post("")
+@router.post("", response_model=ApiResponse)
 async def create_workspace(
     request: CreateWorkspaceRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await workspace_service.create_workspace(db, request.model_dump(), current_user["_id"])
     return success_response("Workspace created", result)
 
 
-@router.get("/admin-users")
+@router.get("/admin-users", response_model=ApiResponse)
 async def list_admin_users(
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await workspace_service.get_all_admin_users(db)
     return success_response("Admin users retrieved", result)
 
 
-@router.get("/{workspace_id}")
+@router.get("/{workspace_id}", response_model=ApiResponse)
 async def get_workspace(
     workspace_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await workspace_service.get_workspace(
         db, workspace_id, current_user["_id"], current_user["role"]
@@ -58,12 +59,12 @@ async def get_workspace(
     return success_response("Workspace retrieved", result)
 
 
-@router.put("/{workspace_id}")
+@router.put("/{workspace_id}", response_model=ApiResponse)
 async def update_workspace(
     workspace_id: str,
     request: UpdateWorkspaceRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await workspace_service.update_workspace(
         db, workspace_id, request.model_dump(), current_user["_id"], current_user["role"]
@@ -71,12 +72,12 @@ async def update_workspace(
     return success_response("Workspace updated", result)
 
 
-@router.post("/{workspace_id}/invite")
+@router.post("/{workspace_id}/invite", response_model=ApiResponse)
 async def invite_members(
     workspace_id: str,
     request: InviteMemberRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await workspace_service.invite_members(
         db, workspace_id, request.user_ids, current_user["_id"]
@@ -84,21 +85,21 @@ async def invite_members(
     return success_response("Members invited", result)
 
 
-@router.delete("/{workspace_id}")
+@router.delete("/{workspace_id}", response_model=ApiResponse)
 async def delete_workspace(
     workspace_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     await workspace_service.delete_workspace(db, workspace_id)
     return success_response("Workspace deleted", None)
 
 
-@router.get("/{workspace_id}/members")
+@router.get("/{workspace_id}/members", response_model=ApiResponse)
 async def get_members(
     workspace_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await workspace_service.get_members(db, workspace_id)
     return success_response("Members retrieved", result)

@@ -1,24 +1,39 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 
 from app.core.config import settings
+from app.core.logging import logger, setup_logging
+
+
+def _validate_settings() -> None:
+    """Raise RuntimeError at startup if any critical setting is missing."""
+    required = ["JWT_SECRET_KEY", "MONGODB_URL", "DATABASE_NAME"]
+    missing = [k for k in required if not getattr(settings, k, "")]
+    if missing:
+        raise RuntimeError(f"Missing required settings: {', '.join(missing)}")
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    client = AsyncIOMotorClient(settings.MONGODB_URL)
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    setup_logging(settings.LOG_LEVEL)
+    _validate_settings()
+    logger.info("Starting SoftSuave Hire API")
+    client: AsyncIOMotorClient = AsyncIOMotorClient(settings.MONGODB_URL)
     db = client[settings.DATABASE_NAME]
     app.state.db = db
     app.state.client = client
     await _create_indexes(db)
+    logger.info("Database indexes verified")
     yield
     client.close()
+    logger.info("SoftSuave Hire API shut down")
 
 
-async def _create_indexes(db):
+async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.users.create_index([("email", ASCENDING)], unique=True)
     await db.users.create_index([("role", ASCENDING)])
 

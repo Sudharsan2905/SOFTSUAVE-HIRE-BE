@@ -1,24 +1,25 @@
-from fastapi import APIRouter, Depends, Query
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from typing import Annotated
 
-from app.common.responses import success_response
-from app.components.auth.auth_dependencies import get_current_user, require_super_admin
+from fastapi import APIRouter, Query
+
+from app.common.responses import ApiResponse, success_response
+from app.components.auth.auth_dependencies import CurrentUser, SuperAdminUser
 from app.components.users import user_service
 from app.components.users.user_schemas import (
     CreateAdminUserRequest,
     UpdateMeRequest,
     UpdateUserRequest,
 )
-from app.core.dependencies import get_db
+from app.core.dependencies import DB
 
 router = APIRouter()
 
 
-@router.patch("/me")
+@router.patch("/me", response_model=ApiResponse)
 async def update_me(
     request: UpdateMeRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    db: DB,
+    current_user: CurrentUser,
 ):
     result = await user_service.update_me(
         db, current_user["_id"], request.model_dump(exclude_none=True)
@@ -26,54 +27,54 @@ async def update_me(
     return success_response("Profile updated", result)
 
 
-@router.post("")
+@router.post("", response_model=ApiResponse)
 async def create_user(
     request: CreateAdminUserRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await user_service.create_admin_user(db, request.model_dump())
     return success_response("User created", result)
 
 
-@router.get("")
+@router.get("", response_model=ApiResponse)
 async def list_users(
-    role: str | None = Query(None),
-    is_active: bool | None = Query(None),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
+    role: Annotated[str | None, Query()] = None,
+    is_active: Annotated[bool | None, Query()] = None,
 ):
     result = await user_service.list_users(db, role, is_active)
     return success_response("Users retrieved", result)
 
 
-@router.get("/{user_id}")
+@router.get("/{user_id}", response_model=ApiResponse)
 async def get_user(
     user_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await user_service.get_user(db, user_id)
     return success_response("User retrieved", result)
 
 
-@router.put("/{user_id}")
+@router.put("/{user_id}", response_model=ApiResponse)
 async def update_user(
     user_id: str,
     request: UpdateUserRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await user_service.update_user(db, user_id, request.model_dump(exclude_none=True))
     return success_response("User updated", result)
 
 
-@router.patch("/{user_id}")
+@router.patch("/{user_id}", response_model=ApiResponse)
 async def patch_user(
     user_id: str,
     request: UpdateUserRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_super_admin),
+    db: DB,
+    current_user: SuperAdminUser,
 ):
     result = await user_service.update_user(db, user_id, request.model_dump(exclude_none=True))
     return success_response("User updated", result)

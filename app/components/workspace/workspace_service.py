@@ -1,17 +1,21 @@
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.common.constants.app_constants import ADMIN_ROLES, UserRole
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
+    list_paginated,
     paginate_query,
     serialize_doc,
     serialize_docs,
     utcnow,
 )
+from app.core.logging import logger
 
 
 async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
+    """Create a new workspace with an empty members list."""
     now = utcnow()
     doc = {
         "name": data["name"],
@@ -23,6 +27,7 @@ async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str
     }
     result = await db.workspaces.insert_one(doc)
     doc["_id"] = result.inserted_id
+    logger.info(f"Workspace created: {data['name']} by user_id={created_by}")
     return serialize_doc(doc)
 
 
@@ -33,15 +38,14 @@ async def get_workspaces(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
+    """Return a paginated list of workspaces visible to the requesting user.
+
+    Super admins see all workspaces; admins see only those they are members of.
+    """
     skip, limit = paginate_query(page, page_size)
-    query = {} if user_role == "super_admin" else {"members.user_id": ObjectId(user_id)}
-    total = await db.workspaces.count_documents(query)
-    docs = (
-        await db.workspaces.find(query)
-        .sort([("created_at", -1)])
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
+    query = {} if user_role == UserRole.SUPER_ADMIN else {"members.user_id": ObjectId(user_id)}
+    total, docs = await list_paginated(
+        db.workspaces, query, "created_at", -1, skip, limit, ["created_at"]
     )
     return {
         "workspaces": serialize_docs(docs),
@@ -52,10 +56,16 @@ async def get_workspaces(
 async def get_workspace(
     db: AsyncIOMotorDatabase, workspace_id: str, user_id: str, user_role: str
 ) -> dict:
+    """Fetch a single workspace, enforcing membership access for non-super_admin users.
+
+    Raises:
+        NotFoundException: If the workspace does not exist.
+        ForbiddenException: If the user is not a member (admin role only).
+    """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         raise NotFoundException("Workspace not found")
-    if user_role != "super_admin":
+    if user_role != UserRole.SUPER_ADMIN:
         member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
         if user_id not in member_ids:
             raise ForbiddenException("No access to this workspace")
@@ -65,6 +75,12 @@ async def get_workspace(
 async def update_workspace(
     db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str, user_role: str
 ) -> dict:
+    """Update workspace fields (name, description) after verifying access.
+
+    Raises:
+        NotFoundException: If the workspace does not exist.
+        ForbiddenException: If the user does not have access.
+    """
     await get_workspace(db, workspace_id, user_id, user_role)
     update = {k: v for k, v in data.items() if v is not None}
     update["updated_at"] = utcnow()
@@ -76,6 +92,14 @@ async def update_workspace(
 async def invite_members(
     db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list, current_user_id: str
 ) -> dict:
+    """Add admin/super_admin users to a workspace and sync their workspaces list.
+
+    Skips users already in the workspace. Sets the workspace as the user's
+    default if they have no default set yet.
+
+    Raises:
+        NotFoundException: If the workspace does not exist.
+    """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         raise NotFoundException("Workspace not found")
@@ -87,9 +111,7 @@ async def invite_members(
 
     for uid in user_ids:
         if uid not in existing_ids:
-            user = await db.users.find_one(
-                {"_id": ObjectId(uid), "role": {"$in": ["admin", "super_admin"]}}
-            )
+            user = await db.users.find_one({"_id": ObjectId(uid), "role": {"$in": ADMIN_ROLES}})
             if user:
                 new_members.append(
                     {"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]}
@@ -125,6 +147,11 @@ async def invite_members(
 
 
 async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
+    """Return the full user documents for all members of a workspace.
+
+    Raises:
+        NotFoundException: If the workspace does not exist.
+    """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         raise NotFoundException("Workspace not found")
@@ -135,6 +162,14 @@ async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
 
 
 async def delete_workspace(db: AsyncIOMotorDatabase, workspace_id: str) -> None:
+    """Delete a workspace and clean up all affected users' workspace references.
+
+    Updates each user's workspaces list and resets their default_workspace_id
+    if it pointed to the deleted workspace.
+
+    Raises:
+        NotFoundException: If the workspace does not exist.
+    """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
         raise NotFoundException("Workspace not found")
@@ -159,5 +194,6 @@ async def delete_workspace(db: AsyncIOMotorDatabase, workspace_id: str) -> None:
 
 
 async def get_all_admin_users(db: AsyncIOMotorDatabase) -> list:
-    users = await db.users.find({"role": "admin"}, {"password_hash": 0}).to_list(200)
+    """Return all users with the admin role, used for workspace invite dropdowns."""
+    users = await db.users.find({"role": UserRole.ADMIN}, {"password_hash": 0}).to_list(200)
     return serialize_docs(users)
