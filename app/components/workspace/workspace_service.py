@@ -13,6 +13,10 @@ from app.common.utils import (
 )
 from app.core.logging import logger
 
+_ERR_WS_NOT_FOUND = "Workspace not found"
+_PUSH = "$push"
+_WS_ID_FIELD = "workspaces.id"
+
 
 async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
     """Create a new workspace and sync the creator's workspaces list.
@@ -44,8 +48,8 @@ async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str
         else:
             ws_ref = {"id": workspace_id, "name": data["name"]}
             await db.users.update_one(
-                {"_id": ObjectId(created_by), "workspaces.id": {"$ne": workspace_id}},
-                {"$push": {"workspaces": ws_ref}, "$set": set_fields},
+                {"_id": ObjectId(created_by), _WS_ID_FIELD: {"$ne": workspace_id}},
+                {_PUSH: {"workspaces": ws_ref}, "$set": set_fields},
             )
 
     logger.info(f"Workspace created: {data['name']} by user_id={created_by}")
@@ -85,7 +89,7 @@ async def get_workspace(
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
     if user_role != UserRole.SUPER_ADMIN:
         member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
         if user_id not in member_ids:
@@ -110,9 +114,7 @@ async def update_workspace(
     return serialize_doc(updated)
 
 
-async def invite_members(
-    db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list, current_user_id: str
-) -> dict:
+async def invite_members(db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list) -> dict:
     """Add admin/super_admin users to a workspace and sync their admin_data.workspaces list.
 
     Skips users already in the workspace. Sets the workspace as the user's
@@ -123,7 +125,7 @@ async def invite_members(
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
     existing_ids = {str(m["user_id"]) for m in workspace.get("members", [])}
     new_members = []
@@ -144,7 +146,7 @@ async def invite_members(
         await db.workspaces.update_one(
             {"_id": ObjectId(workspace_id)},
             {
-                "$push": {"members": {"$each": new_members}},
+                _PUSH: {"members": {"$each": new_members}},
                 "$set": {"updated_at": utcnow()},
             },
         )
@@ -155,9 +157,9 @@ async def invite_members(
             if not user_doc.get("default_workspace_id"):
                 set_fields["default_workspace_id"] = workspace_id
             await db.users.update_one(
-                {"_id": ObjectId(uid), "workspaces.id": {"$ne": workspace_id}},
+                {"_id": ObjectId(uid), _WS_ID_FIELD: {"$ne": workspace_id}},
                 {
-                    "$push": {"workspaces": ws_ref},
+                    _PUSH: {"workspaces": ws_ref},
                     "$set": set_fields,
                 },
             )
@@ -174,7 +176,7 @@ async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
     member_ids = [m["user_id"] for m in workspace.get("members", [])]
     users = await db.users.find({"_id": {"$in": member_ids}}, {"password_hash": 0}).to_list(200)
@@ -192,10 +194,10 @@ async def delete_workspace(db: AsyncIOMotorDatabase, workspace_id: str) -> None:
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
     affected_users = await db.users.find(
-        {"workspaces.id": workspace_id}, {"_id": 1, "workspaces": 1, "default_workspace_id": 1}
+        {_WS_ID_FIELD: workspace_id}, {"_id": 1, "workspaces": 1, "default_workspace_id": 1}
     ).to_list(500)
 
     for user in affected_users:

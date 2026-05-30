@@ -7,6 +7,10 @@ from app.common.constants.app_constants import UserRole
 from app.common.exceptions import ConflictException, ForbiddenException, NotFoundException
 from app.components.users import user_service
 
+_TEST_PASSWORD = "Pass@123"  # NOSONAR - test fixture credential, not a real secret
+_NEW_PASSWORD = "NewPass@123"  # NOSONAR  # pragma: allowlist secret
+_SUPER_ADMIN_PASSWORD = "SuperPass@123"  # NOSONAR  # pragma: allowlist secret
+
 
 class TestCreateAdminUser:
     async def test_creates_admin_with_workspace(self, db, workspace):
@@ -14,7 +18,7 @@ class TestCreateAdminUser:
             "first_name": "New",
             "last_name": "Admin",
             "email": "newadmin@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.ADMIN,
             "workspace_ids": [str(workspace["_id"])],
         }
@@ -26,7 +30,7 @@ class TestCreateAdminUser:
         data = {
             "first_name": "Super",
             "email": "super2@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.SUPER_ADMIN,
             "workspace_ids": [],
         }
@@ -37,7 +41,7 @@ class TestCreateAdminUser:
         data = {
             "first_name": "Dup",
             "email": "superadmin@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.SUPER_ADMIN,
         }
         with pytest.raises(ConflictException):
@@ -47,7 +51,7 @@ class TestCreateAdminUser:
         data = {
             "first_name": "No",
             "email": "noworkspace@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.ADMIN,
             "workspace_ids": [],
         }
@@ -58,7 +62,7 @@ class TestCreateAdminUser:
         data = {
             "first_name": "Bad",
             "email": "badws@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.ADMIN,
             "workspace_ids": [str(ObjectId())],  # nonexistent workspace
         }
@@ -70,7 +74,7 @@ class TestCreateAdminUser:
         data = {
             "first_name": "Another",
             "email": "another@example.com",
-            "password": "Pass@123",
+            "password": _TEST_PASSWORD,
             "role": UserRole.ADMIN,
             "workspace_ids": [str(workspace["_id"])],
         }
@@ -198,8 +202,8 @@ class TestUpdateMe:
             db,
             str(super_admin["_id"]),
             {
-                "password": "NewPass@123",  # pragma: allowlist secret
-                "current_password": "SuperPass@123",  # pragma: allowlist secret
+                "password": _NEW_PASSWORD,
+                "current_password": _SUPER_ADMIN_PASSWORD,
             },
         )
         assert result["email"] == "superadmin@example.com"
