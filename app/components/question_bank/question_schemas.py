@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.app_constants import Complexity, QuestionType
 
@@ -14,9 +14,23 @@ class UpdateCategoryRequest(BaseModel):
 
 
 class QuestionOption(BaseModel):
-    id: str
-    text: str
+    id: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=1)
     is_correct: bool = False
+
+
+def _validate_mcq_options(question_type: QuestionType, options: list[QuestionOption]) -> None:
+    """Raise ValueError if MCQ/essay options violate business rules."""
+    if question_type in (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI):
+        if not options:
+            raise ValueError("MCQ questions must have at least one option")
+        correct = [o for o in options if o.is_correct]
+        if not correct:
+            raise ValueError("MCQ questions must have at least one correct option marked")
+        if question_type == QuestionType.MCQ_SINGLE and len(correct) > 1:
+            raise ValueError("MCQ single-choice questions must have exactly one correct option")
+    elif question_type == QuestionType.ESSAY and options:
+        raise ValueError("Essay questions must not have options")
 
 
 class CreateQuestionRequest(BaseModel):
@@ -26,6 +40,11 @@ class CreateQuestionRequest(BaseModel):
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
+    @model_validator(mode="after")
+    def validate_options(self) -> "CreateQuestionRequest":
+        _validate_mcq_options(self.question_type, self.options or [])
+        return self
+
 
 class UpdateQuestionRequest(BaseModel):
     question_text: str | None = None
@@ -34,6 +53,12 @@ class UpdateQuestionRequest(BaseModel):
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
+    @model_validator(mode="after")
+    def validate_options(self) -> "UpdateQuestionRequest":
+        if self.question_type is not None and self.options is not None:
+            _validate_mcq_options(self.question_type, self.options)
+        return self
+
 
 class BulkQuestionItem(BaseModel):
     question_text: str
@@ -41,6 +66,11 @@ class BulkQuestionItem(BaseModel):
     complexity: Complexity
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
+
+    @model_validator(mode="after")
+    def validate_options(self) -> "BulkQuestionItem":
+        _validate_mcq_options(self.question_type, self.options or [])
+        return self
 
 
 class BulkCreateRequest(BaseModel):

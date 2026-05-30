@@ -2,6 +2,8 @@ import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.common.validators import check_password_strength
+
 
 class SetupRequest(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=50)
@@ -9,10 +11,15 @@ class SetupRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        return check_password_strength(v)
+
 
 class AdminLoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=6)
+    password: str = Field(..., min_length=8)
 
 
 class CandidateRegisterRequest(BaseModel):
@@ -30,16 +37,8 @@ class CandidateRegisterRequest(BaseModel):
 
     @field_validator("password")
     @classmethod
-    def validate_password_strength(cls, v: str) -> str:
-        if not re.search(r"[A-Z]", v):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r"[a-z]", v):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r"\d", v):
-            raise ValueError("Password must contain at least one digit")
-        if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", v):
-            raise ValueError("Password must contain at least one special character")
-        return v
+    def validate_password(cls, v: str) -> str:
+        return check_password_strength(v)
 
     @field_validator("phone")
     @classmethod
@@ -56,8 +55,8 @@ class CandidateLoginRequest(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    credential: str
+    credential: str = Field(..., min_length=1)
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(..., min_length=1)
