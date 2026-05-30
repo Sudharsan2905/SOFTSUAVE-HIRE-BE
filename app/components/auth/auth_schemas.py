@@ -2,6 +2,7 @@ import re
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.common.constants.app_constants import CandidateType
 from app.common.validators import check_password_strength
 
 
@@ -27,18 +28,21 @@ class CandidateRegisterRequest(BaseModel):
     last_name: str | None = Field(None, max_length=50)
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15)
-    password: str = Field(..., min_length=8)
+    password: str | None = Field(None, min_length=8)
     gender: str = Field(..., pattern="^(male|female|other)$")
+    candidate_type: CandidateType = CandidateType.STUDENT
     dob: str | None = None
-    college_name: str | None = None
-    college_city: str | None = None
+    institution: str | None = None
+    location: str | None = None
     assessment_uuid: str | None = None
     google_id: str | None = None
 
     @field_validator("password")
     @classmethod
-    def validate_password(cls, v: str) -> str:
-        return check_password_strength(v)
+    def validate_password(cls, v: str | None) -> str | None:
+        if v is not None:
+            return check_password_strength(v)
+        return v
 
     @field_validator("phone")
     @classmethod

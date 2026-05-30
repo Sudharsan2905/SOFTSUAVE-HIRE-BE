@@ -150,7 +150,7 @@ class TestGoogleAuth:
         mock_httpx.AsyncClient.return_value = mock_client_instance
         return mock_httpx
 
-    async def test_new_user_created(self, db):
+    async def test_new_user_returns_pre_auth_data(self, db):
         mock_httpx = self._make_mock_httpx(
             200,
             {
@@ -163,7 +163,10 @@ class TestGoogleAuth:
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
             result = await auth_service.google_auth(db, "valid_credential")
-        assert result["access_token"]
+        assert result["needs_registration"] is True
+        assert result["google_data"]["email"] == "google@example.com"
+        assert result["google_data"]["first_name"] == "Google"
+        assert result["google_data"]["google_id"] == "google123"
 
     async def test_existing_candidate_logs_in(self, db, candidate_user):
         mock_httpx = self._make_mock_httpx(

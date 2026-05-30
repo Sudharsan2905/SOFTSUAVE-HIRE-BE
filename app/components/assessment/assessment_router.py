@@ -26,7 +26,7 @@ async def list_assessments(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await assessment_service.get_assessments(
         db, workspace_id, search, sort_by, sort_order, page, page_size
     )
@@ -39,7 +39,7 @@ async def create_assessment(
     request: CreateAssessmentRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.create_assessment(
         db, workspace_id, request.model_dump(), current_user["_id"]
     )
@@ -52,7 +52,7 @@ async def get_assessment(
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.get_assessment(db, workspace_id, assessment_id)
     return success_response("Assessment retrieved", result)
 
@@ -64,7 +64,7 @@ async def update_assessment(
     request: UpdateAssessmentRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.update_assessment(
         db, workspace_id, assessment_id, request.model_dump()
     )
@@ -87,7 +87,7 @@ async def list_submissions(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
-):
+) -> dict:
     result = await assessment_service.get_submissions(
         db,
         assessment_id,
@@ -111,7 +111,7 @@ async def export_submission_list(
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.export_submissions(db, assessment_id)
     return success_response("Export data retrieved", result)
 
@@ -126,7 +126,7 @@ async def get_submission(
     submission_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.get_submission_detail(db, submission_id)
     return success_response("Submission retrieved", result)
 
@@ -141,7 +141,7 @@ async def grant_reaccess(
     submission_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     await assessment_service.grant_reaccess(db, submission_id)
     return success_response("Re-access granted successfully")
 
@@ -157,7 +157,7 @@ async def export_submissions(
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.export_submissions(db, assessment_id)
     return success_response("Export data retrieved", result)
 
@@ -190,6 +190,6 @@ async def validate_share_link(
 
 @router.get("/assessments/share/{share_link}", response_model=ApiResponse)
 @limiter.limit("30/minute")
-async def get_by_share_link(request: Request, share_link: str, db: DB):
+async def get_by_share_link(request: Request, share_link: str, db: DB) -> dict:
     result = await assessment_service.get_assessment_by_share_link(db, share_link)
     return success_response("Assessment retrieved", result)

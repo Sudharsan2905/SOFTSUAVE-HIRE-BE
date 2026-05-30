@@ -4,7 +4,7 @@ from typing import Any
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import SubmissionStatus
+from app.common.constants.app_constants import QuestionType, SubmissionStatus
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
@@ -376,7 +376,12 @@ async def get_submissions(
 
 
 async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
-    """Fetch a single submission with the joined candidate user document.
+    """Fetch a single submission enriched with correct-answer data for admin review.
+
+    Each question in rounds_data is augmented with:
+    - candidate_answer: list of option IDs (MCQ) or essay text string the candidate submitted
+    - correct_option_ids: list of option IDs marked correct in the question bank (MCQ only)
+    - is_correct: True/False for MCQ questions, None for essay
 
     Raises:
         NotFoundException: If the submission does not exist.
@@ -388,6 +393,34 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     candidate = await db.users.find_one({"_id": sub["candidate_id"]}, {"password_hash": 0})
     result = serialize_doc(sub)
     result["candidate"] = serialize_doc(candidate)
+
+    for rd in result.get("rounds_data", []):
+        answers = rd.get("answers", {})
+        for q in rd.get("questions", []):
+            qid = q["id"]
+            raw_answer = answers.get(qid, [])
+            candidate_answer = [raw_answer] if isinstance(raw_answer, str) else raw_answer
+
+            original = await db.questions.find_one({"_id": ObjectId(qid)})
+            if original:
+                q_type = original.get("question_type", "essay")
+                if q_type in (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI):
+                    correct_ids = [
+                        str(o["id"]) for o in original.get("options", []) if o.get("is_correct")
+                    ]
+                    q["correct_option_ids"] = correct_ids
+                    q["is_correct"] = bool(candidate_answer) and set(candidate_answer) == set(
+                        correct_ids
+                    )
+                else:
+                    q["correct_option_ids"] = []
+                    q["is_correct"] = None
+            else:
+                q["correct_option_ids"] = []
+                q["is_correct"] = None
+
+            q["candidate_answer"] = candidate_answer
+
     return result
 
 
