@@ -46,6 +46,7 @@ logs/
 
 # Uploads / temp files
 uploads/
+!uploads/screenshots/.gitkeep
 temp/
 tmp/
 

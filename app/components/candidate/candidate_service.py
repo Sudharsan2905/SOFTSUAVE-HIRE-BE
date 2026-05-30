@@ -1,5 +1,6 @@
-import base64
+import asyncio
 import random
+from pathlib import Path
 from typing import Any
 
 from bson import ObjectId
@@ -15,7 +16,10 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.core.config import settings
 from app.core.logging import logger
+
+_EXT_MAP = {"image/jpeg": ".jpg", "image/png": ".png"}
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 _ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
@@ -329,10 +333,15 @@ async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[
 
 
 async def save_screenshot(
-    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, file_bytes: bytes
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    candidate_id: str,
+    file_bytes: bytes,
+    content_type: str = "image/jpeg",
 ) -> None:
-    """Append a base64-encoded screenshot to the submission's screenshots array.
+    """Save a screenshot to disk and record its path in the submission document.
 
+    Files are stored under SCREENSHOTS_DIR/{submission_id}/ with a UTC timestamp filename.
     Silently no-ops if the submission is not found.
     """
     sub = await db.assessment_submissions.find_one(
@@ -341,19 +350,32 @@ async def save_screenshot(
     if not sub:
         return
 
-    screenshot_data = base64.b64encode(file_bytes).decode()
     round_number = sub.get("current_round", 1)
+    ext = _EXT_MAP.get(content_type, ".jpg")
+    timestamp = utcnow().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"round{round_number}_{timestamp}{ext}"
+
+    folder = Path(settings.SCREENSHOTS_DIR) / submission_id
+    folder.mkdir(parents=True, exist_ok=True)
+    file_path = folder / filename
+
+    await asyncio.to_thread(file_path.write_bytes, file_bytes)
+
+    relative_path = str(file_path).replace("\\", "/")
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
         {
             "$push": {
                 "screenshots": {
-                    "url": screenshot_data,
+                    "path": relative_path,
                     "round": round_number,
                     "taken_at": utcnow(),
                 }
             }
         },
+    )
+    logger.info(
+        f"Screenshot saved: submission_id={submission_id} round={round_number} path={relative_path}"
     )
 
 
