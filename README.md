@@ -127,10 +127,10 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 # 2. Install runtime dependencies
-pip install -r requirements.txt
+pip install -r requirements/base.txt
 
 # 3. Install dev dependencies and set up pre-commit hooks
-pip install -r requirements-dev.txt
+pip install -r requirements/dev.txt
 pre-commit install
 detect-secrets scan --baseline .secrets.baseline   # first-time only
 git add .secrets.baseline
@@ -405,7 +405,7 @@ class ValidationException(AppException)   # 422
 | `RequestValidationError` | 422         | Pydantic schema validation failure       |
 | `Exception` (catch-all)  | 500         | Unhandled exceptions                     |
 
-The 422 `detail` field contains a semicolon-separated list of field-level error messages, e.g.:  
+The 422 `detail` field contains a semicolon-separated list of field-level error messages, e.g.:
 `"body.password: Value error, Password must contain at least one uppercase letter"`
 
 ---
@@ -784,8 +784,8 @@ Tests run in parallel with `addopts = "-n auto"` (pytest-xdist). 270 tests, ~18 
 | ------------------------------------------------- | ----------------------------------------- |
 | `uvicorn app.main:app --reload`                   | Start dev server with hot reload          |
 | `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start                          |
-| `pip install -r requirements.txt`                 | Install runtime dependencies              |
-| `pip install -r requirements-dev.txt`             | Install dev tools                         |
+| `pip install -r requirements/base.txt`            | Install runtime dependencies              |
+| `pip install -r requirements/dev.txt`             | Install dev tools                         |
 | `ruff check . --fix && ruff format .`             | Lint + format (run before committing)     |
 | `mypy app/`                                       | Type-check app source                     |
 | `pytest`                                          | Run full test suite                       |

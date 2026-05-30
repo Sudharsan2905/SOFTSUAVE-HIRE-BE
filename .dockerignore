@@ -1,0 +1,46 @@
+# Version control
+.git/
+
+# Python
+.venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.pyc
+
+# Tests and coverage
+test/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+.pytest_cache/
+
+# Dev and analysis tools
+.mypy_cache/
+.ruff_cache/
+.sonarlint/
+.sonar/
+.scannerwork/
+.pre-commit-config.yaml
+.secrets.baseline
+sonar-project.properties
+mypy.ini
+
+# Environment files — injected at runtime, never baked into the image
+.env
+.env.local
+.env.production
+.env.staging
+
+# Uploads — mounted as a Docker volume at runtime
+uploads/
+
+# Docs and editor config
+README.md
+.vscode/
+.idea/
+
+# Temp
+temp/
+tmp/

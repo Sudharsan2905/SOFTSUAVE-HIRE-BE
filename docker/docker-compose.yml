@@ -1,0 +1,47 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: softsuave-hire-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      # Override MONGODB_URL to point at the mongo service inside Docker
+      MONGODB_URL: mongodb://mongo:27017
+      SCREENSHOTS_DIR: /app/uploads/screenshots
+    volumes:
+      - screenshots:/app/uploads/screenshots
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hire-net
+
+  mongo:
+    image: mongo:7.0
+    container_name: softsuave-hire-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - hire-net
+
+volumes:
+  mongo_data:
+  screenshots:
+
+networks:
+  hire-net:
+    driver: bridge
