@@ -40,8 +40,7 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.users.create_index([("email", ASCENDING)], unique=True)
     await db.users.create_index([("role", ASCENDING)])
 
-    await db.candidates.create_index([("user_id", ASCENDING)], unique=True)
-    await db.candidates.create_index([("phone", ASCENDING)])
+    await db.users.create_index([("candidate_data.phone", ASCENDING)], sparse=True)
 
     await db.workspaces.create_index([("created_by", ASCENDING)])
     await db.workspaces.create_index([("members.user_id", ASCENDING)])

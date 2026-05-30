@@ -78,22 +78,25 @@ class TestCreateAdminUser:
         assert result["email"] == "another@example.com"
 
 
+_DUMMY_ID = str(ObjectId())  # non-existent ID so no user is excluded from list results
+
+
 class TestListUsers:
     async def test_returns_all_admins(self, db, super_admin):
-        result = await user_service.list_users(db)
+        result = await user_service.list_users(db, _DUMMY_ID)
         assert len(result) >= 1
 
     async def test_filters_by_role(self, db, super_admin):
-        result = await user_service.list_users(db, role_filter=UserRole.SUPER_ADMIN)
+        result = await user_service.list_users(db, _DUMMY_ID, role_filter=UserRole.SUPER_ADMIN)
         assert all(u["role"] == UserRole.SUPER_ADMIN for u in result)
 
     async def test_filters_by_is_active(self, db, super_admin):
-        result = await user_service.list_users(db, is_active_filter=True)
+        result = await user_service.list_users(db, _DUMMY_ID, is_active_filter=True)
         assert all(u["is_active"] is True for u in result)
 
     async def test_filters_by_is_active_false(self, db, super_admin):
         await db.users.update_one({"_id": super_admin["_id"]}, {"$set": {"is_active": False}})
-        result = await user_service.list_users(db, is_active_filter=False)
+        result = await user_service.list_users(db, _DUMMY_ID, is_active_filter=False)
         assert len(result) >= 1
 
 
@@ -132,7 +135,7 @@ class TestUpdateUser:
         result = await user_service.update_user(
             db, str(admin_user["_id"]), {"workspace_ids": [str(workspace["_id"])]}
         )
-        assert any(w["id"] == str(workspace["_id"]) for w in result["workspaces"])
+        assert any(w["id"] == str(workspace["_id"]) for w in result.get("workspaces", []))
 
     async def test_update_default_workspace(self, db, admin_user, workspace):
         ws_id = str(workspace["_id"])
@@ -141,13 +144,13 @@ class TestUpdateUser:
             str(admin_user["_id"]),
             {"workspace_ids": [ws_id], "default_workspace_id": ws_id},
         )
-        assert result["default_workspace_id"] == ws_id
+        assert result.get("default_workspace_id") == ws_id
 
     async def test_remove_current_default_workspace(self, db, admin_user, workspace):
         """When workspace_ids excludes the current default, default resets."""
         # admin_user already has workspace as default; reassign to empty
         result = await user_service.update_user(db, str(admin_user["_id"]), {"workspace_ids": []})
-        assert result["default_workspace_id"] is None
+        assert result.get("default_workspace_id") is None
 
     async def test_update_with_no_changes(self, db, admin_user):
         """Empty update dict should still return the user."""
@@ -192,7 +195,12 @@ class TestUpdateMe:
 
     async def test_update_password(self, db, super_admin):
         result = await user_service.update_me(
-            db, str(super_admin["_id"]), {"password": "NewPass@123"}
+            db,
+            str(super_admin["_id"]),
+            {
+                "password": "NewPass@123",  # pragma: allowlist secret
+                "current_password": "SuperPass@123",  # pragma: allowlist secret
+            },
         )
         assert result["email"] == "superadmin@example.com"
 
@@ -200,7 +208,7 @@ class TestUpdateMe:
         result = await user_service.update_me(
             db, str(super_admin["_id"]), {"default_workspace_id": str(workspace["_id"])}
         )
-        assert result["default_workspace_id"] == str(workspace["_id"])
+        assert result.get("default_workspace_id") == str(workspace["_id"])
 
     async def test_update_default_workspace_not_found(self, db, super_admin):
         with pytest.raises(NotFoundException):

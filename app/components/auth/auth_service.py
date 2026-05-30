@@ -5,7 +5,7 @@ import httpx
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import ADMIN_ROLES, UserRole
+from app.common.constants.app_constants import ADMIN_ROLES, CandidateType, UserRole
 from app.common.exceptions import (
     ConflictException,
     ForbiddenException,
@@ -89,28 +89,27 @@ async def admin_login(db: AsyncIOMotorDatabase, email: str, password: str) -> di
 
 
 async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -> dict:
-    """Authenticate a candidate and issue JWT tokens, including profile data.
+    """Authenticate a candidate and issue JWT tokens.
 
     Raises:
-        UnauthorizedException: On invalid credentials.
+        UnauthorizedException: On invalid credentials or deactivated account.
     """
     user = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
     if not user or not verify_password(password, user.get("password_hash", "")):
         logger.warning(f"Failed candidate login attempt for email: {email}")
         raise UnauthorizedException("Invalid email or password")
-
+    if not user.get("is_active", True):
+        logger.warning(f"Deactivated candidate attempted login: {email}")
+        raise UnauthorizedException("Your account has been deactivated.")
     logger.info(f"Candidate logged in: {email}")
-    result = await _issue_tokens(db, user)
-    candidate = await db.candidates.find_one({"user_id": user["_id"]})
-    if candidate:
-        result["user"]["profile"] = serialize_doc(candidate)
-    return result
+    return await _issue_tokens(db, user)
 
 
 async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
-    """Register a new candidate, create their profile, and issue JWT tokens.
+    """Register a new candidate and issue JWT tokens.
 
-    Supports Google-linked registrations when google_id is provided.
+    candidate_data (phone, gender, dob, candidate_type, institution, location) is stored
+    as a nested subdocument on the user. Google-linked registrations set email_verified=True.
 
     Raises:
         ConflictException: If the email is already registered.
@@ -119,40 +118,43 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         raise ConflictException("Email already registered")
     logger.info(f"Registering new candidate: {data['email']}")
 
-    password_hash = hash_password(data.pop("password"))
+    raw_password = data.pop("password", None)
     google_id = data.pop("google_id", None)
     data.pop("assessment_uuid", None)
+
+    if not google_id and not raw_password:
+        from app.common.exceptions import ValidationException
+
+        raise ValidationException("Password is required for email registration")
+
+    password_hash = hash_password(raw_password) if raw_password else None
     now = utcnow()
 
     user_doc = {
-        "email": data["email"],
         "first_name": data["first_name"],
         "last_name": data.get("last_name") or "",
-        "role": UserRole.CANDIDATE,
+        "email": data["email"],
         "password_hash": password_hash,
+        "role": UserRole.CANDIDATE,
+        "is_active": True,
+        "email_verified": bool(google_id),
+        "workspaces": [],
+        "default_workspace_id": None,
+        "candidate_data": {
+            "candidate_type": data.get("candidate_type", CandidateType.STUDENT),
+            "google_id": google_id,
+            "phone": data.get("phone"),
+            "dob": data.get("dob"),
+            "gender": data.get("gender"),
+            "institution": data.get("institution"),
+            "location": data.get("location"),
+        },
         "created_at": now,
         "updated_at": now,
     }
-    if google_id:
-        user_doc["google_id"] = google_id
 
     result = await db.users.insert_one(user_doc)
-    user_id = result.inserted_id
-
-    await db.candidates.insert_one(
-        {
-            "user_id": user_id,
-            "phone": data.get("phone"),
-            "gender": data.get("gender"),
-            "dob": data.get("dob"),
-            "college_name": data.get("college_name"),
-            "college_city": data.get("college_city"),
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
-
-    user_doc["_id"] = user_id
+    user_doc["_id"] = result.inserted_id
     return await _issue_tokens(db, user_doc)
 
 
@@ -217,7 +219,6 @@ async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
     user = await db.users.find_one({"email": email})
 
     if not user:
-        # New user — return pre-auth data so the client can prefill the registration form
         logger.info(f"Google OAuth pre-auth (new user): {email}")
         return {
             "needs_registration": True,
@@ -234,11 +235,7 @@ async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
         raise ForbiddenException("This Google account is not registered as a candidate")
 
     logger.info(f"Google OAuth login (existing candidate): {email}")
-    tokens = await _issue_tokens(db, user)
-    candidate = await db.candidates.find_one({"user_id": user["_id"]})
-    if candidate:
-        tokens["user"]["profile"] = serialize_doc(candidate)
-    return tokens
+    return await _issue_tokens(db, user)
 
 
 async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
@@ -254,12 +251,13 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "password_hash": hash_password(data["password"]),
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
+        "email_verified": False,
         "workspaces": [],
         "default_workspace_id": None,
+        "candidate_data": None,
         "created_at": now,
         "updated_at": now,
     }
     user_result = await db.users.insert_one(user_doc)
-    user_id = user_result.inserted_id
-    user_doc["_id"] = user_id
+    user_doc["_id"] = user_result.inserted_id
     return await _issue_tokens(db, user_doc)

@@ -21,7 +21,7 @@ _MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024  # 2 MB
 
 @router.get("/assessment/{share_link}", response_model=ApiResponse)
 @limiter.limit("30/minute")
-async def get_assessment(request: Request, share_link: str, db: DB):
+async def get_assessment(request: Request, share_link: str, db: DB) -> dict:
     result = await candidate_service.get_candidate_assessment(db, share_link)
     return success_response("Assessment retrieved", result)
 
@@ -33,7 +33,7 @@ async def start_assessment(
     share_link: str,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     result = await candidate_service.start_assessment(db, share_link, current_user["_id"])
     return success_response("Assessment started", result)
 
@@ -43,7 +43,7 @@ async def get_current_round(
     submission_id: str,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     result = await candidate_service.get_current_round(db, submission_id, current_user["_id"])
     return success_response("Round retrieved", result)
 
@@ -54,7 +54,7 @@ async def submit_answer(
     request: SubmitAnswerRequest,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     result = await candidate_service.submit_answer(
         db, submission_id, current_user["_id"], request.question_id, request.answer
     )
@@ -66,7 +66,7 @@ async def finish_round(
     submission_id: str,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
     return success_response("Round finished", result)
 
@@ -79,7 +79,7 @@ async def save_screenshot(
     db: DB,
     current_user: CurrentUser,
     file: Annotated[UploadFile, File()],
-):
+) -> dict:
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise ValidationException("Screenshot must be a JPEG or PNG image")
     content = await file.read()
@@ -99,7 +99,7 @@ async def flag_malpractice(
     request: MalpracticeRequest,
     db: DB,
     current_user: CurrentUser,
-):
+) -> dict:
     await candidate_service.flag_malpractice(db, submission_id, current_user["_id"], request.type)
     return success_response("Activity flagged")
 
@@ -114,7 +114,7 @@ async def get_live_interviews(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await candidate_service.get_live_interviews(
         db, search, monitoring_type, sort_by, sort_order, page, page_size
     )

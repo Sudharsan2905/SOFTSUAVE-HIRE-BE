@@ -29,7 +29,7 @@ async def list_categories(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await question_service.get_categories(db, search, sort_by, sort_order, page, page_size)
     return success_response("Categories retrieved", result)
 
@@ -39,7 +39,7 @@ async def create_category(
     request: CreateCategoryRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.create_category(db, request.model_dump(), current_user["_id"])
     return success_response("Category created", result)
 
@@ -50,7 +50,7 @@ async def update_category(
     request: UpdateCategoryRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.update_category(db, category_id, request.model_dump())
     return success_response("Category updated", result)
 
@@ -60,7 +60,7 @@ async def delete_category(
     category_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     await question_service.delete_category(db, category_id)
     return success_response("Category and its questions deleted")
 
@@ -77,7 +77,7 @@ async def list_questions(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await question_service.get_questions(
         db, category_id, search, complexity, question_type, sort_by, sort_order, page, page_size
     )
@@ -90,7 +90,7 @@ async def create_question(
     request: CreateQuestionRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.create_question(
         db, category_id, request.model_dump(), current_user["_id"]
     )
@@ -103,7 +103,7 @@ async def bulk_create(
     request: BulkCreateRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.bulk_create_questions(
         db, category_id, [q.model_dump() for q in request.questions], current_user["_id"]
     )
@@ -118,7 +118,7 @@ async def ai_generate(
     request: AIGenerateRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.ai_generate_questions(
         db,
         category_id,
@@ -140,7 +140,7 @@ async def excel_import(
     current_user: AdminUser,
     file: Annotated[UploadFile, File()],
     column_map: Annotated[str, Form()] = "{}",
-):
+) -> dict:
     file_data = await file.read()
     try:
         col_map = json.loads(column_map)
@@ -158,7 +158,7 @@ async def update_question(
     request: UpdateQuestionRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await question_service.update_question(db, question_id, request.model_dump())
     return success_response("Question updated", result)
 
@@ -168,6 +168,6 @@ async def delete_question(
     question_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     await question_service.delete_question(db, question_id)
     return success_response("Question deleted")

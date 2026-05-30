@@ -1,5 +1,9 @@
 """Shared pytest fixtures for all tests."""
 
+import os
+
+os.environ["RATELIMIT_ENABLED"] = "0"  # disable rate limiting before app modules are imported
+
 import pytest
 from mongomock_motor import AsyncMongoMockClient
 
@@ -25,8 +29,10 @@ async def super_admin(db):
         "password_hash": hash_password("SuperPass@123"),
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
+        "email_verified": False,
         "workspaces": [],
         "default_workspace_id": None,
+        "candidate_data": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -46,8 +52,10 @@ async def admin_user(db, workspace):
         "password_hash": hash_password("AdminPass@123"),
         "role": UserRole.ADMIN,
         "is_active": True,
+        "email_verified": False,
         "workspaces": [ws_ref],
         "default_workspace_id": str(workspace["_id"]),
+        "candidate_data": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -65,18 +73,24 @@ async def candidate_user(db):
         "email": "candidate@example.com",
         "password_hash": hash_password("CandPass@123"),
         "role": UserRole.CANDIDATE,
+        "is_active": True,
+        "email_verified": False,
+        "workspaces": [],
+        "default_workspace_id": None,
+        "candidate_data": {
+            "candidate_type": "student",
+            "google_id": None,
+            "phone": "9999999999",
+            "dob": None,
+            "gender": "male",
+            "institution": None,
+            "location": None,
+        },
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
     result = await db.users.insert_one(doc)
     doc["_id"] = result.inserted_id
-    await db.candidates.insert_one(
-        {
-            "user_id": result.inserted_id,
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
-    )
     return doc
 
 

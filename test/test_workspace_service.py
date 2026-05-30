@@ -126,8 +126,9 @@ class TestInviteMembers:
                 "_id": new_admin_id,
                 "email": "fresh@example.com",
                 "role": UserRole.ADMIN,
-                "default_workspace_id": None,
                 "workspaces": [],
+                "default_workspace_id": None,
+                "candidate_data": None,
                 "created_at": utcnow(),
                 "updated_at": utcnow(),
             }
@@ -136,7 +137,7 @@ class TestInviteMembers:
             db, str(workspace["_id"]), [str(new_admin_id)], str(super_admin["_id"])
         )
         user = await db.users.find_one({"_id": new_admin_id})
-        assert user["default_workspace_id"] == str(workspace["_id"])
+        assert user.get("default_workspace_id") == str(workspace["_id"])
 
 
 class TestGetMembers:
