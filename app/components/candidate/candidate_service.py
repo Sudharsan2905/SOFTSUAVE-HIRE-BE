@@ -24,6 +24,14 @@ _EXT_MAP = {"image/jpeg": ".jpg", "image/png": ".png"}
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 _ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
 
+# MongoDB pipeline operator constants
+_MATCH = "$match"
+_REGEX = "$regex"
+_OPTIONS = "$options"
+
+# Use SystemRandom (backed by os.urandom) for question shuffling
+_rng = random.SystemRandom()
+
 
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     """Return assessment metadata for a candidate via share link, without internal question IDs.
@@ -38,6 +46,72 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
     return safe
+
+
+async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) -> dict:
+    """Resume or raise for an existing submission.
+
+    Raises:
+        ForbiddenException: If the submission is in a terminal state (COMPLETED or MALPRACTICE).
+    """
+    status = existing.get("status")
+    if status in [SubmissionStatus.COMPLETED, SubmissionStatus.MALPRACTICE]:
+        raise ForbiddenException(
+            "You have already completed this assessment. Please contact admin for re-access."
+        )
+    if status == SubmissionStatus.IN_PROGRESS:
+        return serialize_doc(existing)
+    await db.assessment_submissions.update_one(
+        {"_id": existing["_id"]},
+        {
+            "$set": {
+                "status": SubmissionStatus.IN_PROGRESS,
+                "started_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        },
+    )
+    updated = await db.assessment_submissions.find_one({"_id": existing["_id"]})
+    return serialize_doc(updated)
+
+
+def _sanitize_question(q: dict) -> dict:
+    """Strip answer metadata and shuffle MCQ options for candidate-facing use."""
+    sq = serialize_doc(q)
+    q_type = sq.pop("question_type", "essay")
+    if q_type in (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI):
+        opts = [{k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])]
+        _rng.shuffle(opts)
+        sq["options"] = opts
+    sq.pop("correct_answer", None)
+    sq["text"] = sq.pop("question_text", "")
+    sq["type"] = "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type
+    return sq
+
+
+async def _build_round_data(db: AsyncIOMotorDatabase, round_cfg: dict) -> dict:
+    """Sample and sanitize questions for a single assessment round."""
+    question_ids = round_cfg.get("question_ids", [])
+    required = round_cfg["question_count"]
+    selected_ids = (
+        _rng.sample(question_ids, min(required, len(question_ids)))
+        if len(question_ids) >= required
+        else question_ids
+    )
+    questions_raw = await db.questions.find({"_id": {"$in": selected_ids}}).to_list(
+        len(selected_ids)
+    )
+    safe_questions = [_sanitize_question(q) for q in questions_raw]
+    _rng.shuffle(safe_questions)
+    return {
+        "round_number": round_cfg["round_number"],
+        "question_count": required,
+        "max_duration_minutes": round_cfg["max_duration_minutes"],
+        "questions": safe_questions,
+        "answers": {},
+        "completed": False,
+        "started_at": None,
+    }
 
 
 async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_id: str) -> dict:
@@ -61,72 +135,12 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
             "candidate_id": ObjectId(candidate_id),
         }
     )
-
     if existing:
-        status = existing.get("status")
-        if status in [SubmissionStatus.COMPLETED, SubmissionStatus.MALPRACTICE]:
-            raise ForbiddenException(
-                "You have already completed this assessment. Please contact admin for re-access."
-            )
-        if status == SubmissionStatus.IN_PROGRESS:
-            return serialize_doc(existing)
-        if status == SubmissionStatus.PENDING:
-            await db.assessment_submissions.update_one(
-                {"_id": existing["_id"]},
-                {
-                    "$set": {
-                        "status": SubmissionStatus.IN_PROGRESS,
-                        "started_at": utcnow(),
-                        "updated_at": utcnow(),
-                    }
-                },
-            )
-            updated = await db.assessment_submissions.find_one({"_id": existing["_id"]})
-            return serialize_doc(updated)
+        return await _handle_existing_submission(db, existing)
 
-    rounds_data = []
-    for round_cfg in assessment.get("rounds", []):
-        question_ids = round_cfg.get("question_ids", [])
-        required = round_cfg["question_count"]
-
-        selected_ids = (
-            random.sample(question_ids, min(required, len(question_ids)))
-            if len(question_ids) >= required
-            else question_ids
-        )
-
-        questions_raw = await db.questions.find({"_id": {"$in": selected_ids}}).to_list(
-            len(selected_ids)
-        )
-
-        safe_questions = []
-        for q in questions_raw:
-            sq = serialize_doc(q)
-            q_type = sq.pop("question_type", "essay")
-            if q_type in [QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI]:
-                opts = [
-                    {k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])
-                ]
-                random.shuffle(opts)
-                sq["options"] = opts
-            sq.pop("correct_answer", None)
-            sq["text"] = sq.pop("question_text", "")
-            sq["type"] = "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type
-            safe_questions.append(sq)
-
-        random.shuffle(safe_questions)
-
-        rounds_data.append(
-            {
-                "round_number": round_cfg["round_number"],
-                "question_count": required,
-                "max_duration_minutes": round_cfg["max_duration_minutes"],
-                "questions": safe_questions,
-                "answers": {},
-                "completed": False,
-                "started_at": None,
-            }
-        )
+    rounds_data = [
+        await _build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", [])
+    ]
 
     now = utcnow()
     submission = {
@@ -279,22 +293,40 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
             f"candidate_id={candidate_id} score={percentage:.1f}%"
         )
         return {"completed": True, "percentage": percentage}
-    else:
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {
-                "$set": {
-                    "current_round": current + 1,
-                    "updated_at": utcnow(),
-                    f"rounds_data.{idx}.completed": True,
-                }
-            },
-        )
-        logger.info(
-            f"Round {current} finished: submission_id={submission_id} "
-            f"→ advancing to round {current + 1}"
-        )
-        return {"completed": False, "next_round": current + 1}
+
+    await db.assessment_submissions.update_one(
+        {"_id": sub["_id"]},
+        {
+            "$set": {
+                "current_round": current + 1,
+                "updated_at": utcnow(),
+                f"rounds_data.{idx}.completed": True,
+            }
+        },
+    )
+    logger.info(
+        f"Round {current} finished: submission_id={submission_id} "
+        f"→ advancing to round {current + 1}"
+    )
+    return {"completed": False, "next_round": current + 1}
+
+
+async def _score_question(db: AsyncIOMotorDatabase, q: dict, answers: dict) -> int:
+    """Return 1 if the candidate's MCQ answer is fully correct, 0 otherwise.
+
+    Essay questions always return 0.
+    """
+    if q.get("question_type") == QuestionType.ESSAY:
+        return 0
+    qid = q.get("id")
+    original = await db.questions.find_one({"_id": ObjectId(qid)})
+    if not original:
+        return 0
+    correct_ids = {o["id"] for o in original.get("options", []) if o.get("is_correct")}
+    given = answers.get(qid, [])
+    if isinstance(given, str):
+        given = [given]
+    return 1 if set(given) == correct_ids else 0
 
 
 async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[int, float]:
@@ -304,30 +336,12 @@ async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[
     """
     total = 0
     correct = 0
-
     for rd in submission.get("rounds_data", []):
         questions = rd.get("questions", [])
         answers = rd.get("answers", {})
-
+        total += len(questions)
         for q in questions:
-            qid = q.get("id")
-            total += 1
-
-            if q.get("question_type") == QuestionType.ESSAY:
-                continue
-
-            original = await db.questions.find_one({"_id": ObjectId(qid)})
-            if not original:
-                continue
-
-            correct_ids = {o["id"] for o in original.get("options", []) if o.get("is_correct")}
-            given = answers.get(qid, [])
-            if isinstance(given, str):
-                given = [given]
-
-            if set(given) == correct_ids:
-                correct += 1
-
+            correct += await _score_question(db, q, answers)
     pct = round((correct / total * 100) if total > 0 else 0.0, 2)
     return correct, pct
 
@@ -435,7 +449,7 @@ async def get_live_interviews(
     sort_field = sort_by if sort_by in ["started_at", "updated_at", "created_at"] else "started_at"
 
     pipeline: list[Any] = [
-        {"$match": {"status": "in_progress"}},
+        {_MATCH: {"status": "in_progress"}},
         {
             "$lookup": {
                 "from": "assessments",
@@ -458,15 +472,16 @@ async def get_live_interviews(
     ]
 
     if monitoring_type:
-        pipeline.append({"$match": {"assessment.accessibility": monitoring_type}})
+        pipeline.append({_MATCH: {"assessment.accessibility": monitoring_type}})
     if search:
+        escaped = safe_regex(search)
         pipeline.append(
             {
-                "$match": {
+                _MATCH: {
                     "$or": [
-                        {"candidate.first_name": {"$regex": safe_regex(search), "$options": "i"}},
-                        {"candidate.last_name": {"$regex": safe_regex(search), "$options": "i"}},
-                        {"assessment.name": {"$regex": safe_regex(search), "$options": "i"}},
+                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"assessment.name": {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
