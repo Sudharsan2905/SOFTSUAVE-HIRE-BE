@@ -1,12 +1,12 @@
-from typing import Any
+from pydantic import BaseModel, Field
 
-from pydantic import BaseModel
+from app.common.constants.app_constants import MalpracticeType
 
 
 class SubmitAnswerRequest(BaseModel):
-    question_id: str
-    answer: Any
+    question_id: str = Field(..., min_length=1)
+    answer: str | list[str]
 
 
 class MalpracticeRequest(BaseModel):
-    type: str
+    type: MalpracticeType

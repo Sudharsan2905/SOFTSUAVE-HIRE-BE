@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.app_constants import AssessmentAccessibility
 
@@ -10,6 +10,19 @@ class MonitoringConfig(BaseModel):
     screenshot_mode: str = Field("time_interval", pattern="^(time_interval|count)$")
     screenshot_interval_minutes: int | None = Field(None, ge=1)
     screenshot_count: int | None = Field(None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_screenshot_config(self) -> "MonitoringConfig":
+        # Only enforce when screenshot_mode was explicitly provided by the caller.
+        if "screenshot_mode" not in self.model_fields_set:
+            return self
+        if self.screenshot_mode == "time_interval" and self.screenshot_interval_minutes is None:
+            raise ValueError(
+                "screenshot_interval_minutes is required when screenshot_mode is 'time_interval'"
+            )
+        if self.screenshot_mode == "count" and self.screenshot_count is None:
+            raise ValueError("screenshot_count is required when screenshot_mode is 'count'")
+        return self
 
 
 class RoundConfig(BaseModel):

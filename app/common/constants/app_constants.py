@@ -37,3 +37,11 @@ class SortOrder(str, Enum):
 
 
 ADMIN_ROLES = [UserRole.SUPER_ADMIN, UserRole.ADMIN]
+
+
+class MalpracticeType(str, Enum):
+    TAB_SWITCH = "tab_switch"
+    MULTIPLE_FACES = "multiple_faces"
+    NO_FACE = "no_face"
+    BACKGROUND_NOISE = "background_noise"
+    COPY_PASTE = "copy_paste"
