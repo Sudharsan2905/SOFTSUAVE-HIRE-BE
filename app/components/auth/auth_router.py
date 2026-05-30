@@ -54,14 +54,16 @@ async def google_login(request: Request, body: GoogleAuthRequest, db: DB):
 
 
 @router.post("/refresh", response_model=ApiResponse)
-async def refresh_token(request: RefreshTokenRequest, db: DB):
-    result = await auth_service.refresh_access_token(db, request.refresh_token)
+@limiter.limit("20/minute")
+async def refresh_token(request: Request, body: RefreshTokenRequest, db: DB):
+    result = await auth_service.refresh_access_token(db, body.refresh_token)
     return success_response("Token refreshed", result)
 
 
 @router.post("/logout", response_model=ApiResponse)
-async def logout(request: RefreshTokenRequest, db: DB):
-    await auth_service.logout(db, request.refresh_token)
+@limiter.limit("20/minute")
+async def logout(request: Request, body: RefreshTokenRequest, db: DB):
+    await auth_service.logout(db, body.refresh_token)
     return success_response("Logged out successfully")
 
 

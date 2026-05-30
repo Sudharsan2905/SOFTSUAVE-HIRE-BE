@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.common.responses import ApiResponse, success_response
 from app.components.auth.auth_dependencies import CurrentUser, SuperAdminUser
@@ -11,6 +11,7 @@ from app.components.users.user_schemas import (
     UpdateUserRequest,
 )
 from app.core.dependencies import DB
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -28,7 +29,9 @@ async def update_me(
 
 
 @router.post("", response_model=ApiResponse)
+@limiter.limit("10/hour")
 async def create_user(
+    http_request: Request,
     request: CreateAdminUserRequest,
     db: DB,
     current_user: SuperAdminUser,

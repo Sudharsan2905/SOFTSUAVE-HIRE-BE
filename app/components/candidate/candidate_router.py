@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, Query, Request, UploadFile
 
 from app.common.exceptions import ValidationException
 from app.common.responses import ApiResponse, success_response
@@ -11,6 +11,7 @@ from app.components.candidate.candidate_schemas import (
     SubmitAnswerRequest,
 )
 from app.core.dependencies import DB
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -19,13 +20,16 @@ _MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024  # 2 MB
 
 
 @router.get("/assessment/{share_link}", response_model=ApiResponse)
-async def get_assessment(share_link: str, db: DB):
+@limiter.limit("30/minute")
+async def get_assessment(request: Request, share_link: str, db: DB):
     result = await candidate_service.get_candidate_assessment(db, share_link)
     return success_response("Assessment retrieved", result)
 
 
 @router.post("/assessment/{share_link}/start", response_model=ApiResponse)
+@limiter.limit("5/hour")
 async def start_assessment(
+    request: Request,
     share_link: str,
     db: DB,
     current_user: CurrentUser,
@@ -68,7 +72,9 @@ async def finish_round(
 
 
 @router.post("/submission/{submission_id}/screenshot", response_model=ApiResponse)
+@limiter.limit("30/minute")
 async def save_screenshot(
+    request: Request,
     submission_id: str,
     db: DB,
     current_user: CurrentUser,
@@ -84,7 +90,9 @@ async def save_screenshot(
 
 
 @router.post("/submission/{submission_id}/malpractice", response_model=ApiResponse)
+@limiter.limit("10/minute")
 async def flag_malpractice(
+    http_request: Request,
     submission_id: str,
     request: MalpracticeRequest,
     db: DB,
