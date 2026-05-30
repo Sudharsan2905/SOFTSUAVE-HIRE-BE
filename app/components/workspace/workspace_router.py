@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.common.responses import ApiResponse, success_response
 from app.components.auth.auth_dependencies import AdminUser, SuperAdminUser
@@ -11,6 +11,7 @@ from app.components.workspace.workspace_schemas import (
     UpdateWorkspaceRequest,
 )
 from app.core.dependencies import DB
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -29,7 +30,9 @@ async def list_workspaces(
 
 
 @router.post("", response_model=ApiResponse)
+@limiter.limit("10/hour")
 async def create_workspace(
+    http_request: Request,
     request: CreateWorkspaceRequest,
     db: DB,
     current_user: SuperAdminUser,
@@ -73,7 +76,9 @@ async def update_workspace(
 
 
 @router.post("/{workspace_id}/invite", response_model=ApiResponse)
+@limiter.limit("10/hour")
 async def invite_members(
+    http_request: Request,
     workspace_id: str,
     request: InviteMemberRequest,
     db: DB,
@@ -92,7 +97,7 @@ async def delete_workspace(
     current_user: SuperAdminUser,
 ):
     await workspace_service.delete_workspace(db, workspace_id)
-    return success_response("Workspace deleted", None)
+    return success_response("Workspace deleted")
 
 
 @router.get("/{workspace_id}/members", response_model=ApiResponse)

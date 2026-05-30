@@ -7,6 +7,7 @@ class ApiResponse(BaseModel):
     success: bool
     message: str
     data: Any = None
+    detail: str | None = None
 
 
 def success_response(message: str, data: Any = None) -> dict:

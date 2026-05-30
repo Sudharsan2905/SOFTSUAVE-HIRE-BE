@@ -1,7 +1,7 @@
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 
 from app.common.responses import ApiResponse, success_response
 from app.components.auth.auth_dependencies import AdminUser
@@ -15,6 +15,7 @@ from app.components.question_bank.question_schemas import (
     UpdateQuestionRequest,
 )
 from app.core.dependencies import DB
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -110,7 +111,9 @@ async def bulk_create(
 
 
 @router.post("/categories/{category_id}/ai-generate", response_model=ApiResponse)
+@limiter.limit("10/hour")
 async def ai_generate(
+    http_request: Request,
     category_id: str,
     request: AIGenerateRequest,
     db: DB,
@@ -129,7 +132,9 @@ async def ai_generate(
 
 
 @router.post("/categories/{category_id}/excel-import", response_model=ApiResponse)
+@limiter.limit("20/hour")
 async def excel_import(
+    request: Request,
     category_id: str,
     db: DB,
     current_user: AdminUser,

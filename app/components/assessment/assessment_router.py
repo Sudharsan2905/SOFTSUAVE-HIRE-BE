@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.common.responses import ApiResponse, success_response
 from app.components.assessment import assessment_service
@@ -10,6 +10,7 @@ from app.components.assessment.assessment_schemas import (
 )
 from app.components.auth.auth_dependencies import AdminUser
 from app.core.dependencies import DB
+from app.core.limiter import limiter
 
 router = APIRouter()
 
@@ -124,7 +125,9 @@ async def grant_reaccess(
     "/workspaces/{workspace_id}/assessments/{assessment_id}/export",
     response_model=ApiResponse,
 )
+@limiter.limit("10/hour")
 async def export_submissions(
+    request: Request,
     workspace_id: str,
     assessment_id: str,
     db: DB,
@@ -135,6 +138,7 @@ async def export_submissions(
 
 
 @router.get("/assessments/share/{share_link}", response_model=ApiResponse)
-async def get_by_share_link(share_link: str, db: DB):
+@limiter.limit("30/minute")
+async def get_by_share_link(request: Request, share_link: str, db: DB):
     result = await assessment_service.get_assessment_by_share_link(db, share_link)
     return success_response("Assessment retrieved", result)

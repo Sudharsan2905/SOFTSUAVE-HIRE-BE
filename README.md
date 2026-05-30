@@ -13,37 +13,40 @@ FastAPI + Python backend for the SoftSuave Hire interview platform.
 5. [Application Factory](#application-factory)
 6. [Database & Indexes](#database--indexes)
 7. [Authentication & RBAC](#authentication--rbac)
-8. [API Reference](#api-reference)
-9. [Component Architecture](#component-architecture)
-10. [Common Utilities](#common-utilities)
-11. [Error Handling](#error-handling)
-12. [Response Format](#response-format)
-13. [Question Bank Module](#question-bank-module)
-14. [Assessment Module](#assessment-module)
-15. [Candidate Module](#candidate-module)
-16. [Email Service](#email-service)
-17. [Adding a New Module](#adding-a-new-module)
-18. [Code Quality & Linting](#code-quality--linting)
+8. [Request Validation](#request-validation)
+9. [Response Format](#response-format)
+10. [Error Handling](#error-handling)
+11. [Rate Limiting](#rate-limiting)
+12. [API Reference](#api-reference)
+13. [Component Architecture](#component-architecture)
+14. [Common Utilities](#common-utilities)
+15. [Question Bank Module](#question-bank-module)
+16. [Assessment Module](#assessment-module)
+17. [Candidate Module](#candidate-module)
+18. [Email Service](#email-service)
+19. [Adding a New Module](#adding-a-new-module)
+20. [Code Quality & Linting](#code-quality--linting)
 
 ---
 
 ## Tech Stack
 
-| Package           | Version | Purpose                                  |
-| ----------------- | ------- | ---------------------------------------- |
-| FastAPI           | 0.115.x | Web framework (async, OpenAPI auto-docs) |
-| Uvicorn           | 0.32.x  | ASGI server                              |
-| Motor             | 3.x     | Async MongoDB driver                     |
-| PyMongo           | 4.x     | MongoDB utilities (used by Motor)        |
-| Pydantic v2       | 2.x     | Data validation and settings             |
-| pydantic-settings | 2.x     | `.env` file loading via `BaseSettings`   |
-| python-jose       | 3.x     | JWT encode/decode (HS256)                |
-| passlib[bcrypt]   | 1.x     | Password hashing                         |
-| python-multipart  | 0.0.x   | Multipart form data (file uploads)       |
-| openpyxl          | 3.x     | Excel file parsing for question import   |
-| openai            | 2.x     | AI question generation (OpenAI API)      |
-| aiofiles          | 24.x    | Async file I/O                           |
-| httpx             | 0.27.x  | Async HTTP (Google OAuth)                |
+| Package           | Version  | Purpose                                  |
+| ----------------- | -------- | ---------------------------------------- |
+| FastAPI           | 0.115.x  | Web framework (async, OpenAPI auto-docs) |
+| Uvicorn           | 0.32.x   | ASGI server                              |
+| Motor             | 3.x      | Async MongoDB driver                     |
+| PyMongo           | 4.x      | MongoDB utilities (used by Motor)        |
+| Pydantic v2       | 2.x      | Data validation and settings             |
+| pydantic-settings | 2.x      | `.env` file loading via `BaseSettings`   |
+| python-jose       | 3.x      | JWT encode/decode (HS256)                |
+| passlib[bcrypt]   | 1.x      | Password hashing                         |
+| slowapi           | 0.1.9    | Rate limiting (wraps limits-per-IP)      |
+| python-multipart  | 0.0.x    | Multipart form data (file uploads)       |
+| openpyxl          | 3.x      | Excel file parsing for question import   |
+| openai            | 2.x      | AI question generation (OpenAI API)      |
+| aiofiles          | 24.x     | Async file I/O                           |
+| httpx             | 0.27.x   | Async HTTP (Google OAuth)                |
 
 ---
 
@@ -51,36 +54,47 @@ FastAPI + Python backend for the SoftSuave Hire interview platform.
 
 ```
 app/
-├── main.py                          # Entry point — imports from factory
-├── factory.py                       # create_application(): registers middleware,
-│                                    #   exception handlers, routers, lifespan
+├── main.py                          # Entry point — imports app from factory
+├── factory.py                       # create_application(): middleware, handlers,
+│                                    #   rate limiting, routers, health endpoint
 │
 ├── core/
 │   ├── config.py                    # Settings (BaseSettings, reads .env)
-│   ├── lifespan.py                  # DB connect on startup, index creation
+│   ├── lifespan.py                  # Startup: _validate_settings(), DB connect,
+│   │                                #   index creation on startup
+│   ├── limiter.py                   # Module-level slowapi Limiter singleton
+│   ├── logging.py                   # Structured logger (loguru) + setup_logging()
 │   └── dependencies.py              # get_db(request) → AsyncIOMotorDatabase
+│                                    #   DB / CurrentUser / AdminUser / SuperAdminUser
+│                                    #   / CandidateUser Annotated type aliases
 │
 ├── common/
-│   ├── exceptions.py                # AppException  hierarchy (401/403/404/409/422)
-│   ├── exception_handlers.py        # Registers handlers → uniform JSON error shape
-│   ├── responses.py                 # success_response() / error_response() helpers
-│   ├── utils.py                     # utcnow, generate_uuid, hash_token,
-│   │                                #   serialize_doc/docs, paginate_query,
-│   │                                #   build_pagination_meta
+│   ├── exceptions.py                # AppException hierarchy (401/403/404/409/422)
+│   ├── exception_handlers.py        # Registers handlers → uniform JSON shape
+│   ├── responses.py                 # ApiResponse model + success_response() /
+│   │                                #   error_response() helpers
+│   ├── validators.py                # check_password_strength() — shared across
+│   │                                #   all schemas that accept passwords
+│   ├── utils.py                     # utcnow, hash_token, serialize_doc/docs,
+│   │                                #   paginate_query, build_pagination_meta,
+│   │                                #   safe_regex, list_paginated
 │   ├── constants/
 │   │   └── app_constants.py         # Enums: UserRole, QuestionType, Complexity,
 │   │                                #   AssessmentAccessibility, SubmissionStatus,
-│   │                                #   SortOrder; ADMIN_ROLES list
+│   │                                #   SortOrder, MalpracticeType; ADMIN_ROLES list
+│   ├── middleware/
+│   │   └── logging_middleware.py    # RequestLoggingMiddleware — logs method, path,
+│   │                                #   status, duration, X-Request-ID per request
 │   └── services/
 │       └── email_service.py         # send_email() + send_assessment_invite()
 │
 └── components/                      # Feature modules (each self-contained)
     ├── auth/
-    │   ├── auth_schemas.py          # Request/response Pydantic models
-    │   ├── auth_service.py          # Business logic (hash, verify, issue tokens)
-    │   ├── auth_dependencies.py     # get_current_user, require_admin,
-    │   │                            #   require_super_admin, require_candidate
-    │   └── auth_router.py           # Route handlers
+    │   ├── auth_schemas.py
+    │   ├── auth_service.py
+    │   ├── auth_dependencies.py     # CurrentUser / AdminUser / SuperAdminUser
+    │   │                            #   / CandidateUser Annotated dependency aliases
+    │   └── auth_router.py
     ├── workspace/
     │   ├── workspace_schemas.py
     │   ├── workspace_service.py
@@ -118,7 +132,8 @@ pip install -r requirements.txt
 # 3. Install dev dependencies and set up pre-commit hooks
 pip install -r requirements-dev.txt
 pre-commit install
-detect-secrets scan > .secrets.baseline   # first-time only
+detect-secrets scan --baseline .secrets.baseline   # first-time only
+git add .secrets.baseline
 
 # 4. Copy and configure environment file
 cp .env.example .env
@@ -135,47 +150,48 @@ uvicorn app.main:app --reload --port 8000
 
 ## Environment Variables
 
-All settings are loaded by `app/core/config.py` via pydantic-settings. Create `.env` in the project root:
+All settings are loaded by `app/core/config.py` via pydantic-settings. Copy `.env.example` to `.env` and fill in values:
 
 ```env
-# App configuration
+# App
 APP_NAME=Softsuave Hire
 APP_VERSION=1.0.0
-APP_DESCRIPTION=Softsuave Hire is a platform to manage the hiring process for Softsuave.
+APP_DESCRIPTION=Softsuave Hire is a platform to manage the hiring process.
 
-# MongoDB
+# MongoDB (required)
 MONGODB_URL=mongodb://localhost:27017
 DATABASE_NAME=your_database_name
 
-# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# JWT (required) — generate with: python -c "import secrets; print(secrets.token_hex(32))"
 JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=360
 REFRESH_TOKEN_EXPIRE_DAYS=1
 
-# ── CORS ─────────────────────────────────────────────────────────────────────
-# JSON array of allowed origins
+# CORS — JSON array of allowed origins
 CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 
-# ── Google OAuth (optional) ──────────────────────────────────────────────────
+# Google OAuth (optional)
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 
-# ── OpenAI (optional — required for AI question generation) ─────────────────
+# OpenAI (optional — required for AI question generation)
 OPENAI_API_KEY=your-openai-api-key
 
-# ── Email / SMTP (optional — required for sending invite emails) ─────────────
+# SMTP (optional — required for invite emails)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-smtp-user
 SMTP_PASSWORD=your-smtp-password
 
-# ── App behaviour ────────────────────────────────────────────────────────────
+# App behaviour
 LOG_LEVEL=INFO
 MAX_REACCESS_COUNT=3
 ```
 
-**Never commit `.env` to version control.**
+> **Never commit `.env` to version control.** The `.env.example` file serves as the canonical template.
+
+On startup, `_validate_settings()` in `lifespan.py` raises `RuntimeError` immediately if `JWT_SECRET_KEY`, `MONGODB_URL`, or `DATABASE_NAME` is empty, preventing silent misconfiguration.
 
 ---
 
@@ -183,19 +199,23 @@ MAX_REACCESS_COUNT=3
 
 `app/factory.py` → `create_application()`:
 
-1. Instantiates `FastAPI` with `lifespan` context manager
-2. Adds `CORSMiddleware` (reads `settings.CORS_ORIGINS`)
-3. Registers exception handlers (AppException , RequestValidationError, generic Exception)
-4. Mounts all routers with prefixes:
+1. Instantiates `FastAPI` with the `lifespan` context manager (DB connect + index creation).
+2. Wires the `slowapi` rate limiter (`app.state.limiter`) and registers a custom `_rate_limit_handler` for 429 responses — same `{success, message, data, detail}` shape as all other errors.
+3. Adds `RequestLoggingMiddleware` (structured request logs with `X-Request-ID`).
+4. Adds `CORSMiddleware` (reads `settings.CORS_ORIGINS`).
+5. Registers exception handlers (`AppException`, `RequestValidationError`, generic `Exception`).
+6. Mounts all routers:
 
-| Prefix             | Router            | Notes                            |
-| ------------------ | ----------------- | -------------------------------- |
-| `/api/auth`        | auth_router       | Public + JWT-protected endpoints |
-| `/api/users`       | user_router       | Super admin only                 |
-| `/api/workspaces`  | workspace_router  | Admin + Super admin              |
-| `/api/questions`   | question_router   | Admin + Super admin              |
-| `/api/assessments` | assessment_router | Admin + Super admin              |
-| `/api/candidate`   | candidate_router  | Candidate JWT + some public      |
+| Prefix            | Router           | Notes                            |
+| ----------------- | ---------------- | -------------------------------- |
+| `/api/auth`       | auth_router      | Public + JWT-protected endpoints |
+| `/api/users`      | user_router      | Super admin only                 |
+| `/api/workspaces` | workspace_router | Admin + Super admin              |
+| `/api/questions`  | question_router  | Admin + Super admin              |
+| `/api`            | assessment_router| Workspace-scoped assessment paths|
+| `/api/candidate`  | candidate_router | Candidate JWT + some public      |
+
+7. Defines the `/api/health` endpoint (pings MongoDB, returns `{status, database}`).
 
 ---
 
@@ -215,10 +235,10 @@ The Motor client connects on startup via `app/core/lifespan.py` and is stored in
 | `questions`           | `category_id + created_at`     | Compound                         |
 | `assessments`         | `share_link`                   | Unique                           |
 | `assessments`         | `workspace_id + created_at`    | Compound                         |
-| `submissions`         | `candidate_id + assessment_id` | Unique (prevents double-entry)   |
-| `submissions`         | `assessment_id + status`       | Compound                         |
+| `assessment_submissions` | `candidate_id + assessment_id` | Unique (prevents double-entry) |
+| `assessment_submissions` | `assessment_id + status`    | Compound                         |
 
-All indexes are created idempotently in `lifespan.py` at application startup.
+All indexes are created idempotently at application startup.
 
 ---
 
@@ -228,225 +248,116 @@ All indexes are created idempotently in `lifespan.py` at application startup.
 
 ```
 POST /api/auth/admin/login  or  /api/auth/login
-  → returns { access_token, refresh_token, user }
+  → returns { access_token, refresh_token, token_type, user }
 
-access_token:   HS256 JWT, expires in 6 hours
+access_token:   HS256 JWT, expires in 6 hours (ACCESS_TOKEN_EXPIRE_MINUTES)
 refresh_token:  random 64-byte hex string, SHA-256 hashed before DB storage
-                TTL index auto-deletes after 1 day
+                TTL index auto-deletes after 1 day (REFRESH_TOKEN_EXPIRE_DAYS)
 
-POST /api/auth/refresh  →  { access_token }  (refresh token rotated)
+POST /api/auth/refresh  →  { access_token }
 POST /api/auth/logout   →  deletes refresh_token document from DB
 ```
 
 ### Dependency Guards
 
-`app/components/auth/auth_dependencies.py`:
+`app/components/auth/auth_dependencies.py` exports `Annotated` type aliases for use as FastAPI dependencies:
 
 ```python
-get_current_user      # verifies Bearer JWT → returns user dict
-require_admin         # user.role in ['admin', 'super_admin']
-require_super_admin   # user.role == 'super_admin'
-require_candidate     # user.role == 'candidate'
+CurrentUser      # verifies Bearer JWT → returns user dict (any role)
+AdminUser        # user.role in ['admin', 'super_admin']
+SuperAdminUser   # user.role == 'super_admin'
+CandidateUser    # user.role == 'candidate'
 ```
 
 Usage in a router:
 
 ```python
-from app.components.auth.auth_dependencies import require_admin, get_current_user
+from app.components.auth.auth_dependencies import AdminUser
+from app.core.dependencies import DB
 
 @router.get("/")
-async def list_items(
-    db = Depends(get_db),
-    current_user = Depends(require_admin),
-):
+async def list_items(db: DB, current_user: AdminUser):
     ...
 ```
 
-### Password Validation (Candidate Registration)
+### First Super Admin
 
-Pydantic `field_validator` on `CandidateRegisterRequest.password` enforces:
-
-- Minimum 8 characters
-- At least one uppercase letter
-- At least one lowercase letter
-- At least one digit
-- At least one special character
-
----
-
-## API Reference
-
-### Auth — `/api/auth`
-
-| Method | Path           | Auth                   | Description              |
-| ------ | -------------- | ---------------------- | ------------------------ |
-| POST   | `/admin/login` | Public                 | Admin login → tokens     |
-| POST   | `/login`       | Public                 | Candidate login → tokens |
-| POST   | `/register`    | Public                 | Candidate registration   |
-| POST   | `/refresh`     | Public (refresh token) | Issue new access token   |
-| POST   | `/logout`      | JWT                    | Revoke refresh token     |
-| GET    | `/me`          | JWT                    | Get current user profile |
-
-### Users — `/api/users`
-
-| Method | Path   | Auth        | Description                  |
-| ------ | ------ | ----------- | ---------------------------- |
-| GET    | `/`    | Super Admin | List admin users (paginated) |
-| POST   | `/`    | Super Admin | Create admin user            |
-| GET    | `/:id` | Super Admin | Get user by ID               |
-| PUT    | `/:id` | Super Admin | Update user                  |
-
-### Workspaces — `/api/workspaces`
-
-| Method | Path           | Auth        | Description                       |
-| ------ | -------------- | ----------- | --------------------------------- |
-| GET    | `/`            | Admin       | List accessible workspaces        |
-| POST   | `/`            | Super Admin | Create workspace                  |
-| GET    | `/:id`         | Admin       | Get workspace                     |
-| PUT    | `/:id`         | Super Admin | Update workspace                  |
-| DELETE | `/:id`         | Super Admin | Delete workspace                  |
-| POST   | `/:id/invite`  | Super Admin | Invite admin members              |
-| GET    | `/:id/members` | Admin       | List members                      |
-| GET    | `/admin-users` | Super Admin | List all admin users (for invite) |
-
-### Question Bank — `/api/questions`
-
-| Method | Path              | Auth  | Description                                              |
-| ------ | ----------------- | ----- | -------------------------------------------------------- |
-| GET    | `/categories`     | Admin | List categories (paginated + search + sort)              |
-| POST   | `/categories`     | Admin | Create category                                          |
-| PUT    | `/categories/:id` | Admin | Update category                                          |
-| DELETE | `/categories/:id` | Admin | Delete category + all its questions                      |
-| GET    | `/`               | Admin | List questions (filter by category_id, complexity, type) |
-| POST   | `/`               | Admin | Create single question                                   |
-| PUT    | `/:id`            | Admin | Update question                                          |
-| DELETE | `/:id`            | Admin | Delete question                                          |
-| POST   | `/bulk`           | Admin | Bulk create questions (JSON array)                       |
-| POST   | `/ai-generate`    | Admin | AI generation via OpenAI (topic + count + type)       |
-| POST   | `/excel-columns`  | Admin | Upload `.xlsx` → returns column names                    |
-| POST   | `/excel-import`   | Admin | Upload `.xlsx` + column mapping → import questions       |
-
-### Assessments — `/api/assessments`
-
-| Method | Path                        | Auth  | Description                                    |
-| ------ | --------------------------- | ----- | ---------------------------------------------- |
-| GET    | `/`                         | Admin | List assessments for a workspace               |
-| POST   | `/`                         | Admin | Create assessment (with rounds + question_ids) |
-| PUT    | `/:id`                      | Admin | Update assessment                              |
-| DELETE | `/:id`                      | Admin | Delete assessment                              |
-| POST   | `/:id/clone`                | Admin | Clone assessment (new share_link UUID)         |
-| GET    | `/:id/submissions`          | Admin | Paginated submissions with candidate lookup    |
-| GET    | `/:id/submissions/export`   | Admin | Export submissions as `.xlsx`                  |
-| GET    | `/submissions/:id`          | Admin | Single submission detail                       |
-| POST   | `/submissions/:id/reaccess` | Admin | Grant candidate re-entry                       |
-
-### Candidate — `/api/candidate`
-
-| Method | Path                           | Auth      | Description                                    |
-| ------ | ------------------------------ | --------- | ---------------------------------------------- |
-| GET    | `/assessment/:shareLink`       | Public    | Assessment info (no correct answers)           |
-| POST   | `/assessment/:shareLink/start` | Candidate | Start → creates/resumes submission             |
-| GET    | `/submission/:id/round`        | Candidate | Current round questions (randomized, stripped) |
-| POST   | `/submission/:id/answer`       | Candidate | Save answer (dot-notation upsert)              |
-| POST   | `/submission/:id/finish-round` | Candidate | Submit round → advance or complete             |
-| POST   | `/submission/:id/screenshot`   | Candidate | Upload screenshot (multipart)                  |
-| POST   | `/submission/:id/malpractice`  | Candidate | Flag a malpractice event                       |
-| GET    | `/live-interviews`             | Admin     | Aggregated active sessions list                |
-
----
-
-## Component Architecture
-
-Each component (feature module) under `app/components/` follows the same 3-file pattern:
-
-```
-<feature>/
-├── <feature>_schemas.py    # Pydantic models for request bodies and responses
-├── <feature>_service.py    # All business logic (DB queries, transformations)
-└── <feature>_router.py     # FastAPI route handlers (thin — delegates to service)
-```
-
-**Rule:** Routers only validate input, call the service, and return the response. All logic lives in the service.
-
----
-
-## Common Utilities
-
-### `app/common/utils.py`
-
-```python
-utcnow() → datetime                     # timezone-aware UTC now
-generate_uuid() → str                   # UUID4 as string (used as document IDs)
-hash_token(token: str) → str            # SHA-256 hex digest (refresh token storage)
-generate_secure_token() → str           # 64-byte cryptographically random hex string
-serialize_doc(doc: dict) → dict         # converts ObjectId → str, datetime → ISO string
-serialize_docs(docs: list) → list       # maps serialize_doc over a list
-paginate_query(collection, filter, sort, page, page_size) → (docs, total)
-build_pagination_meta(total, page, page_size) → dict
-```
-
-### `app/common/responses.py`
-
-```python
-success_response(message: str, data: Any) → dict
-# → { "success": True, "message": message, "data": data }
-
-error_response(message: str, detail: Any = None) → dict
-# → { "success": False, "message": message, "data": None, "detail": detail }
-```
-
-Always use these helpers in route handlers instead of returning raw dicts.
-
----
-
-## Error Handling
-
-`app/common/exceptions.py` defines:
-
-```python
-class AppException (Exception):
-    status_code: int
-    message: str
-
-class UnauthorizedException(AppException )  # 401
-class ForbiddenException(AppException )     # 403
-class NotFoundException(AppException )      # 404
-class ConflictException(AppException )      # 409
-class ValidationException(AppException )    # 422
-```
-
-`app/common/exception_handlers.py` registers handlers for:
-
-- `AppException ` — returns `error_response()` with the exception's status code
-- `RequestValidationError` (Pydantic) — 422 with field-level detail
-- `Exception` (catch-all) — 500 with sanitized message
-
-All errors return the same shape:
+Use `POST /api/auth/setup` (rate-limited to 3 calls/hour; fails once a super admin already exists):
 
 ```json
+POST /api/auth/setup
 {
-  "success": false,
-  "message": "Human-readable message",
-  "data": null,
-  "detail": "..."
+  "first_name": "Root",
+  "email": "admin@company.com",
+  "password": "password" #pragma: allowlist secret
 }
 ```
+
+### Password Strength
+
+`app/common/validators.py` exports `check_password_strength()` — a shared validator applied via `@field_validator` in every schema that accepts a password:
+
+| Schema                   | Endpoint(s)                       |
+| ------------------------ | --------------------------------- |
+| `SetupRequest`           | `POST /api/auth/setup`            |
+| `CandidateRegisterRequest` | `POST /api/auth/register`       |
+| `CreateAdminUserRequest` | `POST /api/users`                 |
+| `UpdateMeRequest`        | `PATCH /api/users/me`             |
+
+Rules enforced: minimum 8 characters · at least one uppercase · one lowercase · one digit · one special character (`!@#$%^&*(),.?":{}|<>`).
+
+---
+
+## Request Validation
+
+Every POST/PUT/PATCH endpoint uses a typed Pydantic model for the request body — no raw `dict` or `Any` parameters.
+
+### Schema highlights
+
+**`question_schemas.py`** — `CreateQuestionRequest`, `UpdateQuestionRequest`, `BulkQuestionItem` all include a `@model_validator` enforcing MCQ/essay rules:
+- `mcq_single` / `mcq_multi`: must have at least one option; at least one `is_correct: true`; `mcq_single` must have exactly one correct option.
+- `essay`: must have no options.
+- `QuestionOption.id` and `.text` both require `min_length=1`.
+
+**`assessment_schemas.py`** — `MonitoringConfig` validates cross-field screenshot config: if `screenshot_mode` is explicitly set to `"time_interval"`, `screenshot_interval_minutes` is required; if set to `"count"`, `screenshot_count` is required.
+
+**`candidate_schemas.py`**:
+- `SubmitAnswerRequest.answer` is typed `str | list[str]` (string for essay, list of option IDs for MCQ).
+- `MalpracticeRequest.type` is the `MalpracticeType` enum: `tab_switch`, `multiple_faces`, `no_face`, `background_noise`, `copy_paste`.
+
+**`auth_schemas.py` / `user_schemas.py`** — All password fields use `check_password_strength` from `app/common/validators.py`. `GoogleAuthRequest.credential` and `RefreshTokenRequest.refresh_token` require `min_length=1`.
 
 ---
 
 ## Response Format
 
-Every successful response:
+Every endpoint uses `response_model=ApiResponse`. The response shape is identical for both success and error:
 
 ```json
 {
-  "success": true,
-  "message": "Action description",
-  "data": { ... }
+  "success": true | false,
+  "message": "Human-readable description",
+  "data": { ... } | null,
+  "detail": null | "Error detail string"
 }
 ```
 
-Paginated responses include a `pagination` key inside `data`:
+- **Success** — `success: true`, `data` carries the payload, `detail` is `null`.
+- **Error** — `success: false`, `data` is `null`, `detail` carries the error reason.
+
+Helpers in `app/common/responses.py`:
+
+```python
+success_response(message: str, data: Any = None) -> dict
+# → { "success": True, "message": ..., "data": ... }
+
+error_response(message: str, detail: str = "") -> dict
+# → { "success": False, "message": ..., "data": None, "detail": ... }
+```
+
+### Paginated responses
+
+Paginated `data` includes a `pagination` key:
 
 ```json
 {
@@ -462,8 +373,204 @@ Paginated responses include a `pagination` key inside `data`:
       "has_next": true,
       "has_prev": false
     }
-  }
+  },
+  "detail": null
 }
+```
+
+---
+
+## Error Handling
+
+`app/common/exceptions.py` defines:
+
+```python
+class AppException(Exception):
+    status_code: int
+    message: str
+    detail: str | None
+
+class UnauthorizedException(AppException)  # 401
+class ForbiddenException(AppException)     # 403
+class NotFoundException(AppException)      # 404
+class ConflictException(AppException)      # 409
+class ValidationException(AppException)   # 422
+```
+
+`app/common/exception_handlers.py` registers three handlers, all calling `error_response()`:
+
+| Handler                  | HTTP status | When                                     |
+| ------------------------ | ----------- | ---------------------------------------- |
+| `AppException`           | varies      | Domain errors (not found, forbidden, …)  |
+| `RequestValidationError` | 422         | Pydantic schema validation failure       |
+| `Exception` (catch-all)  | 500         | Unhandled exceptions                     |
+
+The 422 `detail` field contains a semicolon-separated list of field-level error messages, e.g.:  
+`"body.password: Value error, Password must contain at least one uppercase letter"`
+
+---
+
+## Rate Limiting
+
+`app/core/limiter.py` exports a module-level `slowapi.Limiter` keyed on client IP. The limiter is attached to `app.state.limiter` in the factory. A custom `_rate_limit_handler` returns 429 errors in the standard `{success, message, data, detail}` shape.
+
+Rate limits per auth endpoint:
+
+| Endpoint               | Limit        |
+| ---------------------- | ------------ |
+| `POST /api/auth/setup` | 3 / hour     |
+| `POST /api/auth/admin/login` | 10 / minute |
+| `POST /api/auth/login` | 10 / minute  |
+| `POST /api/auth/register` | 5 / minute |
+| `POST /api/auth/google` | 10 / minute |
+
+All other endpoints are not rate-limited by default.
+
+---
+
+## API Reference
+
+### Health
+
+| Method | Path          | Auth   | Description                         |
+| ------ | ------------- | ------ | ----------------------------------- |
+| GET    | `/api/health` | Public | Liveness + DB ping (`{status, database}`) |
+
+### Auth — `/api/auth`
+
+| Method | Path           | Auth                   | Rate limit   | Description              |
+| ------ | -------------- | ---------------------- | ------------ | ------------------------ |
+| POST   | `/setup`       | Public (first-run)     | 3/hour       | Create first super admin |
+| POST   | `/admin/login` | Public                 | 10/minute    | Admin login → tokens     |
+| POST   | `/login`       | Public                 | 10/minute    | Candidate login → tokens |
+| POST   | `/register`    | Public                 | 5/minute     | Candidate registration   |
+| POST   | `/google`      | Public                 | 10/minute    | Google OAuth login       |
+| POST   | `/refresh`     | Public (refresh token) | —            | Issue new access token   |
+| POST   | `/logout`      | JWT                    | —            | Revoke refresh token     |
+| GET    | `/me`          | JWT                    | —            | Get current user profile |
+
+### Users — `/api/users`
+
+| Method | Path    | Auth        | Description                  |
+| ------ | ------- | ----------- | ---------------------------- |
+| PATCH  | `/me`   | JWT         | Update own profile/password  |
+| GET    | `/`     | Super Admin | List admin users             |
+| POST   | `/`     | Super Admin | Create admin user            |
+| GET    | `/:id`  | Super Admin | Get user by ID               |
+| PUT    | `/:id`  | Super Admin | Replace user fields          |
+| PATCH  | `/:id`  | Super Admin | Partial update user          |
+
+### Workspaces — `/api/workspaces`
+
+| Method | Path              | Auth        | Description                       |
+| ------ | ----------------- | ----------- | --------------------------------- |
+| GET    | `/`               | Admin       | List accessible workspaces        |
+| POST   | `/`               | Super Admin | Create workspace                  |
+| GET    | `/admin-users`    | Super Admin | List all admins (for invite UI)   |
+| GET    | `/:id`            | Admin       | Get workspace                     |
+| PUT    | `/:id`            | Admin       | Update workspace                  |
+| DELETE | `/:id`            | Super Admin | Delete workspace                  |
+| POST   | `/:id/invite`     | Super Admin | Invite admin members              |
+| GET    | `/:id/members`    | Admin       | List workspace members            |
+
+### Question Bank — `/api/questions`
+
+| Method | Path                              | Auth  | Description                              |
+| ------ | --------------------------------- | ----- | ---------------------------------------- |
+| GET    | `/categories`                     | Admin | List categories (paginated + search)     |
+| POST   | `/categories`                     | Admin | Create category                          |
+| PUT    | `/categories/:id`                 | Admin | Update category                          |
+| DELETE | `/categories/:id`                 | Admin | Delete category + all its questions      |
+| GET    | `/categories/:id/questions`       | Admin | List questions (filter/sort/paginate)    |
+| POST   | `/categories/:id/questions`       | Admin | Create single question                   |
+| POST   | `/categories/:id/bulk`            | Admin | Bulk create questions (JSON array)       |
+| POST   | `/categories/:id/ai-generate`     | Admin | AI generation (topic + count + type)     |
+| POST   | `/categories/:id/excel-import`    | Admin | Upload `.xlsx` + column map → import     |
+| PUT    | `/:id`                            | Admin | Update question                          |
+| DELETE | `/:id`                            | Admin | Delete question                          |
+
+### Assessments — `/api/workspaces/:workspace_id/assessments`
+
+| Method | Path                                    | Auth  | Description                         |
+| ------ | --------------------------------------- | ----- | ----------------------------------- |
+| GET    | `/`                                     | Admin | List assessments (paginated)        |
+| POST   | `/`                                     | Admin | Create assessment with rounds       |
+| GET    | `/:id`                                  | Admin | Get assessment                      |
+| PUT    | `/:id`                                  | Admin | Update assessment                   |
+| GET    | `/:id/submissions`                      | Admin | Paginated submissions + candidate   |
+| GET    | `/:id/submissions/:sub_id`              | Admin | Single submission detail            |
+| POST   | `/:id/submissions/:sub_id/reaccess`     | Admin | Grant candidate re-entry            |
+| GET    | `/:id/export`                           | Admin | All submissions for Excel export    |
+
+Also: `GET /api/assessments/share/:share_link` — public, returns assessment metadata (no correct answers).
+
+### Candidate — `/api/candidate`
+
+| Method | Path                            | Auth      | Description                                    |
+| ------ | ------------------------------- | --------- | ---------------------------------------------- |
+| GET    | `/assessment/:shareLink`        | Public    | Assessment info (no correct answers)           |
+| POST   | `/assessment/:shareLink/start`  | Candidate | Start or resume submission                     |
+| GET    | `/submission/:id/round`         | Candidate | Current round questions (randomised, stripped) |
+| POST   | `/submission/:id/answer`        | Candidate | Save answer (`str` or `list[str]`)             |
+| POST   | `/submission/:id/finish-round`  | Candidate | Advance to next round or complete              |
+| POST   | `/submission/:id/screenshot`    | Candidate | Upload screenshot (JPEG/PNG, max 2 MB)         |
+| POST   | `/submission/:id/malpractice`   | Candidate | Flag a malpractice event (enum-validated type) |
+| GET    | `/live-interviews`              | Admin     | Paginated in-progress sessions                 |
+
+---
+
+## Component Architecture
+
+Each component under `app/components/` follows the same 3-file pattern:
+
+```
+<feature>/
+├── <feature>_schemas.py    # Pydantic request models with field + cross-field validators
+├── <feature>_service.py    # All business logic (DB queries, transformations)
+└── <feature>_router.py     # Thin handlers: validate → call service → return success_response()
+```
+
+**Rule:** Routers only call the service and return `success_response(...)`. All logic lives in the service.
+
+---
+
+## Common Utilities
+
+### `app/common/utils.py`
+
+```python
+utcnow() → datetime                    # timezone-aware UTC now
+hash_token(token: str) → str           # SHA-256 hex digest (refresh token storage)
+generate_secure_token() → str          # 64-byte cryptographically random hex string
+generate_sharelink(workspace_id) → str # URL-safe UUID for assessment share links
+safe_regex(term: str) → str            # re.escape() wrapper for MongoDB $regex queries
+serialize_doc(doc: dict) → dict        # ObjectId → str, datetime → ISO string
+serialize_docs(docs: list) → list      # maps serialize_doc over a list
+paginate_query(page, page_size) → (skip, limit)
+list_paginated(collection, query, sort_field, sort_dir, skip, limit, allowed_sort_fields)
+build_pagination_meta(total, page, page_size) → dict
+```
+
+### `app/common/validators.py`
+
+```python
+check_password_strength(v: str) → str
+# Raises ValueError if password lacks uppercase, lowercase, digit, or special char.
+# Used as @field_validator in SetupRequest, CandidateRegisterRequest,
+# CreateAdminUserRequest, and UpdateMeRequest.
+```
+
+### `app/common/responses.py`
+
+```python
+class ApiResponse(BaseModel):
+    success: bool
+    message: str
+    data: Any = None
+    detail: str | None = None
+
+success_response(message: str, data: Any = None) → dict
+error_response(message: str, detail: str = "") → dict
 ```
 
 ---
@@ -474,37 +581,33 @@ Paginated responses include a `pagination` key inside `data`:
 
 `question_service.py → ai_generate_questions()`:
 
-1. Calls OpenAI API with a structured prompt requesting JSON output.
-2. Parses the JSON response (strips markdown fences if present).
+1. Calls OpenAI API with a structured prompt requesting a JSON array of questions.
+2. Parses the response (strips markdown fences if present).
 3. Returns a list of question dicts for the frontend to confirm before saving.
 4. Confirmed questions are saved via `bulk_create_questions`.
 
 ### Excel Import
 
-Two-step flow:
-
-**Step 1 — Column extraction:**
-
 ```
-POST /api/questions/excel-columns  (multipart: file)
-→ { columns: ["Question", "Option A", "Option B", ...] }
-```
+POST /api/questions/categories/:id/excel-import
+  multipart: file (.xlsx) + Form: column_map (JSON string)
 
-**Step 2 — Import with mapping:**
-
-```
-POST /api/questions/excel-import  (multipart: file + Form: mapping JSON)
-mapping = {
-  "text_column": "Question",
-  "option_columns": ["Option A", "Option B", "Option C", "Option D"],
-  "correct_column": "Answer",
-  "complexity_column": "Level",
-  "default_type": "mcq_single",
-  "default_complexity": "medium"
+column_map example:
+{
+  "question_column": "Question",
+  "answer_column": "Answer",
+  "complexity_column": "Level"
 }
 ```
 
-`process_excel_import()` reads rows with `openpyxl`, maps columns, handles missing values with defaults, and bulk-inserts.
+`process_excel_import()` reads rows with `openpyxl`, maps columns, handles missing values with defaults, and bulk-inserts. An invalid `column_map` JSON falls back silently to an empty dict.
+
+### MCQ Validation
+
+`CreateQuestionRequest` and `BulkQuestionItem` reject invalid MCQ/essay payloads at the Pydantic layer before reaching the service:
+
+- MCQ types: at least one option, at least one `is_correct: true`, `mcq_single` requires exactly one correct option.
+- Essay: no options allowed.
 
 ---
 
@@ -514,23 +617,27 @@ mapping = {
 
 When a candidate starts an assessment:
 
-1. `question_ids` pool per round can be larger than `question_count` — this allows random selection.
-2. `random.sample(question_ids_pool, question_count)` picks the subset.
+1. `question_ids` pool per round can exceed `question_count` — enables random selection.
+2. `random.sample(pool, question_count)` picks the subset.
 3. MCQ options are shuffled per question.
-4. `is_correct` flag is stripped from options before sending to the candidate.
+4. `is_correct` flag and `correct_answer` are stripped before sending to the candidate.
 
 ### Score Calculation
 
 `_calculate_score()` in `candidate_service.py`:
 
-- MCQ single: 1 point if selected answer matches correct option text.
-- MCQ multiple: 1 point only if all selected answers exactly match all correct options.
+- MCQ single: 1 point if selected option ID matches the correct one.
+- MCQ multi: 1 point only if all selected IDs exactly match all correct IDs.
 - Essay: skipped (manual review required).
 - `score_percentage = (correct / total_mcq_questions) * 100`
 
-### Clone
+### Monitoring Config
 
-`clone_assessment()` copies all fields from the original and generates a new `share_link` UUID. The clone gets a new `id` and `created_at` but retains all round configs and question references.
+`MonitoringConfig` cross-field validation:
+
+- `screenshot_mode = "time_interval"` (explicit) → `screenshot_interval_minutes` required.
+- `screenshot_mode = "count"` (explicit) → `screenshot_count` required.
+- If `screenshot_mode` is not sent, defaults apply without validation.
 
 ---
 
@@ -543,36 +650,29 @@ pending → in_progress → completed
                     ↘ malpractice
 ```
 
-- `start_assessment` creates a submission with `status: in_progress`.
-- `finish_round`:
-  - If `current_round < total_rounds`: increments `current_round`.
-  - If last round: calculates score, sets `status: completed`.
-- `flag_malpractice`: sets `status: malpractice`, appends to `malpractice_flags[]`. Only fires if `tab_monitoring` is `true` in the assessment's `monitoring_config`.
-- `grant_reaccess` (admin): resets `status` to `in_progress`, increments `reaccess_count`.
+- `start_assessment` — creates `in_progress` submission (or resumes existing).
+- `finish_round` — advances `current_round` or sets `status: completed` on last round.
+- `flag_malpractice` — sets `status: malpractice`. Silently skips if `tab_monitoring` is `false`. `type` must be one of: `tab_switch`, `multiple_faces`, `no_face`, `background_noise`, `copy_paste`.
+- `grant_reaccess` (admin) — resets to `pending`, increments `reaccess_count`. Capped at `settings.MAX_REACCESS_COUNT`.
 
 ### Answer Storage
 
-Answers are stored with dot-notation upserts in MongoDB:
+Answers are stored with dot-notation MongoDB upserts:
 
 ```python
-# Each answer call does:
-db.submissions.update_one(
+db.assessment_submissions.update_one(
     {"_id": submission_id},
     {"$set": {f"rounds_data.{round_index}.answers.{question_id}": answer}}
 )
 ```
 
-This makes individual answer saves atomic and avoids overwriting other answers.
+`answer` is `str` (essay / mcq_single) or `list[str]` (mcq_multi).
 
-### Live Interviews Aggregation
+### Screenshot Upload
 
-`get_live_interviews()` uses a MongoDB aggregation pipeline:
-
-1. Match `status: in_progress`
-2. `$lookup` → `assessments` (join on `assessment_id`)
-3. `$lookup` → `users` (join on `candidate_id`)
-4. Project required fields + monitoring config
-5. Returns paginated results for the admin live-monitoring view
+`POST /submission/:id/screenshot` validates before processing:
+- Content-Type must be `image/jpeg` or `image/png` — returns 422 otherwise.
+- File size must not exceed 2 MB — returns 422 otherwise.
 
 ---
 
@@ -585,132 +685,111 @@ await send_email(to: str, subject: str, html_body: str)
 await send_assessment_invite(to: str, candidate_name: str, assessment_name: str, share_url: str)
 ```
 
-Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite email contains a branded HTML template with the assessment link.
+Uses SMTP with `STARTTLS`. Configure `SMTP_*` variables in `.env`. The invite email contains a branded HTML template with the assessment share link.
 
 ---
 
 ## Adding a New Module
 
-1. Create folder: `app/components/<module>/`
-2. Create `__init__.py` (empty)
-3. Create `<module>_schemas.py` — define Pydantic request/response models
-4. Create `<module>_service.py` — implement async functions that take `db` as first argument
-5. Create `<module>_router.py`:
+1. Create `app/components/<module>/` with `__init__.py`.
+2. Create `<module>_schemas.py` — Pydantic models with field validators.
+3. Create `<module>_service.py` — `async def` functions taking `db: AsyncIOMotorDatabase` as first arg.
+4. Create `<module>_router.py`:
 
    ```python
-   from fastapi import APIRouter, Depends
-   from app.core.dependencies import get_db
-   from app.components.auth.auth_dependencies import require_admin
+   from fastapi import APIRouter
+   from app.common.responses import ApiResponse, success_response
+   from app.components.auth.auth_dependencies import AdminUser
+   from app.core.dependencies import DB
 
-   router = APIRouter(prefix="/<module>", tags=["<Module>"])
+   router = APIRouter()
 
-   @router.get("/")
-   async def list_items(db=Depends(get_db), _=Depends(require_admin)):
-       ...
+   @router.get("/", response_model=ApiResponse)
+   async def list_items(db: DB, current_user: AdminUser):
+       result = await <module>_service.get_items(db)
+       return success_response("Items retrieved", result)
    ```
 
-6. Register the router in `app/factory.py`:
+5. Register in `app/factory.py`:
    ```python
    from app.components.<module>.<module>_router import router as <module>_router
-   app.include_router(<module>_router, prefix="/api/<module>")
+   app.include_router(<module>_router, prefix="/api/<module>", tags=["<Module>"])
    ```
-
----
-
-## Scripts
-
-| Command                                           | Description                               |
-| ------------------------------------------------- | ----------------------------------------- |
-| `uvicorn app.main:app --reload`                   | Start dev server with hot reload          |
-| `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start                          |
-| `pip install -r requirements.txt`                 | Install runtime dependencies              |
-| `pip install -r requirements-dev.txt`             | Install dev tools (ruff, pre-commit, etc) |
-| `pip freeze > requirements.txt`                   | Update requirements after adding packages |
-| `ruff check . --fix`                              | Lint and auto-fix where possible          |
-| `ruff format .`                                   | Format all Python files                   |
-| `pre-commit run --all-files`                      | Run all hooks against every file manually |
 
 ---
 
 ## Code Quality & Linting
 
-Tooling is configured in `pyproject.toml`. Pre-commit hooks run automatically on every `git commit`.
+All tooling is configured in `pyproject.toml`. Pre-commit hooks run automatically on every `git commit`.
 
-### Ruff — Lint
+### Pre-commit hooks
 
-```bash
-ruff check .           # check only
-ruff check . --fix     # check and auto-fix safe violations
-```
-
-Rules enforced: unused imports/variables, bare `except`, boolean comparisons, import order (isort), modern Python syntax (pyupgrade), PEP8 naming, McCabe complexity ≤ 15, basic security (bandit).
-
-### Ruff — Format
-
-```bash
-ruff format .          # format all files
-ruff format --check .  # check formatting without writing changes (CI)
-```
-
-Settings: 100-character line limit · double quotes · 4-space indentation.
-
-### Pre-commit Hooks
-
-Installed hooks run on every `git commit`:
-
-| Hook             | What it catches                                          |
-| ---------------- | -------------------------------------------------------- |
-| `ruff`           | Lint violations (auto-fixes where possible)              |
-| `ruff-format`    | Formatting drift                                         |
-| `detect-secrets` | API keys, tokens, high-entropy strings in staged files   |
+| Hook             | What it checks                                              |
+| ---------------- | ----------------------------------------------------------- |
+| `ruff`           | Lint violations (auto-fixes where safe)                     |
+| `ruff-format`    | Formatting drift (100-char limit, double quotes)            |
+| `detect-secrets` | API keys, tokens, high-entropy strings in staged files      |
+| `bandit`         | Security anti-patterns (skips B101 asserts, B104 binding)  |
+| `mypy`           | Static type checking on `app/` only (strict untyped defs)  |
 
 ```bash
 pre-commit install              # wire hooks into git (once per clone)
 pre-commit run --all-files      # run manually against every file
 ```
 
-If `detect-secrets` flags a false positive, update the baseline:
+`pip-audit` (CVE scan) is available as a manual stage:
 ```bash
-detect-secrets scan > .secrets.baseline
-git add .secrets.baseline
+pre-commit run pip-audit --hook-stage manual
 ```
 
-### Dev Dependencies
+### Ruff
 
-All dev tools are in `requirements-dev.txt` (separate from runtime `requirements.txt`):
-
-```
-pre-commit, detect-secrets, ruff, pytest, pytest-asyncio
-```
-
----
-
-## Initial Setup — Create First Super Admin
-
-No seeding script is shipped. Create the first super admin via the Python shell:
-
-```python
-import asyncio
-from motor.motor_asyncio import AsyncIOMotorClient
-from app.core.config import settings
-from app.components.auth.auth_service import hash_password
-from app.common.utils import utcnow, generate_uuid
-
-async def create_super_admin():
-    client = AsyncIOMotorClient(settings.MONGODB_URL)
-    db = client[settings.DATABASE_NAME]
-    await db.users.insert_one({
-        "_id": generate_uuid(),
-        "name": "Super Admin",
-        "email": "admin@softsuvehire.com",
-        "password_hash": hash_password("YourSecurePass@123"),
-        "role": "super_admin",
-        "created_at": utcnow(),
-        "updated_at": utcnow(),
-    })
-    client.close()
-
-asyncio.run(create_super_admin())
+```bash
+ruff check .           # lint only
+ruff check . --fix     # lint + auto-fix safe violations
+ruff format .          # format all files
+ruff format --check .  # CI check (no writes)
 ```
 
-After this, use `POST /api/auth/admin/login` to obtain tokens, then use `POST /api/users` to create additional admins via the API.
+Rules: unused imports/variables, bare `except`, boolean comparisons, import order, modern syntax, PEP8 naming, McCabe complexity ≤ 15, bandit security subset (`S` rules).
+
+### mypy
+
+```bash
+mypy app/
+```
+
+Configured in `mypy.ini`: `disallow_untyped_defs = true`, `warn_return_any = true`, `warn_unused_ignores = true`. Test files are excluded. The pre-commit hook runs mypy in an isolated environment with `motor`, `pymongo`, and `slowapi` stubs pinned.
+
+### bandit
+
+```bash
+bandit -c pyproject.toml -r app/
+```
+
+Skips: `B101` (assert statements in tests), `B104` (binding to all interfaces in dev).
+
+### pytest
+
+```bash
+pytest                          # run all tests (parallel via pytest-xdist)
+pytest --cov=app --cov-report=html   # with coverage report
+```
+
+Tests run in parallel with `addopts = "-n auto"` (pytest-xdist). 270 tests, ~18 s wall-clock. All tests use `mongomock_motor` — no real MongoDB required.
+
+### Commands reference
+
+| Command                                           | Description                               |
+| ------------------------------------------------- | ----------------------------------------- |
+| `uvicorn app.main:app --reload`                   | Start dev server with hot reload          |
+| `uvicorn app.main:app --host 0.0.0.0 --port 8000` | Production start                          |
+| `pip install -r requirements.txt`                 | Install runtime dependencies              |
+| `pip install -r requirements-dev.txt`             | Install dev tools                         |
+| `ruff check . --fix && ruff format .`             | Lint + format (run before committing)     |
+| `mypy app/`                                       | Type-check app source                     |
+| `pytest`                                          | Run full test suite                       |
+| `pytest --cov=app --cov-report=html`              | Run tests with HTML coverage report       |
+| `pre-commit run --all-files`                      | Run all hooks against every file          |
+| `pre-commit run pip-audit --hook-stage manual`    | Scan dependencies for known CVEs          |
+| `detect-secrets scan --baseline .secrets.baseline` | Regenerate secrets baseline              |
