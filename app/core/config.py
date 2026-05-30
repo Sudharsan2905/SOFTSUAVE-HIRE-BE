@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     LOG_LEVEL: str = "INFO"
     MAX_REACCESS_COUNT: int = 3
+    SCREENSHOTS_DIR: str = "uploads/screenshots"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

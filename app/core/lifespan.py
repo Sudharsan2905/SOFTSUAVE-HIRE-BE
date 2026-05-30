@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -26,6 +27,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     db = client[settings.DATABASE_NAME]
     app.state.db = db
     app.state.client = client
+    Path(settings.SCREENSHOTS_DIR).mkdir(parents=True, exist_ok=True)
+    logger.info(f"Screenshots directory ready: {settings.SCREENSHOTS_DIR}")
     await _create_indexes(db)
     logger.info("Database indexes verified")
     yield

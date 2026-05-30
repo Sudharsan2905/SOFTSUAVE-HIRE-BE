@@ -85,7 +85,9 @@ async def save_screenshot(
     content = await file.read()
     if len(content) > _MAX_SCREENSHOT_BYTES:
         raise ValidationException("Screenshot must not exceed 2 MB")
-    await candidate_service.save_screenshot(db, submission_id, current_user["_id"], content)
+    await candidate_service.save_screenshot(
+        db, submission_id, current_user["_id"], content, file.content_type or "image/jpeg"
+    )
     return success_response("Screenshot saved")
 
 
