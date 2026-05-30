@@ -2,9 +2,15 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import ADMIN_ROLES, UserRole
-from app.common.exceptions import ConflictException, ForbiddenException, NotFoundException
+from app.common.exceptions import (
+    ConflictException,
+    ForbiddenException,
+    NotFoundException,
+    UnauthorizedException,
+    ValidationException,
+)
 from app.common.utils import serialize_doc, serialize_docs, utcnow
-from app.components.auth.auth_service import hash_password
+from app.components.auth.auth_service import hash_password, verify_password
 from app.core.logging import logger
 
 
@@ -72,11 +78,12 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
 async def list_users(
     db: AsyncIOMotorDatabase,
+    current_user_id: str,
     role_filter: str | None = None,
     is_active_filter: bool | None = None,
 ) -> list:
     """Return all admin/super_admin users, optionally filtered by role or active status."""
-    query: dict = {"role": {"$in": ADMIN_ROLES}}
+    query: dict = {"role": {"$in": ADMIN_ROLES}, "_id": {"$ne": ObjectId(current_user_id)}}
     if role_filter:
         query["role"] = role_filter
     if is_active_filter is not None:
@@ -97,20 +104,89 @@ async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> dict:
     return serialize_doc(doc)
 
 
+def _validate_super_admin_constraints(user: dict, data: dict) -> None:
+    if user["role"] != UserRole.SUPER_ADMIN:
+        return
+    if data.get("role") is not None:
+        raise ForbiddenException("Super admin role cannot be changed")
+    if data.get("is_active") is not None:
+        raise ForbiddenException("Super admin status cannot be changed")
+    if data.get("workspace_ids") is not None:
+        raise ForbiddenException("Super admin has access to all workspaces")
+
+
+async def _apply_email_update(
+    db: AsyncIOMotorDatabase, user_id: str, user: dict, new_email: str, update: dict
+) -> None:
+    if new_email == user["email"]:
+        return
+    if await db.users.find_one({"email": new_email, "_id": {"$ne": ObjectId(user_id)}}):
+        raise ConflictException("Email already in use")
+    update["email"] = new_email
+    await db.workspaces.update_many(
+        {"members.user_id": ObjectId(user_id)},
+        {"$set": {"members.$[m].email": new_email}},
+        array_filters=[{"m.user_id": ObjectId(user_id)}],
+    )
+
+
+async def _sync_workspace_memberships(
+    db: AsyncIOMotorDatabase, user_id: str, user: dict, workspace_ids: list, update: dict
+) -> None:
+    all_workspaces = await db.workspaces.find().to_list(500)
+    ws_map = {str(ws["_id"]): ws for ws in all_workspaces}
+    effective_role = update.get("role", user["role"])
+    for ws in all_workspaces:
+        ws_id_str = str(ws["_id"])
+        member_ids = {str(m["user_id"]) for m in ws.get("members", [])}
+        should_be_member = ws_id_str in workspace_ids
+        is_member = user_id in member_ids
+        if should_be_member and not is_member:
+            await db.workspaces.update_one(
+                {"_id": ws["_id"]},
+                {
+                    "$push": {
+                        "members": {
+                            "user_id": ObjectId(user_id),
+                            "email": update.get("email", user["email"]),
+                            "role": effective_role,
+                        }
+                    },
+                    "$set": {"updated_at": utcnow()},
+                },
+            )
+        elif not should_be_member and is_member:
+            await db.workspaces.update_one(
+                {"_id": ws["_id"]},
+                {
+                    "$pull": {"members": {"user_id": ObjectId(user_id)}},
+                    "$set": {"updated_at": utcnow()},
+                },
+            )
+    update["workspaces"] = [
+        {"id": wid, "name": ws_map[wid]["name"]} for wid in workspace_ids if wid in ws_map
+    ]
+    current_default = user.get("default_workspace_id")
+    if current_default not in workspace_ids:
+        update["default_workspace_id"] = workspace_ids[0] if workspace_ids else None
+
+
 async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
-    """Update an admin user's profile, status, or workspace assignments.
+    """Super admin update of any user's profile, status, role, email, password, or workspaces.
 
     Workspace membership in the workspaces collection is kept in sync automatically.
-    Super admins cannot have their status changed or workspaces reassigned.
+    Super admin status/workspaces cannot be changed.
 
     Raises:
         NotFoundException: If the user does not exist.
         ForbiddenException: If trying to change super admin status or workspaces.
+        ConflictException: If a new email is already taken.
     """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise NotFoundException("User not found")
 
+    _validate_super_admin_constraints(user, data)
     update: dict = {}
 
     if data.get("first_name") is not None:
@@ -118,55 +194,26 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
     if data.get("last_name") is not None:
         update["last_name"] = data["last_name"]
 
+    if data.get("email") is not None:
+        await _apply_email_update(db, user_id, user, data["email"], update)
+
+    if data.get("role") is not None:
+        update["role"] = data["role"]
+        await db.workspaces.update_many(
+            {"members.user_id": ObjectId(user_id)},
+            {"$set": {"members.$[m].role": data["role"]}},
+            array_filters=[{"m.user_id": ObjectId(user_id)}],
+        )
+
+    if data.get("password") is not None:
+        update["password_hash"] = hash_password(data["password"])
+        logger.info(f"Super admin reset password for user: {user.get('email')}")
+
     if data.get("is_active") is not None:
-        if user["role"] == UserRole.SUPER_ADMIN:
-            raise ForbiddenException("Super admin status cannot be changed")
         update["is_active"] = data["is_active"]
 
     if data.get("workspace_ids") is not None:
-        if user["role"] == UserRole.SUPER_ADMIN:
-            raise ForbiddenException("Super admin has access to all workspaces")
-        workspace_ids: list = data["workspace_ids"]
-
-        all_workspaces = await db.workspaces.find().to_list(500)
-        ws_map = {str(ws["_id"]): ws for ws in all_workspaces}
-        for ws in all_workspaces:
-            ws_id_str = str(ws["_id"])
-            member_ids = {str(m["user_id"]) for m in ws.get("members", [])}
-            should_be_member = ws_id_str in workspace_ids
-            is_member = user_id in member_ids
-
-            if should_be_member and not is_member:
-                await db.workspaces.update_one(
-                    {"_id": ws["_id"]},
-                    {
-                        "$push": {
-                            "members": {
-                                "user_id": ObjectId(user_id),
-                                "email": user["email"],
-                                "role": user["role"],
-                            }
-                        },
-                        "$set": {"updated_at": utcnow()},
-                    },
-                )
-            elif not should_be_member and is_member:
-                await db.workspaces.update_one(
-                    {"_id": ws["_id"]},
-                    {
-                        "$pull": {"members": {"user_id": ObjectId(user_id)}},
-                        "$set": {"updated_at": utcnow()},
-                    },
-                )
-
-        update["workspaces"] = [
-            {"id": wid, "name": ws_map[wid]["name"]} for wid in workspace_ids if wid in ws_map
-        ]
-
-        # Update default_workspace_id if the current default was removed
-        current_default = user.get("default_workspace_id")
-        if current_default not in workspace_ids:
-            update["default_workspace_id"] = workspace_ids[0] if workspace_ids else None
+        await _sync_workspace_memberships(db, user_id, user, data["workspace_ids"], update)
 
     if data.get("default_workspace_id") is not None:
         requested_default = data["default_workspace_id"]
@@ -182,14 +229,19 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
 
 
 async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
-    """Allow an authenticated user to update their own name, password, or default workspace.
+    """Allow an authenticated user to update their own profile, email, or password.
+
+    Password change requires current_password for verification.
+    Role cannot be changed by the user themselves.
 
     Raises:
         NotFoundException: If the user or workspace does not exist.
-        ForbiddenException: If the user is not a member of the requested workspace
-            (non-super_admin).
+        ForbiddenException: If not a member of the requested workspace (non-super_admin).
+        UnauthorizedException: If current_password is wrong when changing password.
+        ValidationException: If new password is provided without current_password.
+        ConflictException: If the new email is already taken.
     """
-    user = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
+    user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise NotFoundException("User not found")
 
@@ -200,7 +252,24 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
     if data.get("last_name") is not None:
         update["last_name"] = data["last_name"]
 
+    if data.get("email") is not None:
+        new_email = data["email"]
+        if new_email != user["email"]:
+            if await db.users.find_one({"email": new_email, "_id": {"$ne": ObjectId(user_id)}}):
+                raise ConflictException("Email already in use")
+            update["email"] = new_email
+            await db.workspaces.update_many(
+                {"members.user_id": ObjectId(user_id)},
+                {"$set": {"members.$[m].email": new_email}},
+                array_filters=[{"m.user_id": ObjectId(user_id)}],
+            )
+
     if data.get("password"):
+        current_pw = data.get("current_password")
+        if not current_pw:
+            raise ValidationException("Current password is required to change password")
+        if not verify_password(current_pw, user.get("password_hash", "")):
+            raise UnauthorizedException("Current password is incorrect")
         update["password_hash"] = hash_password(data["password"])
 
     if data.get("default_workspace_id"):

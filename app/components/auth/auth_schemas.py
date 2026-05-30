@@ -28,12 +28,12 @@ class CandidateRegisterRequest(BaseModel):
     email: EmailStr
     phone: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=8)
-    father_name: str = Field(..., min_length=2, max_length=100)
     gender: str = Field(..., pattern="^(male|female|other)$")
     dob: str | None = None
     college_name: str | None = None
     college_city: str | None = None
     assessment_uuid: str | None = None
+    google_id: str | None = None
 
     @field_validator("password")
     @classmethod

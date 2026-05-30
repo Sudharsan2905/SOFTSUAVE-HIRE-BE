@@ -68,3 +68,7 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
     await db.refresh_tokens.create_index([("token_hash", ASCENDING)], unique=True)
     await db.refresh_tokens.create_index([("user_id", ASCENDING)])
     await db.refresh_tokens.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+
+    # Notifications: per-user lookup + unread filter + time ordering
+    await db.notifications.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.notifications.create_index([("user_id", ASCENDING), ("is_read", ASCENDING)])

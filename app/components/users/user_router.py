@@ -47,7 +47,7 @@ async def list_users(
     role: Annotated[str | None, Query()] = None,
     is_active: Annotated[bool | None, Query()] = None,
 ):
-    result = await user_service.list_users(db, role, is_active)
+    result = await user_service.list_users(db, current_user["_id"], role, is_active)
     return success_response("Users retrieved", result)
 
 

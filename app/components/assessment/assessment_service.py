@@ -190,7 +190,7 @@ async def get_submissions(
                 "as": "candidate",
             }
         },
-        {"$unwind": {"path": "$candidate", "preserveNullAndEmpty": True}},
+        {"$unwind": {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
         {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
     ]
     if search:
@@ -282,7 +282,7 @@ async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> li
                 "as": "profile",
             }
         },
-        {"$unwind": {"path": "$profile", "preserveNullAndEmpty": True}},
+        {"$unwind": {"path": "$profile", "preserveNullAndEmptyArrays": True}},
         {
             "$project": {
                 "name": {

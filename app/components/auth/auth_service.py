@@ -110,6 +110,8 @@ async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -
 async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
     """Register a new candidate, create their profile, and issue JWT tokens.
 
+    Supports Google-linked registrations when google_id is provided.
+
     Raises:
         ConflictException: If the email is already registered.
     """
@@ -118,6 +120,7 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
     logger.info(f"Registering new candidate: {data['email']}")
 
     password_hash = hash_password(data.pop("password"))
+    google_id = data.pop("google_id", None)
     data.pop("assessment_uuid", None)
     now = utcnow()
 
@@ -130,6 +133,9 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+    if google_id:
+        user_doc["google_id"] = google_id
+
     result = await db.users.insert_one(user_doc)
     user_id = result.inserted_id
 
@@ -137,7 +143,6 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         {
             "user_id": user_id,
             "phone": data.get("phone"),
-            "father_name": data.get("father_name"),
             "gender": data.get("gender"),
             "dob": data.get("dob"),
             "college_name": data.get("college_name"),
@@ -180,10 +185,12 @@ async def logout(db: AsyncIOMotorDatabase, refresh_token: str) -> None:
 
 
 async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
-    """Validate a Google ID token, auto-create the candidate if new, and issue JWT tokens.
+    """Validate a Google ID token and either issue tokens (existing user) or return
+    pre-auth data for registration (new user).
 
-    Validates the token via Google's tokeninfo endpoint and checks the audience.
-    Raises ForbiddenException if the Google account belongs to a non-candidate user.
+    For existing candidates: issues JWT tokens directly.
+    For new users: returns { needs_registration: True, google_data: {...} } without
+    creating any account — the caller must complete registration via /auth/register.
 
     Raises:
         UnauthorizedException: On invalid or mismatched Google token.
@@ -208,30 +215,25 @@ async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
         raise UnauthorizedException("Email not found in Google token")
 
     user = await db.users.find_one({"email": email})
-    now = utcnow()
 
     if not user:
-        user_doc = {
-            "email": email,
-            "first_name": info.get("given_name") or info.get("name", "User"),
-            "last_name": info.get("family_name", ""),
-            "role": UserRole.CANDIDATE,
-            "google_id": info.get("sub"),
-            "password_hash": "",
-            "created_at": now,
-            "updated_at": now,
+        # New user — return pre-auth data so the client can prefill the registration form
+        logger.info(f"Google OAuth pre-auth (new user): {email}")
+        return {
+            "needs_registration": True,
+            "google_data": {
+                "email": email,
+                "first_name": info.get("given_name") or info.get("name", ""),
+                "last_name": info.get("family_name", ""),
+                "google_id": info.get("sub", ""),
+                "picture": info.get("picture", ""),
+            },
         }
-        result = await db.users.insert_one(user_doc)
-        user_id = result.inserted_id
 
-        await db.candidates.insert_one({"user_id": user_id, "created_at": now, "updated_at": now})
-
-        user_doc["_id"] = user_id
-        user = user_doc
-    elif user.get("role") != UserRole.CANDIDATE:
+    if user.get("role") != UserRole.CANDIDATE:
         raise ForbiddenException("This Google account is not registered as a candidate")
 
-    logger.info(f"Google OAuth login: {email} (new={not bool(user)})")
+    logger.info(f"Google OAuth login (existing candidate): {email}")
     tokens = await _issue_tokens(db, user)
     candidate = await db.candidates.find_one({"user_id": user["_id"]})
     if candidate:

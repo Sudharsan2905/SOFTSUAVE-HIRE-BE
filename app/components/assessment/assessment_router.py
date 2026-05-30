@@ -92,6 +92,20 @@ async def list_submissions(
 
 
 @router.get(
+    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/export",
+    response_model=ApiResponse,
+)
+async def export_submission_list(
+    workspace_id: str,
+    assessment_id: str,
+    db: DB,
+    current_user: AdminUser,
+):
+    result = await assessment_service.export_submissions(db, assessment_id)
+    return success_response("Export data retrieved", result)
+
+
+@router.get(
     "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}",
     response_model=ApiResponse,
 )
