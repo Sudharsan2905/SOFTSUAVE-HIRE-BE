@@ -41,3 +41,26 @@ max-complexity = 15
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["test"]
+pythonpath = ["."]
+addopts = "-n auto"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["test/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.bandit]
+targets = ["app"]
+exclude_dirs = [".venv", "test", "__pycache__"]
+skips = ["B101", "B104"]

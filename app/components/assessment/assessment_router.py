@@ -1,28 +1,29 @@
-from fastapi import APIRouter, Depends, Query
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from typing import Annotated
 
-from app.common.responses import success_response
+from fastapi import APIRouter, Query
+
+from app.common.responses import ApiResponse, success_response
 from app.components.assessment import assessment_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
     UpdateAssessmentRequest,
 )
-from app.components.auth.auth_dependencies import require_admin
-from app.core.dependencies import get_db
+from app.components.auth.auth_dependencies import AdminUser
+from app.core.dependencies import DB
 
 router = APIRouter()
 
 
-@router.get("/workspaces/{workspace_id}/assessments")
+@router.get("/workspaces/{workspace_id}/assessments", response_model=ApiResponse)
 async def list_assessments(
     workspace_id: str,
-    search: str = Query(None),
-    sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
+    search: Annotated[str | None, Query()] = None,
+    sort_by: Annotated[str, Query()] = "created_at",
+    sort_order: Annotated[str, Query()] = "desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     result = await assessment_service.get_assessments(
         db, workspace_id, search, sort_by, sort_order, page, page_size
@@ -30,12 +31,12 @@ async def list_assessments(
     return success_response("Assessments retrieved", result)
 
 
-@router.post("/workspaces/{workspace_id}/assessments")
+@router.post("/workspaces/{workspace_id}/assessments", response_model=ApiResponse)
 async def create_assessment(
     workspace_id: str,
     request: CreateAssessmentRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await assessment_service.create_assessment(
         db, workspace_id, request.model_dump(), current_user["_id"]
@@ -43,24 +44,24 @@ async def create_assessment(
     return success_response("Assessment created", result)
 
 
-@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}")
+@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}", response_model=ApiResponse)
 async def get_assessment(
     workspace_id: str,
     assessment_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await assessment_service.get_assessment(db, workspace_id, assessment_id)
     return success_response("Assessment retrieved", result)
 
 
-@router.put("/workspaces/{workspace_id}/assessments/{assessment_id}")
+@router.put("/workspaces/{workspace_id}/assessments/{assessment_id}", response_model=ApiResponse)
 async def update_assessment(
     workspace_id: str,
     assessment_id: str,
     request: UpdateAssessmentRequest,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await assessment_service.update_assessment(
         db, workspace_id, assessment_id, request.model_dump()
@@ -68,17 +69,20 @@ async def update_assessment(
     return success_response("Assessment updated", result)
 
 
-@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}/submissions")
+@router.get(
+    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions",
+    response_model=ApiResponse,
+)
 async def list_submissions(
     workspace_id: str,
     assessment_id: str,
-    search: str = Query(None),
-    sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
+    search: Annotated[str | None, Query()] = None,
+    sort_by: Annotated[str, Query()] = "created_at",
+    sort_order: Annotated[str, Query()] = "desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     result = await assessment_service.get_submissions(
         db, assessment_id, search, sort_by, sort_order, page, page_size
@@ -86,44 +90,51 @@ async def list_submissions(
     return success_response("Submissions retrieved", result)
 
 
-@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}")
+@router.get(
+    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}",
+    response_model=ApiResponse,
+)
 async def get_submission(
     workspace_id: str,
     assessment_id: str,
     submission_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await assessment_service.get_submission_detail(db, submission_id)
     return success_response("Submission retrieved", result)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}/reaccess"
+    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}/reaccess",
+    response_model=ApiResponse,
 )
 async def grant_reaccess(
     workspace_id: str,
     assessment_id: str,
     submission_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     await assessment_service.grant_reaccess(db, submission_id)
     return success_response("Re-access granted successfully")
 
 
-@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}/export")
+@router.get(
+    "/workspaces/{workspace_id}/assessments/{assessment_id}/export",
+    response_model=ApiResponse,
+)
 async def export_submissions(
     workspace_id: str,
     assessment_id: str,
-    db: AsyncIOMotorDatabase = Depends(get_db),
-    current_user: dict = Depends(require_admin),
+    db: DB,
+    current_user: AdminUser,
 ):
     result = await assessment_service.export_submissions(db, assessment_id)
     return success_response("Export data retrieved", result)
 
 
-@router.get("/assessments/share/{share_link}")
-async def get_by_share_link(share_link: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+@router.get("/assessments/share/{share_link}", response_model=ApiResponse)
+async def get_by_share_link(share_link: str, db: DB):
     result = await assessment_service.get_assessment_by_share_link(db, share_link)
     return success_response("Assessment retrieved", result)

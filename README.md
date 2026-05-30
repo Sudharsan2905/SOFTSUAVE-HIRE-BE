@@ -148,10 +148,13 @@ JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=360
 REFRESH_TOKEN_EXPIRE_DAYS=1
 
+# SonarQube Token
+SONAR_TOKEN=your-sonar-token-here
+
 # AI (OpenAI)
 OPENAI_API_KEY=sk-...
 
-# Google OAuth (Optional)
+# Google OAuth Credentials
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 

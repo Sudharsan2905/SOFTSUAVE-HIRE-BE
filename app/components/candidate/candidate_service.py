@@ -1,24 +1,35 @@
 import base64
 import random
+from typing import Any
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import SubmissionStatus
+from app.common.constants.app_constants import QuestionType, SubmissionStatus
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
     paginate_query,
+    safe_regex,
     serialize_doc,
     serialize_docs,
     utcnow,
 )
+from app.core.logging import logger
+
+_ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
+_ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
 
 
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
+    """Return assessment metadata for a candidate via share link, without internal question IDs.
+
+    Raises:
+        NotFoundException: If the share link is invalid.
+    """
     doc = await db.assessments.find_one({"share_link": share_link})
     if not doc:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     safe = serialize_doc(doc)
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
@@ -26,9 +37,19 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
 
 
 async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_id: str) -> dict:
+    """Start or resume a candidate's assessment submission.
+
+    - Returns existing submission if already IN_PROGRESS.
+    - Transitions PENDING → IN_PROGRESS without re-sampling questions.
+    - Creates a new submission (randomly sampling questions per round) on first call.
+
+    Raises:
+        NotFoundException: If the assessment share link is invalid.
+        ForbiddenException: If the submission is already COMPLETED or MALPRACTICE.
+    """
     assessment = await db.assessments.find_one({"share_link": share_link})
     if not assessment:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
     existing = await db.assessment_submissions.find_one(
         {
@@ -77,13 +98,16 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         safe_questions = []
         for q in questions_raw:
             sq = serialize_doc(q)
-            if sq.get("question_type") in ["mcq_single", "mcq_multi"]:
+            q_type = sq.pop("question_type", "essay")
+            if q_type in [QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI]:
                 opts = [
                     {k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])
                 ]
                 random.shuffle(opts)
                 sq["options"] = opts
             sq.pop("correct_answer", None)
+            sq["text"] = sq.pop("question_text", "")
+            sq["type"] = "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type
             safe_questions.append(sq)
 
         random.shuffle(safe_questions)
@@ -119,12 +143,23 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     }
     result = await db.assessment_submissions.insert_one(submission)
     submission["_id"] = result.inserted_id
+    logger.info(
+        f"Assessment started: candidate_id={candidate_id} share_link={share_link} "
+        f"submission_id={result.inserted_id}"
+    )
     return serialize_doc(submission)
 
 
 async def get_current_round(
     db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str
 ) -> dict:
+    """Return the questions and metadata for the candidate's current round.
+
+    Correct answers and is_correct flags are never included in the response.
+
+    Raises:
+        NotFoundException: If the submission or round index is not found.
+    """
     sub = await db.assessment_submissions.find_one(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
@@ -160,8 +195,13 @@ async def submit_answer(
     submission_id: str,
     candidate_id: str,
     question_id: str,
-    answer,
+    answer: Any,
 ) -> dict:
+    """Persist a candidate's answer for a question in the current round.
+
+    Raises:
+        NotFoundException: If no active in-progress submission exists.
+    """
     sub = await db.assessment_submissions.find_one(
         {
             "_id": ObjectId(submission_id),
@@ -170,7 +210,7 @@ async def submit_answer(
         }
     )
     if not sub:
-        raise NotFoundException("Active submission not found")
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     idx = sub.get("current_round", 1) - 1
     await db.assessment_submissions.update_one(
@@ -186,6 +226,17 @@ async def submit_answer(
 
 
 async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
+    """Mark the current round complete and advance to the next round or finalize the assessment.
+
+    On the final round, calculates score/percentage and sets status to COMPLETED.
+
+    Returns:
+        {'completed': True, 'percentage': float} if all rounds are done,
+        {'completed': False, 'next_round': int} otherwise.
+
+    Raises:
+        NotFoundException: If no active submission is found.
+    """
     sub = await db.assessment_submissions.find_one(
         {
             "_id": ObjectId(submission_id),
@@ -194,11 +245,11 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         }
     )
     if not sub:
-        raise NotFoundException("Active submission not found")
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
     if not assessment:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
     current = sub.get("current_round", 1)
     total_rounds = len(assessment.get("rounds", []))
@@ -219,6 +270,10 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
                 }
             },
         )
+        logger.info(
+            f"Assessment completed: submission_id={submission_id} "
+            f"candidate_id={candidate_id} score={percentage:.1f}%"
+        )
         return {"completed": True, "percentage": percentage}
     else:
         await db.assessment_submissions.update_one(
@@ -231,10 +286,18 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
                 }
             },
         )
+        logger.info(
+            f"Round {current} finished: submission_id={submission_id} "
+            f"→ advancing to round {current + 1}"
+        )
         return {"completed": False, "next_round": current + 1}
 
 
 async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[int, float]:
+    """Compute (correct_count, percentage) across all MCQ rounds in a submission.
+
+    Essay questions are skipped.
+    """
     total = 0
     correct = 0
 
@@ -246,7 +309,7 @@ async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[
             qid = q.get("id")
             total += 1
 
-            if q.get("question_type") == "essay":
+            if q.get("question_type") == QuestionType.ESSAY:
                 continue
 
             original = await db.questions.find_one({"_id": ObjectId(qid)})
@@ -267,7 +330,11 @@ async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[
 
 async def save_screenshot(
     db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, file_bytes: bytes
-):
+) -> None:
+    """Append a base64-encoded screenshot to the submission's screenshots array.
+
+    Silently no-ops if the submission is not found.
+    """
     sub = await db.assessment_submissions.find_one(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
@@ -292,7 +359,12 @@ async def save_screenshot(
 
 async def flag_malpractice(
     db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, malpractice_type: str
-):
+) -> None:
+    """Mark a submission as MALPRACTICE if tab monitoring is enabled; silently returns otherwise.
+
+    Raises:
+        NotFoundException: If no active in-progress submission exists.
+    """
     sub = await db.assessment_submissions.find_one(
         {
             "_id": ObjectId(submission_id),
@@ -301,7 +373,7 @@ async def flag_malpractice(
         }
     )
     if not sub:
-        raise NotFoundException("Active submission not found")
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
     if assessment:
@@ -332,10 +404,15 @@ async def get_live_interviews(
     page: int,
     page_size: int,
 ) -> dict:
+    """Return paginated in-progress submissions joined with candidate and assessment data.
+
+    Supports filtering by monitoring_type and full-text search on candidate name/assessment name.
+    """
     skip, limit = paginate_query(page, page_size)
     sort_dir = 1 if sort_order == "asc" else -1
+    sort_field = sort_by if sort_by in ["started_at", "updated_at", "created_at"] else "started_at"
 
-    pipeline = [
+    pipeline: list[Any] = [
         {"$match": {"status": "in_progress"}},
         {
             "$lookup": {
@@ -365,9 +442,9 @@ async def get_live_interviews(
             {
                 "$match": {
                     "$or": [
-                        {"candidate.first_name": {"$regex": search, "$options": "i"}},
-                        {"candidate.last_name": {"$regex": search, "$options": "i"}},
-                        {"assessment.name": {"$regex": search, "$options": "i"}},
+                        {"candidate.first_name": {"$regex": safe_regex(search), "$options": "i"}},
+                        {"candidate.last_name": {"$regex": safe_regex(search), "$options": "i"}},
+                        {"assessment.name": {"$regex": safe_regex(search), "$options": "i"}},
                     ]
                 }
             }
@@ -378,7 +455,7 @@ async def get_live_interviews(
     )
     total = count_res[0]["total"] if count_res else 0
 
-    pipeline += [{"$sort": {"started_at": sort_dir}}, {"$skip": skip}, {"$limit": limit}]
+    pipeline += [{"$sort": {sort_field: sort_dir}}, {"$skip": skip}, {"$limit": limit}]
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(limit)
 
     return {

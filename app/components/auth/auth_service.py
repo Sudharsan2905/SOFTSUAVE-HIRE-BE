@@ -5,7 +5,7 @@ import httpx
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import UserRole
+from app.common.constants.app_constants import ADMIN_ROLES, UserRole
 from app.common.exceptions import (
     ConflictException,
     ForbiddenException,
@@ -13,14 +13,15 @@ from app.common.exceptions import (
 )
 from app.common.utils import generate_secure_token, hash_token, serialize_doc, utcnow
 from app.core.config import settings
+from app.core.logging import logger
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    return bool(bcrypt.checkpw(plain.encode(), hashed.encode()))
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return str(bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode())
 
 
 def create_access_token(data: dict) -> str:
@@ -38,11 +39,13 @@ def decode_access_token(token: str) -> dict:
         if payload.get("type") != "access":
             raise UnauthorizedException("Invalid token type")
         return payload
-    except JWTError:
+    except JWTError as exc:
+        logger.warning(f"Token decode failed: {exc}")
         raise UnauthorizedException("Invalid or expired token")
 
 
 async def _issue_tokens(db: AsyncIOMotorDatabase, user: dict) -> dict:
+    """Create and persist an access/refresh token pair for the given user."""
     user_data = serialize_doc(user)
     user_data.pop("password_hash", None)
 
@@ -69,19 +72,34 @@ async def _issue_tokens(db: AsyncIOMotorDatabase, user: dict) -> dict:
 
 
 async def admin_login(db: AsyncIOMotorDatabase, email: str, password: str) -> dict:
-    user = await db.users.find_one({"email": email, "role": {"$in": ["super_admin", "admin"]}})
+    """Authenticate a super_admin or admin and issue JWT tokens.
+
+    Raises:
+        UnauthorizedException: On invalid credentials or deactivated account.
+    """
+    user = await db.users.find_one({"email": email, "role": {"$in": ADMIN_ROLES}})
     if not user or not verify_password(password, user.get("password_hash", "")):
+        logger.warning(f"Failed admin login attempt for email: {email}")
         raise UnauthorizedException("Invalid email or password")
     if not user.get("is_active", True):
+        logger.warning(f"Deactivated admin attempted login: {email}")
         raise UnauthorizedException("Your account has been deactivated. Contact your super admin.")
+    logger.info(f"Admin logged in: {email}")
     return await _issue_tokens(db, user)
 
 
 async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -> dict:
+    """Authenticate a candidate and issue JWT tokens, including profile data.
+
+    Raises:
+        UnauthorizedException: On invalid credentials.
+    """
     user = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
     if not user or not verify_password(password, user.get("password_hash", "")):
+        logger.warning(f"Failed candidate login attempt for email: {email}")
         raise UnauthorizedException("Invalid email or password")
 
+    logger.info(f"Candidate logged in: {email}")
     result = await _issue_tokens(db, user)
     candidate = await db.candidates.find_one({"user_id": user["_id"]})
     if candidate:
@@ -90,8 +108,14 @@ async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -
 
 
 async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
+    """Register a new candidate, create their profile, and issue JWT tokens.
+
+    Raises:
+        ConflictException: If the email is already registered.
+    """
     if await db.users.find_one({"email": data["email"]}):
         raise ConflictException("Email already registered")
+    logger.info(f"Registering new candidate: {data['email']}")
 
     password_hash = hash_password(data.pop("password"))
     data.pop("assessment_uuid", None)
@@ -131,7 +155,12 @@ async def refresh_access_token(db: AsyncIOMotorDatabase, refresh_token: str) -> 
     token_hash = hash_token(refresh_token)
     token_doc = await db.refresh_tokens.find_one({"token_hash": token_hash})
 
-    if not token_doc or token_doc["expires_at"] < utcnow():
+    expires_at = token_doc["expires_at"] if token_doc else None
+    if expires_at is not None and expires_at.tzinfo is None:
+        from datetime import UTC
+
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if not token_doc or expires_at < utcnow():
         if token_doc:
             await db.refresh_tokens.delete_one({"_id": token_doc["_id"]})
         raise UnauthorizedException("Refresh token expired or invalid")
@@ -146,11 +175,20 @@ async def refresh_access_token(db: AsyncIOMotorDatabase, refresh_token: str) -> 
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-async def logout(db: AsyncIOMotorDatabase, refresh_token: str):
+async def logout(db: AsyncIOMotorDatabase, refresh_token: str) -> None:
     await db.refresh_tokens.delete_one({"token_hash": hash_token(refresh_token)})
 
 
 async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
+    """Validate a Google ID token, auto-create the candidate if new, and issue JWT tokens.
+
+    Validates the token via Google's tokeninfo endpoint and checks the audience.
+    Raises ForbiddenException if the Google account belongs to a non-candidate user.
+
+    Raises:
+        UnauthorizedException: On invalid or mismatched Google token.
+        ForbiddenException: If the account exists but has a non-candidate role.
+    """
     async with httpx.AsyncClient() as client:
         resp = await client.get(
             "https://oauth2.googleapis.com/tokeninfo",
@@ -162,6 +200,7 @@ async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
 
     info = resp.json()
     if info.get("aud") != settings.GOOGLE_CLIENT_ID:
+        logger.warning("Google OAuth token audience mismatch")
         raise UnauthorizedException("Google token audience mismatch")
 
     email = info.get("email")
@@ -192,15 +231,16 @@ async def google_auth(db: AsyncIOMotorDatabase, credential: str) -> dict:
     elif user.get("role") != UserRole.CANDIDATE:
         raise ForbiddenException("This Google account is not registered as a candidate")
 
-    result = await _issue_tokens(db, user)
+    logger.info(f"Google OAuth login: {email} (new={not bool(user)})")
+    tokens = await _issue_tokens(db, user)
     candidate = await db.candidates.find_one({"user_id": user["_id"]})
     if candidate:
-        result["user"]["profile"] = serialize_doc(candidate)
-    return result
+        tokens["user"]["profile"] = serialize_doc(candidate)
+    return tokens
 
 
 async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
-    if await db.users.find_one({"role": "super_admin"}):
+    if await db.users.find_one({"role": UserRole.SUPER_ADMIN}):
         raise ForbiddenException("Setup already complete. A super admin already exists.")
 
     now = utcnow()
@@ -210,7 +250,7 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "last_name": data.get("last_name") or "",
         "email": data["email"],
         "password_hash": hash_password(data["password"]),
-        "role": "super_admin",
+        "role": UserRole.SUPER_ADMIN,
         "is_active": True,
         "workspaces": [],
         "default_workspace_id": None,

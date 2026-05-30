@@ -1,15 +1,22 @@
+from typing import Any
+
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.exceptions import NotFoundException
+from app.common.constants.app_constants import SubmissionStatus
+from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
     generate_sharelink,
+    list_paginated,
     paginate_query,
+    safe_regex,
     serialize_doc,
     serialize_docs,
     utcnow,
 )
+from app.core.config import settings
+from app.core.logging import logger
 
 
 def _build_rounds(rounds_data: list) -> list:
@@ -31,8 +38,9 @@ def _build_rounds(rounds_data: list) -> list:
 async def create_assessment(
     db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str
 ) -> dict:
-    monitoring = data.get("monitoring_config")
-    if hasattr(monitoring, "model_dump"):
+    """Create a new assessment with rounds and a unique share link."""
+    monitoring: Any = data.get("monitoring_config")
+    if monitoring is not None and hasattr(monitoring, "model_dump"):
         monitoring = monitoring.model_dump()
 
     now = utcnow()
@@ -50,6 +58,7 @@ async def create_assessment(
     }
     result = await db.assessments.insert_one(doc)
     doc["_id"] = result.inserted_id
+    logger.info(f"Assessment created: '{data['name']}' in workspace_id={workspace_id}")
     return serialize_doc(doc)
 
 
@@ -62,21 +71,21 @@ async def get_assessments(
     page: int,
     page_size: int,
 ) -> dict:
+    """Return a paginated list of assessments in a workspace, with submission counts."""
     skip, limit = paginate_query(page, page_size)
     query: dict = {"workspace_id": ObjectId(workspace_id)}
     if search:
-        query["name"] = {"$regex": search, "$options": "i"}
+        query["name"] = {"$regex": safe_regex(search), "$options": "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = sort_by if sort_by in ["name", "created_at", "updated_at"] else "created_at"
-
-    total = await db.assessments.count_documents(query)
-    docs = (
-        await db.assessments.find(query)
-        .sort(sort_field, sort_dir)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
+    total, docs = await list_paginated(
+        db.assessments,
+        query,
+        sort_by,
+        sort_dir,
+        skip,
+        limit,
+        ["name", "created_at", "updated_at"],
     )
 
     for doc in docs:
@@ -91,6 +100,11 @@ async def get_assessments(
 
 
 async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str) -> dict:
+    """Fetch a single assessment by workspace and assessment ID.
+
+    Raises:
+        NotFoundException: If the assessment does not exist in the workspace.
+    """
     doc = await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     )
@@ -102,6 +116,11 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
 async def update_assessment(
     db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str, data: dict
 ) -> dict:
+    """Update an assessment's name, description, rounds, accessibility, or monitoring config.
+
+    Raises:
+        NotFoundException: If the assessment does not exist in the workspace.
+    """
     if not await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     ):
@@ -125,6 +144,11 @@ async def update_assessment(
 
 
 async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str) -> dict:
+    """Fetch an assessment by its public share link, stripping internal question_ids from rounds.
+
+    Raises:
+        NotFoundException: If no assessment matches the share link.
+    """
     doc = await db.assessments.find_one({"share_link": share_link})
     if not doc:
         raise NotFoundException("Assessment not found")
@@ -143,6 +167,11 @@ async def get_submissions(
     page: int,
     page_size: int,
 ) -> dict:
+    """Return paginated submissions for an assessment, joined with candidate user data.
+
+    Uses an aggregation pipeline so candidate name/email can be searched.
+    Question bodies are excluded from the response for performance.
+    """
     skip, limit = paginate_query(page, page_size)
     sort_dir = 1 if sort_order == "asc" else -1
     sort_field = (
@@ -151,7 +180,7 @@ async def get_submissions(
         else "created_at"
     )
 
-    pipeline = [
+    pipeline: list[Any] = [
         {"$match": {"assessment_id": ObjectId(assessment_id)}},
         {
             "$lookup": {
@@ -165,13 +194,14 @@ async def get_submissions(
         {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
     ]
     if search:
+        escaped = safe_regex(search)
         pipeline.append(
             {
                 "$match": {
                     "$or": [
-                        {"candidate.first_name": {"$regex": search, "$options": "i"}},
-                        {"candidate.last_name": {"$regex": search, "$options": "i"}},
-                        {"candidate.email": {"$regex": search, "$options": "i"}},
+                        {"candidate.first_name": {"$regex": escaped, "$options": "i"}},
+                        {"candidate.last_name": {"$regex": escaped, "$options": "i"}},
+                        {"candidate.email": {"$regex": escaped, "$options": "i"}},
                     ]
                 }
             }
@@ -192,6 +222,11 @@ async def get_submissions(
 
 
 async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
+    """Fetch a single submission with the joined candidate user document.
+
+    Raises:
+        NotFoundException: If the submission does not exist.
+    """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
         raise NotFoundException("Submission not found")
@@ -202,21 +237,33 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     return result
 
 
-async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str):
+async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
+    """Reset a completed/malpractice submission to pending so the candidate can retry.
+
+    Raises:
+        NotFoundException: If the submission does not exist.
+        ForbiddenException: If MAX_REACCESS_COUNT has been reached.
+    """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
         raise NotFoundException("Submission not found")
+    if sub.get("reaccess_count", 0) >= settings.MAX_REACCESS_COUNT:
+        raise ForbiddenException(
+            f"Maximum re-access limit of {settings.MAX_REACCESS_COUNT} has been reached"
+        )
+    logger.info(f"Re-access granted for submission_id={submission_id}")
     await db.assessment_submissions.update_one(
         {"_id": ObjectId(submission_id)},
         {
-            "$set": {"status": "pending", "updated_at": utcnow()},
+            "$set": {"status": SubmissionStatus.PENDING, "updated_at": utcnow()},
             "$inc": {"reaccess_count": 1},
         },
     )
 
 
 async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> list:
-    pipeline = [
+    """Return all submissions for an assessment in a flat format suitable for Excel export."""
+    pipeline: list[Any] = [
         {"$match": {"assessment_id": ObjectId(assessment_id)}},
         {
             "$lookup": {

@@ -1,13 +1,16 @@
-import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+import aiosmtplib
+
 from app.core.config import settings
+from app.core.logging import logger
 
 
-async def send_email(to_email: str, subject: str, html_body: str):
+async def send_email(to_email: str, subject: str, html_body: str) -> None:
+    """Send an HTML email via SMTP. Logs a mock entry when SMTP is not configured."""
     if not settings.SMTP_USER:
-        print(f"[Email Mock] To: {to_email} | Subject: {subject}")
+        logger.info(f"[Email Mock] To: {to_email} | Subject: {subject}")
         return
 
     msg = MIMEMultipart("alternative")
@@ -17,18 +20,23 @@ async def send_email(to_email: str, subject: str, html_body: str):
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_USER, to_email, msg.as_string())
-    except Exception as e:
-        print(f"[Email Error] Failed to send to {to_email}: {e}")
+        await aiosmtplib.send(
+            msg,
+            hostname=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USER,
+            password=settings.SMTP_PASSWORD,
+            start_tls=True,
+        )
+        logger.info(f"Email sent to {to_email} | Subject: {subject}")
+    except Exception:
+        logger.exception(f"Failed to send email to {to_email} | Subject: {subject}")
 
 
 async def send_assessment_invite(
     to_email: str, candidate_name: str, assessment_link: str, assessment_name: str
-):
+) -> None:
+    """Send an assessment invitation email to a candidate."""
     html = f"""
     <div style="font-family:Inter,Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:12px">
       <div style="background:#2563EB;padding:20px 32px;border-radius:8px 8px 0 0">

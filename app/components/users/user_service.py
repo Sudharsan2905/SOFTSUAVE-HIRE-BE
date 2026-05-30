@@ -1,20 +1,30 @@
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.common.constants.app_constants import ADMIN_ROLES, UserRole
 from app.common.exceptions import ConflictException, ForbiddenException, NotFoundException
 from app.common.utils import serialize_doc, serialize_docs, utcnow
 from app.components.auth.auth_service import hash_password
+from app.core.logging import logger
 
 
 async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
+    """Create an admin or super_admin user and sync their workspace memberships.
+
+    Super admins do not require workspace assignment.
+
+    Raises:
+        ConflictException: If the email is already registered.
+        ForbiddenException: If the role is not super_admin and no valid workspace is provided.
+    """
     if await db.users.find_one({"email": data["email"]}):
         raise ConflictException("Email already registered")
 
-    role = data.get("role", "admin")
+    role = data.get("role", UserRole.ADMIN)
     workspace_ids = data.get("workspace_ids") or []
     workspaces = []
 
-    if role != "super_admin":
+    if role != UserRole.SUPER_ADMIN:
         for wid in workspace_ids:
             ws = await db.workspaces.find_one({"_id": ObjectId(wid)})
             if ws:
@@ -56,6 +66,7 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     doc["_id"] = user_id
     doc.pop("password_hash")
+    logger.info(f"Admin user created: {data['email']} role={role}")
     return serialize_doc(doc)
 
 
@@ -64,7 +75,8 @@ async def list_users(
     role_filter: str | None = None,
     is_active_filter: bool | None = None,
 ) -> list:
-    query: dict = {"role": {"$in": ["admin", "super_admin"]}}
+    """Return all admin/super_admin users, optionally filtered by role or active status."""
+    query: dict = {"role": {"$in": ADMIN_ROLES}}
     if role_filter:
         query["role"] = role_filter
     if is_active_filter is not None:
@@ -74,6 +86,11 @@ async def list_users(
 
 
 async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> dict:
+    """Fetch a single user by ID, excluding the password hash.
+
+    Raises:
+        NotFoundException: If the user does not exist.
+    """
     doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
     if not doc:
         raise NotFoundException("User not found")
@@ -81,6 +98,15 @@ async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> dict:
 
 
 async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
+    """Update an admin user's profile, status, or workspace assignments.
+
+    Workspace membership in the workspaces collection is kept in sync automatically.
+    Super admins cannot have their status changed or workspaces reassigned.
+
+    Raises:
+        NotFoundException: If the user does not exist.
+        ForbiddenException: If trying to change super admin status or workspaces.
+    """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise NotFoundException("User not found")
@@ -93,12 +119,12 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
         update["last_name"] = data["last_name"]
 
     if data.get("is_active") is not None:
-        if user["role"] == "super_admin":
+        if user["role"] == UserRole.SUPER_ADMIN:
             raise ForbiddenException("Super admin status cannot be changed")
         update["is_active"] = data["is_active"]
 
     if data.get("workspace_ids") is not None:
-        if user["role"] == "super_admin":
+        if user["role"] == UserRole.SUPER_ADMIN:
             raise ForbiddenException("Super admin has access to all workspaces")
         workspace_ids: list = data["workspace_ids"]
 
@@ -156,6 +182,13 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
 
 
 async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
+    """Allow an authenticated user to update their own name, password, or default workspace.
+
+    Raises:
+        NotFoundException: If the user or workspace does not exist.
+        ForbiddenException: If the user is not a member of the requested workspace
+            (non-super_admin).
+    """
     user = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
     if not user:
         raise NotFoundException("User not found")
@@ -175,7 +208,7 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
         workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
         if not workspace:
             raise NotFoundException("Workspace not found")
-        if user.get("role") != "super_admin":
+        if user.get("role") != UserRole.SUPER_ADMIN:
             member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
             if user_id not in member_ids:
                 raise ForbiddenException("You are not a member of this workspace")

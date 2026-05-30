@@ -8,6 +8,7 @@ env/
 .env
 .env.local
 .env.production
+.env.staging
 
 # Python bytecode
 __pycache__/
@@ -21,12 +22,23 @@ build/
 *.egg-info/
 *.egg
 .eggs/
+MANIFEST
 
 # Pytest / coverage
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
+
+# Ruff
+.ruff_cache/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Logs
 *.log
@@ -37,19 +49,19 @@ uploads/
 temp/
 tmp/
 
+# SonarQube / SonarLint
+.sonar/
+.sonarlint/
+.scannerwork/
+
 # Editor
 .vscode/
 .idea/
 *.suo
 *.sw?
+*.swp
 
 # OS
 .DS_Store
 Thumbs.db
-
-# MyPy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-temp/
+desktop.ini

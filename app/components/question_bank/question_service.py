@@ -1,19 +1,48 @@
+from typing import Any, cast
+
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.exceptions import ConflictException, NotFoundException
+from app.common.constants.app_constants import QuestionType
+from app.common.exceptions import ConflictException, NotFoundException, ValidationException
 from app.common.utils import (
     build_pagination_meta,
+    list_paginated,
     paginate_query,
+    safe_regex,
     serialize_doc,
     serialize_docs,
     utcnow,
 )
+from app.core.logging import logger
+
+
+def _validate_question_options(data: dict) -> None:
+    """Enforce MCQ/essay option rules before insert or update."""
+    q_type = data.get("question_type", "")
+    options = data.get("options") or []
+
+    if q_type in [QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI]:
+        if not options:
+            raise ValidationException("MCQ questions must have at least one option")
+        if not any(
+            o.get("is_correct") if isinstance(o, dict) else getattr(o, "is_correct", False)
+            for o in options
+        ):
+            raise ValidationException("MCQ questions must have at least one correct option marked")
+
+    if q_type == QuestionType.ESSAY and options:
+        raise ValidationException("Essay questions must not have options")
 
 
 async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) -> dict:
+    """Create a new question category (case-insensitive duplicate check).
+
+    Raises:
+        ConflictException: If a category with the same name already exists.
+    """
     if await db.question_categories.find_one(
-        {"name": {"$regex": f"^{data['name']}$", "$options": "i"}}
+        {"name": {"$regex": f"^{safe_regex(data['name'])}$", "$options": "i"}}
     ):
         raise ConflictException(f"Category '{data['name']}' already exists")
 
@@ -39,25 +68,21 @@ async def get_categories(
     page: int,
     page_size: int,
 ) -> dict:
+    """Return a paginated list of question categories, optionally filtered by name."""
     skip, limit = paginate_query(page, page_size)
     query = {}
     if search:
-        query["name"] = {"$regex": search, "$options": "i"}
+        query["name"] = {"$regex": safe_regex(search), "$options": "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = (
-        sort_by
-        if sort_by in ["name", "created_at", "updated_at", "question_count"]
-        else "created_at"
-    )
-
-    total = await db.question_categories.count_documents(query)
-    docs = (
-        await db.question_categories.find(query)
-        .sort(sort_field, sort_dir)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
+    total, docs = await list_paginated(
+        db.question_categories,
+        query,
+        sort_by,
+        sort_dir,
+        skip,
+        limit,
+        ["name", "created_at", "updated_at", "question_count"],
     )
     return {
         "categories": serialize_docs(docs),
@@ -66,6 +91,11 @@ async def get_categories(
 
 
 async def update_category(db: AsyncIOMotorDatabase, category_id: str, data: dict) -> dict:
+    """Update a category's name or description.
+
+    Raises:
+        NotFoundException: If the category does not exist.
+    """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
         raise NotFoundException("Category not found")
     update = {k: v for k, v in data.items() if v is not None}
@@ -74,7 +104,12 @@ async def update_category(db: AsyncIOMotorDatabase, category_id: str, data: dict
     return serialize_doc(await db.question_categories.find_one({"_id": ObjectId(category_id)}))
 
 
-async def delete_category(db: AsyncIOMotorDatabase, category_id: str):
+async def delete_category(db: AsyncIOMotorDatabase, category_id: str) -> None:
+    """Delete a category and cascade-delete all its questions.
+
+    Raises:
+        NotFoundException: If the category does not exist.
+    """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
         raise NotFoundException("Category not found")
     await db.question_categories.delete_one({"_id": ObjectId(category_id)})
@@ -92,25 +127,25 @@ async def get_questions(
     page: int,
     page_size: int,
 ) -> dict:
+    """Return a paginated list of questions in a category, with optional filters."""
     skip, limit = paginate_query(page, page_size)
     query: dict = {"category_id": ObjectId(category_id)}
     if search:
-        query["question_text"] = {"$regex": search, "$options": "i"}
+        query["question_text"] = {"$regex": safe_regex(search), "$options": "i"}
     if complexity:
         query["complexity"] = complexity
     if question_type:
         query["question_type"] = question_type
 
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = sort_by if sort_by in ["created_at", "updated_at", "complexity"] else "created_at"
-
-    total = await db.questions.count_documents(query)
-    docs = (
-        await db.questions.find(query)
-        .sort(sort_field, sort_dir)
-        .skip(skip)
-        .limit(limit)
-        .to_list(limit)
+    total, docs = await list_paginated(
+        db.questions,
+        query,
+        sort_by,
+        sort_dir,
+        skip,
+        limit,
+        ["created_at", "updated_at", "complexity"],
     )
     return {
         "questions": serialize_docs(docs),
@@ -121,9 +156,16 @@ async def get_questions(
 async def create_question(
     db: AsyncIOMotorDatabase, category_id: str, data: dict, user_id: str
 ) -> dict:
+    """Create a single question in a category, enforcing MCQ/essay option rules.
+
+    Raises:
+        NotFoundException: If the category does not exist.
+        ValidationException: If MCQ has no correct option, or essay has options.
+    """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
         raise NotFoundException("Category not found")
 
+    _validate_question_options(data)
     now = utcnow()
     options = data.get("options") or []
     if isinstance(options, list):
@@ -151,6 +193,14 @@ async def create_question(
 async def bulk_create_questions(
     db: AsyncIOMotorDatabase, category_id: str, questions: list, user_id: str
 ) -> dict:
+    """Insert multiple questions at once and increment the category's question_count.
+
+    Returns:
+        Dict with key 'created' containing the number of inserted questions.
+
+    Raises:
+        NotFoundException: If the category does not exist.
+    """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
         raise NotFoundException("Category not found")
 
@@ -184,8 +234,15 @@ async def bulk_create_questions(
 
 
 async def update_question(db: AsyncIOMotorDatabase, question_id: str, data: dict) -> dict:
+    """Update a question's fields, re-validating MCQ/essay option rules.
+
+    Raises:
+        NotFoundException: If the question does not exist.
+        ValidationException: If updated options violate MCQ/essay rules.
+    """
     if not await db.questions.find_one({"_id": ObjectId(question_id)}):
         raise NotFoundException("Question not found")
+    _validate_question_options(data)
     update = {k: v for k, v in data.items() if v is not None}
     if "options" in update and isinstance(update["options"], list):
         update["options"] = [
@@ -196,7 +253,12 @@ async def update_question(db: AsyncIOMotorDatabase, question_id: str, data: dict
     return serialize_doc(await db.questions.find_one({"_id": ObjectId(question_id)}))
 
 
-async def delete_question(db: AsyncIOMotorDatabase, question_id: str):
+async def delete_question(db: AsyncIOMotorDatabase, question_id: str) -> None:
+    """Delete a question and decrement its category's question_count.
+
+    Raises:
+        NotFoundException: If the question does not exist.
+    """
     q = await db.questions.find_one({"_id": ObjectId(question_id)})
     if not q:
         raise NotFoundException("Question not found")
@@ -215,6 +277,14 @@ async def ai_generate_questions(
     question_type: str,
     user_id: str,
 ) -> dict:
+    """Generate questions via OpenAI GPT-4o and bulk-insert them into the category.
+
+    Returns:
+        Dict with 'created' count, or 'error' key if generation fails.
+
+    Raises:
+        NotFoundException: If the category does not exist (raised by bulk_create_questions).
+    """
     try:
         import json
         import re
@@ -223,7 +293,7 @@ async def ai_generate_questions(
 
         from app.core.config import settings
 
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        client: Any = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         type_instructions = {
             "mcq_single": (
                 "MCQ with exactly one correct answer. "
@@ -254,6 +324,8 @@ No extra explanation outside the JSON array. Return only the JSON array."""
             messages=[{"role": "user", "content": prompt}],
         )
         content = message.choices[0].message.content
+        if not content:
+            return {"created": 0, "error": "AI generation failed or unavailable"}
         json_match = re.search(r"\[.*\]", content, re.DOTALL)
         if json_match:
             questions_data = json.loads(json_match.group())
@@ -261,18 +333,25 @@ No extra explanation outside the JSON array. Return only the JSON array."""
                 {**q, "question_type": question_type, "complexity": complexity}
                 for q in questions_data
             ]
-            return await bulk_create_questions(db, category_id, enriched, user_id)
-    except Exception as e:
-        print(f"[AI Generate Error] {e}")
+            result = await bulk_create_questions(db, category_id, enriched, user_id)
+            logger.info(
+                f"AI generated {result.get('created', 0)} questions for category_id={category_id} "
+                f"topic='{topic}' type={question_type}"
+            )
+            return result
+    except Exception:
+        logger.exception(
+            f"AI question generation failed for category_id={category_id} topic='{topic}'"
+        )
 
     return {"created": 0, "error": "AI generation failed or unavailable"}
 
 
-def _find_column(headers_lower: list, name: str):
+def _find_column(headers_lower: list, name: str) -> str | None:
     """Case-insensitive column lookup; returns original-case header or None."""
     for h in headers_lower:
-        if h and h.lower() == name.lower():
-            return h
+        if h and cast(str, h).lower() == name.lower():
+            return cast(str, h)
     return None
 
 
@@ -281,24 +360,26 @@ def _split_outside_brackets(text: str) -> list[str]:
     result = []
     current: list[str] = []
     stack: list[str] = []
-    pairs = {')': '(', ']': '[', '}': '{'}
+    pairs = {")": "(", "]": "[", "}": "{"}
     for ch in text:
         if ch in "([{":
             stack.append(ch)
         elif ch in ")]}":
             if stack and stack[-1] == pairs[ch]:
                 stack.pop()
-        if ch == ',' and not stack:
-            result.append(''.join(current).strip())
+        if ch == "," and not stack:
+            result.append("".join(current).strip())
             current = []
         else:
             current.append(ch)
     if current:
-        result.append(''.join(current).strip())
+        result.append("".join(current).strip())
     return result
 
 
-def _classify_and_build(options_raw, answer_raw):
+def _classify_and_build(
+    options_raw: object, answer_raw: object
+) -> tuple[str, list[dict], str | None]:
     """Return (question_type, options_list, correct_answer_text)."""
     options_str = str(options_raw).strip() if options_raw else ""
     answer_str = str(answer_raw).strip() if answer_raw is not None else ""
@@ -334,8 +415,22 @@ async def process_excel_import(
     category_id: str,
     file_data: bytes,
     user_id: str,
-    column_map: dict = None,
+    column_map: dict | None = None,
 ) -> dict:
+    """Parse an Excel file and bulk-import questions into a category.
+
+    Args:
+        db: AsyncIOMotorDatabase instance.
+        category_id: Target category string ID.
+        file_data: Raw bytes of the uploaded .xlsx file.
+        user_id: ID of the admin performing the import.
+        column_map: Optional mapping of logical fields to Excel column headers
+            (keys: 'question', 'options', 'answer', 'complexity'). Falls back to
+            case-insensitive header auto-detection when not provided.
+
+    Returns:
+        Dict with 'created' count, or 'error' key on failure.
+    """
     import io
 
     import openpyxl
@@ -346,10 +441,10 @@ async def process_excel_import(
 
     # Use explicit column_map first, fall back to case-insensitive auto-detect
     col_map = column_map or {}
-    col_question = col_map.get('question') or _find_column(raw_headers, "question")
-    col_options = col_map.get('options') or _find_column(raw_headers, "options")
-    col_answer = col_map.get('answer') or _find_column(raw_headers, "answer")
-    col_complexity = col_map.get('complexity') or _find_column(raw_headers, "complexity")
+    col_question = col_map.get("question") or _find_column(raw_headers, "question")
+    col_options = col_map.get("options") or _find_column(raw_headers, "options")
+    col_answer = col_map.get("answer") or _find_column(raw_headers, "answer")
+    col_complexity = col_map.get("complexity") or _find_column(raw_headers, "complexity")
 
     if not col_question:
         return {"created": 0, "error": "Missing 'Question' column"}
