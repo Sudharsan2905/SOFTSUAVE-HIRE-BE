@@ -46,3 +46,9 @@ class UpdateAssessmentRequest(BaseModel):
     rounds: list[RoundConfig] | None = None
     accessibility: AssessmentAccessibility | None = None
     monitoring_config: MonitoringConfig | None = None
+
+
+class GenerateExpirableLinkRequest(BaseModel):
+    assessment_id: str
+    start_time: str  # ISO 8601
+    end_time: str  # ISO 8601

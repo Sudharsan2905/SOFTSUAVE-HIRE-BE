@@ -32,12 +32,12 @@ async def list_workspaces(
 @router.post("", response_model=ApiResponse)
 @limiter.limit("10/hour")
 async def create_workspace(
-    http_request: Request,
-    request: CreateWorkspaceRequest,
+    request: Request,
+    body: CreateWorkspaceRequest,
     db: DB,
     current_user: SuperAdminUser,
 ):
-    result = await workspace_service.create_workspace(db, request.model_dump(), current_user["_id"])
+    result = await workspace_service.create_workspace(db, body.model_dump(), current_user["_id"])
     return success_response("Workspace created", result)
 
 
@@ -78,14 +78,14 @@ async def update_workspace(
 @router.post("/{workspace_id}/invite", response_model=ApiResponse)
 @limiter.limit("10/hour")
 async def invite_members(
-    http_request: Request,
+    request: Request,
     workspace_id: str,
-    request: InviteMemberRequest,
+    body: InviteMemberRequest,
     db: DB,
     current_user: SuperAdminUser,
 ):
     result = await workspace_service.invite_members(
-        db, workspace_id, request.user_ids, current_user["_id"]
+        db, workspace_id, body.user_ids, current_user["_id"]
     )
     return success_response("Members invited", result)
 

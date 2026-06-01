@@ -94,13 +94,13 @@ async def save_screenshot(
 @router.post("/submission/{submission_id}/malpractice", response_model=ApiResponse)
 @limiter.limit("10/minute")
 async def flag_malpractice(
-    http_request: Request,
+    request: Request,
     submission_id: str,
-    request: MalpracticeRequest,
+    body: MalpracticeRequest,
     db: DB,
     current_user: CurrentUser,
 ):
-    await candidate_service.flag_malpractice(db, submission_id, current_user["_id"], request.type)
+    await candidate_service.flag_malpractice(db, submission_id, current_user["_id"], body.type)
     return success_response("Activity flagged")
 
 

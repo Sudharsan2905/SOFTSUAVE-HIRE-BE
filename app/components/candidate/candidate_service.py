@@ -10,6 +10,7 @@ from app.common.constants.app_constants import QuestionType, SubmissionStatus
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
+    decode_sharelink,
     paginate_query,
     safe_regex,
     serialize_doc,
@@ -36,10 +37,21 @@ _rng = random.SystemRandom()
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     """Return assessment metadata for a candidate via share link, without internal question IDs.
 
+    Tries to decode the link as a signed token first; falls back to a direct share_link
+    field lookup for backward compatibility with legacy links.
+
     Raises:
         NotFoundException: If the share link is invalid.
     """
-    doc = await db.assessments.find_one({"share_link": share_link})
+    from app.common.exceptions import ValidationException
+
+    doc = None
+    try:
+        decoded = decode_sharelink(share_link)
+        doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+    except (ValidationException, Exception):
+        doc = await db.assessments.find_one({"share_link": share_link})
+
     if not doc:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     safe = serialize_doc(doc)
@@ -125,7 +137,13 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         NotFoundException: If the assessment share link is invalid.
         ForbiddenException: If the submission is already COMPLETED or MALPRACTICE.
     """
-    assessment = await db.assessments.find_one({"share_link": share_link})
+    assessment = None
+    try:
+        decoded = decode_sharelink(share_link)
+        assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+    except Exception:
+        assessment = await db.assessments.find_one({"share_link": share_link})
+
     if not assessment:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
@@ -256,11 +274,7 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         NotFoundException: If no active submission is found.
     """
     sub = await db.assessment_submissions.find_one(
-        {
-            "_id": ObjectId(submission_id),
-            "candidate_id": ObjectId(candidate_id),
-            "status": SubmissionStatus.IN_PROGRESS,
-        }
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
         raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
@@ -394,7 +408,10 @@ async def save_screenshot(
 
 
 async def flag_malpractice(
-    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str, malpractice_type: str
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    candidate_id: str,
+    malpractice_type: str,
 ) -> None:
     """Mark a submission as MALPRACTICE if tab monitoring is enabled; silently returns otherwise.
 
@@ -402,11 +419,7 @@ async def flag_malpractice(
         NotFoundException: If no active in-progress submission exists.
     """
     sub = await db.assessment_submissions.find_one(
-        {
-            "_id": ObjectId(submission_id),
-            "candidate_id": ObjectId(candidate_id),
-            "status": SubmissionStatus.IN_PROGRESS,
-        }
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
         raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
@@ -421,7 +434,6 @@ async def flag_malpractice(
         {"_id": sub["_id"]},
         {
             "$set": {
-                "status": SubmissionStatus.MALPRACTICE,
                 "is_malpractice": True,
                 "malpractice_reason": malpractice_type,
                 "completed_at": utcnow(),

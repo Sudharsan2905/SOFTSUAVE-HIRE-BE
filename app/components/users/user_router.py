@@ -31,12 +31,12 @@ async def update_me(
 @router.post("", response_model=ApiResponse)
 @limiter.limit("10/hour")
 async def create_user(
-    http_request: Request,
-    request: CreateAdminUserRequest,
+    request: Request,
+    body: CreateAdminUserRequest,
     db: DB,
     current_user: SuperAdminUser,
 ):
-    result = await user_service.create_admin_user(db, request.model_dump())
+    result = await user_service.create_admin_user(db, body.model_dump())
     return success_response("User created", result)
 
 

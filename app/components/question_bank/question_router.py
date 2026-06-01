@@ -113,19 +113,19 @@ async def bulk_create(
 @router.post("/categories/{category_id}/ai-generate", response_model=ApiResponse)
 @limiter.limit("10/hour")
 async def ai_generate(
-    http_request: Request,
+    request: Request,
     category_id: str,
-    request: AIGenerateRequest,
+    body: AIGenerateRequest,
     db: DB,
     current_user: AdminUser,
 ):
     result = await question_service.ai_generate_questions(
         db,
         category_id,
-        request.topic,
-        request.count,
-        request.complexity,
-        request.question_type,
+        body.topic,
+        body.count,
+        body.complexity,
+        body.question_type,
         current_user["_id"],
     )
     return success_response("AI questions generated", result)

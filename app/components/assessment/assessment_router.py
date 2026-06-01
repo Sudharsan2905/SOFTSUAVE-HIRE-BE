@@ -6,6 +6,7 @@ from app.common.responses import ApiResponse, success_response
 from app.components.assessment import assessment_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
+    GenerateExpirableLinkRequest,
     UpdateAssessmentRequest,
 )
 from app.components.auth.auth_dependencies import AdminUser
@@ -84,9 +85,19 @@ async def list_submissions(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    from_date: Annotated[str | None, Query()] = None,
+    to_date: Annotated[str | None, Query()] = None,
 ):
     result = await assessment_service.get_submissions(
-        db, assessment_id, search, sort_by, sort_order, page, page_size
+        db,
+        assessment_id,
+        search,
+        sort_by,
+        sort_order,
+        page,
+        page_size,
+        from_date=from_date,
+        to_date=to_date,
     )
     return success_response("Submissions retrieved", result)
 
@@ -149,6 +160,32 @@ async def export_submissions(
 ):
     result = await assessment_service.export_submissions(db, assessment_id)
     return success_response("Export data retrieved", result)
+
+
+@router.post("/assessments/share/expirable", response_model=ApiResponse)
+@limiter.limit("10/hour")
+async def generate_expirable_share_link(
+    request: Request,
+    workspace_id: Annotated[str, Query()],
+    body: GenerateExpirableLinkRequest,
+    db: DB,
+    current_user: AdminUser,
+):
+    link = await assessment_service.generate_expirable_link(
+        db, body.assessment_id, workspace_id, body.start_time, body.end_time
+    )
+    return success_response("Expirable link generated", {"share_link": link})
+
+
+@router.get("/assessments/share/validate", response_model=ApiResponse)
+@limiter.limit("60/minute")
+async def validate_share_link(
+    request: Request,
+    link: Annotated[str, Query()],
+    db: DB,
+):
+    result = await assessment_service.validate_sharelink(db, link)
+    return success_response("Share link validated", result)
 
 
 @router.get("/assessments/share/{share_link}", response_model=ApiResponse)

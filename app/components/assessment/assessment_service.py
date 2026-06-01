@@ -1,3 +1,4 @@
+from datetime import UTC
 from typing import Any
 
 from bson import ObjectId
@@ -7,7 +8,9 @@ from app.common.constants.app_constants import SubmissionStatus
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
-    generate_sharelink,
+    decode_sharelink,
+    encode_permanent_sharelink,
+    generate_sharelink,  # noqa: F401 — kept for backward compatibility
     list_paginated,
     paginate_query,
     safe_regex,
@@ -17,6 +20,8 @@ from app.common.utils import (
 )
 from app.core.config import settings
 from app.core.logging import logger
+
+_ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 
 
 def _build_rounds(rounds_data: list) -> list:
@@ -38,7 +43,7 @@ def _build_rounds(rounds_data: list) -> list:
 async def create_assessment(
     db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str
 ) -> dict:
-    """Create a new assessment with rounds and a unique share link."""
+    """Create a new assessment with rounds and a unique tamper-proof share link."""
     monitoring: Any = data.get("monitoring_config")
     if monitoring is not None and hasattr(monitoring, "model_dump"):
         monitoring = monitoring.model_dump()
@@ -51,12 +56,17 @@ async def create_assessment(
         "rounds": _build_rounds(data.get("rounds", [])),
         "accessibility": data["accessibility"],
         "monitoring_config": monitoring,
-        "share_link": generate_sharelink(workspace_id),
         "created_by": ObjectId(user_id),
         "created_at": now,
         "updated_at": now,
     }
     result = await db.assessments.insert_one(doc)
+    assessment_id = str(result.inserted_id)
+    share_link = encode_permanent_sharelink(assessment_id)
+    await db.assessments.update_one(
+        {"_id": result.inserted_id}, {"$set": {"share_link": share_link}}
+    )
+    doc["share_link"] = share_link
     doc["_id"] = result.inserted_id
     logger.info(f"Assessment created: '{data['name']}' in workspace_id={workspace_id}")
     return serialize_doc(doc)
@@ -109,7 +119,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     )
     if not doc:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     return serialize_doc(doc)
 
 
@@ -124,7 +134,7 @@ async def update_assessment(
     if not await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
     ):
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
     update: dict = {"updated_at": utcnow()}
     if data.get("name"):
@@ -146,16 +156,141 @@ async def update_assessment(
 async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     """Fetch an assessment by its public share link, stripping internal question_ids from rounds.
 
+    Tries to decode the link as a signed token first; falls back to a direct share_link
+    field lookup for backward compatibility with legacy links.
+
     Raises:
         NotFoundException: If no assessment matches the share link.
     """
-    doc = await db.assessments.find_one({"share_link": share_link})
+    from app.common.exceptions import ValidationException
+
+    doc = None
+    try:
+        decoded = decode_sharelink(share_link)
+        assessment_id = decoded["a"]
+        doc = await db.assessments.find_one({"_id": ObjectId(assessment_id)})
+    except (ValidationException, Exception):
+        doc = await db.assessments.find_one({"share_link": share_link})
+
     if not doc:
-        raise NotFoundException("Assessment not found")
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
     safe = serialize_doc(doc)
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
     return safe
+
+
+async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dict:
+    """Validate a permanent or expirable share link.
+
+    Returns dict with: assessment_id, is_expirable, is_expired, can_allow,
+    start_time, end_time, message
+    """
+    from app.common.exceptions import ValidationException
+
+    try:
+        decoded = decode_sharelink(encoded_link)
+    except ValidationException:
+        return {
+            "can_allow": False,
+            "is_expired": True,
+            "is_expirable": False,
+            "start_time": None,
+            "end_time": None,
+            "message": "This share link is invalid.",
+        }
+
+    assessment_id = decoded["a"]
+    try:
+        doc = await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"_id": 1})
+    except Exception:
+        doc = None
+
+    if not doc:
+        return {
+            "can_allow": False,
+            "is_expired": True,
+            "is_expirable": False,
+            "start_time": None,
+            "end_time": None,
+            "message": "This share link is invalid.",
+        }
+
+    # Permanent link — always allowed
+    if "s" not in decoded:
+        return {
+            "can_allow": True,
+            "is_expired": False,
+            "is_expirable": False,
+            "start_time": None,
+            "end_time": None,
+            "message": "You may proceed to attend the interview.",
+        }
+
+    # Expirable link
+    from datetime import datetime as _dt
+
+    now = utcnow().replace(tzinfo=UTC)
+    start = _dt.fromisoformat(decoded["s"]).replace(tzinfo=UTC)
+    end = _dt.fromisoformat(decoded["e"]).replace(tzinfo=UTC)
+
+    if now < start:
+        return {
+            "can_allow": False,
+            "is_expired": False,
+            "is_expirable": True,
+            "start_time": decoded["s"],
+            "end_time": decoded["e"],
+            "message": "Your interview link is not active yet.",
+        }
+    if now > end:
+        return {
+            "can_allow": False,
+            "is_expired": True,
+            "is_expirable": True,
+            "start_time": decoded["s"],
+            "end_time": decoded["e"],
+            "message": "This interview link has expired.",
+        }
+    return {
+        "can_allow": True,
+        "is_expired": False,
+        "is_expirable": True,
+        "start_time": decoded["s"],
+        "end_time": decoded["e"],
+        "message": "You may proceed to attend the interview.",
+    }
+
+
+async def generate_expirable_link(
+    db: AsyncIOMotorDatabase,
+    assessment_id: str,
+    workspace_id: str,
+    start_iso: str,
+    end_iso: str,
+) -> str:
+    """Generate an expirable share link for a given assessment."""
+    from datetime import datetime as _dt
+
+    from app.common.exceptions import NotFoundException, ValidationException
+    from app.common.utils import encode_expirable_sharelink
+
+    doc = await db.assessments.find_one(
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}, {"_id": 1}
+    )
+    if not doc:
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+
+    try:
+        start = _dt.fromisoformat(start_iso).replace(tzinfo=UTC)
+        end = _dt.fromisoformat(end_iso).replace(tzinfo=UTC)
+    except ValueError as err:
+        raise ValidationException("Invalid date format. Use ISO 8601.") from err
+
+    if end <= start:
+        raise ValidationException("End time must be after start time.")
+
+    return encode_expirable_sharelink(assessment_id, start_iso, end_iso)
 
 
 async def get_submissions(
@@ -166,6 +301,8 @@ async def get_submissions(
     sort_order: str,
     page: int,
     page_size: int,
+    from_date: str | None = None,
+    to_date: str | None = None,
 ) -> dict:
     """Return paginated submissions for an assessment, joined with candidate user data.
 
@@ -206,6 +343,23 @@ async def get_submissions(
                 }
             }
         )
+
+    from datetime import datetime as _dt
+
+    date_match: dict = {}
+    if from_date:
+        try:
+            date_match["$gte"] = _dt.fromisoformat(from_date)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            end_dt = _dt.fromisoformat(to_date).replace(hour=23, minute=59, second=59)
+            date_match["$lte"] = end_dt
+        except ValueError:
+            pass
+    if date_match:
+        pipeline.append({"$match": {"started_at": date_match}})
 
     count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(
         1
