@@ -50,7 +50,7 @@ async def seeded_admin(mock_db):
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
         "email_verified": False,
-        "workspaces": [],
+        "workspace_ids": [],
         "default_workspace_id": None,
         "candidate_data": None,
         "created_at": utcnow(),
@@ -82,7 +82,7 @@ async def seeded_candidate(mock_db):
         "role": UserRole.CANDIDATE,
         "is_active": True,
         "email_verified": False,
-        "workspaces": [],
+        "workspace_ids": [],
         "default_workspace_id": None,
         "candidate_data": {
             "candidate_type": "student",
@@ -118,13 +118,6 @@ async def seeded_workspace(mock_db, seeded_admin):
         "name": "Test WS",
         "description": "Router test workspace",
         "created_by": seeded_admin["_id"],
-        "members": [
-            {
-                "user_id": seeded_admin["_id"],
-                "email": seeded_admin["email"],
-                "role": UserRole.SUPER_ADMIN,
-            }
-        ],
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }

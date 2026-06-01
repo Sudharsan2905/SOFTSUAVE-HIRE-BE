@@ -51,8 +51,8 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
             raise ForbiddenException("At least one valid workspace must be assigned")
 
     now = utcnow()
-    ws_refs = [{"id": str(ws["_id"]), "name": ws["name"]} for ws in workspaces]
-    first_ws_id = str(workspaces[0]["_id"]) if workspaces else None
+    ws_ids_list = [str(ws["_id"]) for ws in workspaces]
+    first_ws_id = ws_ids_list[0] if ws_ids_list else None
 
     doc = {
         "first_name": data["first_name"],
@@ -62,7 +62,7 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "role": role,
         "is_active": True,
         "email_verified": False,
-        "workspaces": ws_refs,
+        "workspace_ids": ws_ids_list,
         "default_workspace_id": first_ws_id,
         "candidate_data": None,
         "created_at": now,
@@ -70,20 +70,6 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
     }
     result = await db.users.insert_one(doc)
     user_id = result.inserted_id
-
-    for ws in workspaces:
-        existing_ids = {str(m["user_id"]) for m in ws.get("members", [])}
-        if str(user_id) not in existing_ids:
-            await db.workspaces.update_one(
-                {"_id": ws["_id"]},
-                {
-                    "$push": {
-                        "members": {"user_id": user_id, "email": data["email"], "role": role}
-                    },
-                    "$set": {"updated_at": utcnow()},
-                },
-            )
-
     doc["_id"] = user_id
     doc.pop("password_hash")
     logger.info(f"Admin user created: {data['email']} role={role}")
@@ -232,53 +218,20 @@ async def _apply_email_update(
     if await db.users.find_one({"email": new_email, "_id": {"$ne": ObjectId(user_id)}}):
         raise ConflictException("Email already in use")
     update["email"] = new_email
-    await db.workspaces.update_many(
-        {"members.user_id": ObjectId(user_id)},
-        {"$set": {"members.$[m].email": new_email}},
-        array_filters=[{"m.user_id": ObjectId(user_id)}],
-    )
 
 
 async def _sync_workspace_memberships(
-    db: AsyncIOMotorDatabase, user_id: str, user: dict, workspace_ids: list, update: dict
+    db: AsyncIOMotorDatabase, user: dict, workspace_ids: list, update: dict
 ) -> None:
-    all_workspaces = await db.workspaces.find().to_list(500)
-    ws_map = {str(ws["_id"]): ws for ws in all_workspaces}
-    effective_role = update.get("role", user["role"])
-    for ws in all_workspaces:
-        ws_id_str = str(ws["_id"])
-        member_ids = {str(m["user_id"]) for m in ws.get("members", [])}
-        should_be_member = ws_id_str in workspace_ids
-        is_member = user_id in member_ids
-        if should_be_member and not is_member:
-            await db.workspaces.update_one(
-                {"_id": ws["_id"]},
-                {
-                    "$push": {
-                        "members": {
-                            "user_id": ObjectId(user_id),
-                            "email": update.get("email", user["email"]),
-                            "role": effective_role,
-                        }
-                    },
-                    "$set": {"updated_at": utcnow()},
-                },
-            )
-        elif not should_be_member and is_member:
-            await db.workspaces.update_one(
-                {"_id": ws["_id"]},
-                {
-                    "$pull": {"members": {"user_id": ObjectId(user_id)}},
-                    "$set": {"updated_at": utcnow()},
-                },
-            )
+    existing = await db.workspaces.find(
+        {"_id": {"$in": [ObjectId(wid) for wid in workspace_ids]}}, {"_id": 1}
+    ).to_list(len(workspace_ids))
+    valid_ids = [str(ws["_id"]) for ws in existing]
 
-    update["workspaces"] = [
-        {"id": wid, "name": ws_map[wid]["name"]} for wid in workspace_ids if wid in ws_map
-    ]
+    update["workspace_ids"] = valid_ids
     current_default = user.get("default_workspace_id")
-    if current_default not in workspace_ids:
-        update["default_workspace_id"] = workspace_ids[0] if workspace_ids else None
+    if current_default not in valid_ids:
+        update["default_workspace_id"] = valid_ids[0] if valid_ids else None
 
 
 async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
@@ -309,11 +262,6 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
 
     if data.get("role") is not None:
         update["role"] = data["role"]
-        await db.workspaces.update_many(
-            {"members.user_id": ObjectId(user_id)},
-            {"$set": {"members.$[m].role": data["role"]}},
-            array_filters=[{"m.user_id": ObjectId(user_id)}],
-        )
 
     if data.get("password") is not None:
         update["password_hash"] = hash_password(data["password"])
@@ -323,13 +271,12 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
         update["is_active"] = data["is_active"]
 
     if data.get("workspace_ids") is not None:
-        await _sync_workspace_memberships(db, user_id, user, data["workspace_ids"], update)
+        await _sync_workspace_memberships(db, user, data["workspace_ids"], update)
 
     if data.get("default_workspace_id") is not None:
         requested_default = data["default_workspace_id"]
-        current_workspaces = update.get("workspaces", user.get("workspaces", []))
-        final_ws_ids = [w["id"] for w in current_workspaces]
-        if requested_default in final_ws_ids:
+        current_ws_ids = update.get("workspace_ids", user.get("workspace_ids", []))
+        if requested_default in current_ws_ids:
             update["default_workspace_id"] = requested_default
 
     if update:
@@ -349,14 +296,12 @@ def _apply_password_change(user: dict, data: dict, update: dict) -> None:
 
 
 async def _apply_default_workspace(
-    db: AsyncIOMotorDatabase, user: dict, user_id: str, workspace_id: str, update: dict
+    db: AsyncIOMotorDatabase, user: dict, workspace_id: str, update: dict
 ) -> None:
-    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
-    if not workspace:
+    if not await db.workspaces.find_one({"_id": ObjectId(workspace_id)}):
         raise NotFoundException("Workspace not found")
     if user.get("role") != UserRole.SUPER_ADMIN:
-        member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
-        if user_id not in member_ids:
+        if workspace_id not in user.get("workspace_ids", []):
             raise ForbiddenException("You are not a member of this workspace")
     update["default_workspace_id"] = workspace_id
 
@@ -402,7 +347,7 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
         _apply_password_change(user, data, update)
 
     if data.get("default_workspace_id"):
-        await _apply_default_workspace(db, user, user_id, data["default_workspace_id"], update)
+        await _apply_default_workspace(db, user, data["default_workspace_id"], update)
 
     _apply_candidate_data(data, update)
 

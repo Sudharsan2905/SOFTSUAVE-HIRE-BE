@@ -138,7 +138,7 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "role": UserRole.CANDIDATE,
         "is_active": True,
         "email_verified": bool(google_id),
-        "workspaces": [],
+        "workspace_ids": [],
         "default_workspace_id": None,
         "candidate_data": {
             "candidate_type": data.get("candidate_type", CandidateType.STUDENT),
@@ -252,7 +252,7 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
         "email_verified": False,
-        "workspaces": [],
+        "workspace_ids": [],
         "default_workspace_id": None,
         "candidate_data": None,
         "created_at": now,
