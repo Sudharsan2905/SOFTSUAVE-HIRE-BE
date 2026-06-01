@@ -366,23 +366,6 @@ async def get_submissions(
     if date_match:
         pipeline.append({"$match": {"started_at": date_match}})
 
-    from datetime import datetime as _dt
-
-    date_match: dict = {}
-    if from_date:
-        try:
-            date_match["$gte"] = _dt.fromisoformat(from_date)
-        except ValueError:
-            pass
-    if to_date:
-        try:
-            end_dt = _dt.fromisoformat(to_date).replace(hour=23, minute=59, second=59)
-            date_match["$lte"] = end_dt
-        except ValueError:
-            pass
-    if date_match:
-        pipeline.append({"$match": {"started_at": date_match}})
-
     count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(
         1
     )

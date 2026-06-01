@@ -14,6 +14,7 @@ from app.core.dependencies import DB
 from app.core.limiter import limiter
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
+router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
 @router.get("", response_model=ApiResponse)
@@ -182,7 +183,7 @@ async def generate_expirable_share_link(
     body: GenerateExpirableLinkRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     link = await assessment_service.generate_expirable_link(
         db, body.assessment_id, workspace_id, body.start_time, body.end_time
     )
@@ -195,9 +196,10 @@ async def validate_share_link(
     request: Request,
     link: Annotated[str, Query()],
     db: DB,
-):
+) -> dict:
     result = await assessment_service.validate_sharelink(db, link)
     return success_response("Share link validated", result)
+
 
 # Public router — no workspace prefix, no auth required
 public_router = APIRouter()
