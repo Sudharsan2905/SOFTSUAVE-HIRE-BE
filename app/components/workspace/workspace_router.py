@@ -24,7 +24,7 @@ async def list_workspaces(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
     result = await workspace_service.get_workspaces(
-        db, current_user["_id"], current_user["role"], page, page_size
+        db, current_user["role"], current_user.get("workspace_ids", []), page, page_size
     )
     return success_response("Workspaces retrieved", result)
 
@@ -57,7 +57,7 @@ async def get_workspace(
     current_user: AdminUser,
 ) -> dict:
     result = await workspace_service.get_workspace(
-        db, workspace_id, current_user["_id"], current_user["role"]
+        db, workspace_id, current_user["role"], current_user.get("workspace_ids", [])
     )
     return success_response("Workspace retrieved", result)
 
@@ -70,7 +70,11 @@ async def update_workspace(
     current_user: AdminUser,
 ) -> dict:
     result = await workspace_service.update_workspace(
-        db, workspace_id, request.model_dump(), current_user["_id"], current_user["role"]
+        db,
+        workspace_id,
+        request.model_dump(),
+        current_user["role"],
+        current_user.get("workspace_ids", []),
     )
     return success_response("Workspace updated", result)
 

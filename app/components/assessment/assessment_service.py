@@ -228,17 +228,15 @@ async def get_submissions(
     }
 
 
-async def _enrich_question(db: AsyncIOMotorDatabase, q: dict, answers: dict) -> None:
-    """Augment a question dict in-place with correct-answer and candidate-answer data."""
+def _enrich_question_from_map(q: dict, answers: dict, original_map: dict) -> None:
+    """Augment a question dict in-place using a pre-fetched map of original question documents."""
     qid = q["id"]
     raw_answer = answers.get(qid, [])
     candidate_answer = [raw_answer] if isinstance(raw_answer, str) else raw_answer
 
-    original = await db.questions.find_one({"_id": ObjectId(qid)})
-    if original and original.get("question_type") in (
-        QuestionType.MCQ_SINGLE,
-        QuestionType.MCQ_MULTI,
-    ):
+    original = original_map.get(qid)
+    mcq_types = (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI)
+    if original and original.get("question_type") in mcq_types:
         correct_ids = [str(o["id"]) for o in original.get("options", []) if o.get("is_correct")]
         q["correct_option_ids"] = correct_ids
         q["is_correct"] = bool(candidate_answer) and set(candidate_answer) == set(correct_ids)
@@ -257,6 +255,9 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     - correct_option_ids: list of option IDs marked correct in the question bank (MCQ only)
     - is_correct: True/False for MCQ questions, None for essay
 
+    Uses a single batched DB fetch for all question originals (3 total DB calls regardless
+    of question count).
+
     Raises:
         NotFoundException: If the submission does not exist.
     """
@@ -268,10 +269,22 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     result = serialize_doc(sub)
     result["candidate"] = serialize_doc(candidate)
 
+    all_qids = [
+        ObjectId(q["id"])
+        for rd in result.get("rounds_data", [])
+        for q in rd.get("questions", [])
+        if q.get("id")
+    ]
+    if all_qids:
+        originals = await db.questions.find({"_id": {"$in": all_qids}}).to_list(len(all_qids))
+        original_map = {str(o["_id"]): o for o in originals}
+    else:
+        original_map = {}
+
     for rd in result.get("rounds_data", []):
         answers = rd.get("answers", {})
         for q in rd.get("questions", []):
-            await _enrich_question(db, q, answers)
+            _enrich_question_from_map(q, answers, original_map)
 
     return result
 
@@ -300,10 +313,31 @@ async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
     )
 
 
-async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> list:
-    """Return all submissions for an assessment in a flat format suitable for Excel export."""
+async def export_submissions(
+    db: AsyncIOMotorDatabase,
+    assessment_id: str,
+    status: str | None = None,
+    search: str | None = None,
+    min_percentage: float | None = None,
+    max_percentage: float | None = None,
+) -> list:
+    """Return filtered submissions for an assessment in a flat format suitable for Excel export.
+
+    Filters: status, search (name/email), min_percentage, max_percentage.
+    """
+    match_query: dict = {"assessment_id": ObjectId(assessment_id)}
+    if status:
+        match_query["status"] = status
+    if min_percentage is not None or max_percentage is not None:
+        pct_filter: dict = {}
+        if min_percentage is not None:
+            pct_filter["$gte"] = min_percentage
+        if max_percentage is not None:
+            pct_filter["$lte"] = max_percentage
+        match_query["percentage"] = pct_filter
+
     pipeline: list[Any] = [
-        {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: match_query},
         {
             _LOOKUP: {
                 "from": "users",
@@ -313,6 +347,23 @@ async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> li
             }
         },
         {_UNWIND: "$candidate"},
+    ]
+
+    if search:
+        escaped = safe_regex(search)
+        pipeline.append(
+            {
+                _MATCH: {
+                    "$or": [
+                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
+                    ]
+                }
+            }
+        )
+
+    pipeline.append(
         {
             "$project": {
                 "name": {
@@ -329,7 +380,8 @@ async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> li
                 "completed_at": 1,
                 "rounds_count": {"$size": "$rounds_data"},
             }
-        },
-    ]
+        }
+    )
+
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
     return serialize_docs(docs)

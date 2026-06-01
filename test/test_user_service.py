@@ -139,7 +139,7 @@ class TestUpdateUser:
         result = await user_service.update_user(
             db, str(admin_user["_id"]), {"workspace_ids": [str(workspace["_id"])]}
         )
-        assert any(w["id"] == str(workspace["_id"]) for w in result.get("workspaces", []))
+        assert str(workspace["_id"]) in result.get("workspace_ids", [])
 
     async def test_update_default_workspace(self, db, admin_user, workspace):
         ws_id = str(workspace["_id"])
@@ -167,21 +167,9 @@ class TestUpdateUser:
         assert result["is_active"] is False
 
     async def test_remove_user_from_workspace_membership(self, db, workspace, admin_user):
-        """Remove admin from workspace they are currently a member of (line 148)."""
-        await db.workspaces.update_one(
-            {"_id": workspace["_id"]},
-            {
-                "$push": {
-                    "members": {
-                        "user_id": admin_user["_id"],
-                        "email": admin_user["email"],
-                        "role": "admin",
-                    }
-                }
-            },
-        )
+        """Setting workspace_ids=[] removes all workspaces from the user's workspaces list."""
         result = await user_service.update_user(db, str(admin_user["_id"]), {"workspace_ids": []})
-        ws_ids = [w["id"] for w in result.get("workspaces", [])]
+        ws_ids = result.get("workspace_ids", [])
         assert str(workspace["_id"]) not in ws_ids
 
 
@@ -223,7 +211,7 @@ class TestUpdateMe:
     async def test_update_default_workspace_not_member(self, db, admin_user, workspace):
         """Admin who is not a member of the workspace should get ForbiddenException."""
         other_ws_id = ObjectId()
-        await db.workspaces.insert_one({"_id": other_ws_id, "name": "Other", "members": []})
+        await db.workspaces.insert_one({"_id": other_ws_id, "name": "Other"})
         with pytest.raises(ForbiddenException):
             await user_service.update_me(
                 db, str(admin_user["_id"]), {"default_workspace_id": str(other_ws_id)}

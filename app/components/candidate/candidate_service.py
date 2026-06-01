@@ -311,37 +311,42 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
     return {"completed": False, "next_round": current + 1}
 
 
-async def _score_question(db: AsyncIOMotorDatabase, q: dict, answers: dict) -> int:
-    """Return 1 if the candidate's MCQ answer is fully correct, 0 otherwise.
-
-    Essay questions always return 0.
-    """
-    if q.get("question_type") == QuestionType.ESSAY:
-        return 0
-    qid = q.get("id")
-    original = await db.questions.find_one({"_id": ObjectId(qid)})
-    if not original:
-        return 0
+def _score_mcq(original: dict, given_answer: Any) -> int:
+    """Return 1 if the candidate's MCQ answer exactly matches the correct option IDs, else 0."""
     correct_ids = {o["id"] for o in original.get("options", []) if o.get("is_correct")}
-    given = answers.get(qid, [])
-    if isinstance(given, str):
-        given = [given]
+    given = [given_answer] if isinstance(given_answer, str) else (given_answer or [])
     return 1 if set(given) == correct_ids else 0
 
 
 async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[int, float]:
-    """Compute (correct_count, percentage) across all MCQ rounds in a submission.
+    """Compute (correct_count, percentage) across all MCQ questions in a submission.
 
-    Essay questions are skipped.
+    Only MCQ questions (mcq_single / mcq_multiple) contribute to the total.
+    Essay questions are excluded from both numerator and denominator so they
+    do not deflate the percentage.
+
+    Uses a single batched DB fetch for all question originals instead of
+    one query per question.
     """
-    total = 0
-    correct = 0
+    mcq_pairs: list[tuple[str, Any]] = []  # (question_id, candidate_answer)
     for rd in submission.get("rounds_data", []):
-        questions = rd.get("questions", [])
         answers = rd.get("answers", {})
-        total += len(questions)
-        for q in questions:
-            correct += await _score_question(db, q, answers)
+        for q in rd.get("questions", []):
+            if q.get("type") in ("mcq_single", "mcq_multiple"):
+                qid = q.get("id", "")
+                mcq_pairs.append((qid, answers.get(qid, [])))
+
+    if not mcq_pairs:
+        return 0, 0.0
+
+    qids = [ObjectId(qid) for qid, _ in mcq_pairs]
+    originals = await db.questions.find({"_id": {"$in": qids}}).to_list(len(qids))
+    original_map = {str(o["_id"]): o for o in originals}
+
+    total = len(mcq_pairs)
+    correct = sum(
+        _score_mcq(original_map[qid], given) for qid, given in mcq_pairs if qid in original_map
+    )
     pct = round((correct / total * 100) if total > 0 else 0.0, 2)
     return correct, pct
 
