@@ -1,7 +1,7 @@
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import ADMIN_ROLES, UserRole
+from app.common.constants.app_constants import ADMIN_ROLES, CandidateType, UserRole
 from app.common.exceptions import (
     ConflictException,
     ForbiddenException,
@@ -74,6 +74,74 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
     doc.pop("password_hash")
     logger.info(f"Admin user created: {data['email']} role={role}")
     return serialize_doc(doc)
+
+
+async def create_candidate_from_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
+    """Create a candidate account from an admin action (e.g. Schedule Wizard).
+
+    Generates a secure random password so the candidate can later log in.
+    Returns the created user document (without the password hash).
+
+    Raises:
+        ConflictException: If the email is already registered.
+    """
+    import secrets as _secrets
+    import string as _string
+
+    email = data["email"]
+    if await db.users.find_one({"email": email}):
+        # Return the existing candidate instead of erroring — admin may be re-scheduling
+        existing = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
+        if existing:
+            return serialize_doc(
+                await db.users.find_one({"_id": existing["_id"]}, {"password_hash": 0})
+            )
+        raise ConflictException("An account with this email already exists but is not a candidate.")
+
+    # Auto-generate a 16-char password — candidate must reset via email in production
+    alphabet = _string.ascii_letters + _string.digits + "!@#$"
+    temp_password = "".join(_secrets.choice(alphabet) for _ in range(16))
+
+    now = utcnow()
+    doc = {
+        "first_name": data["first_name"],
+        "last_name": data.get("last_name") or "",
+        "email": email,
+        "password_hash": hash_password(temp_password),
+        "role": UserRole.CANDIDATE,
+        "is_active": True,
+        "email_verified": False,
+        "workspace_ids": [],
+        "default_workspace_id": None,
+        "candidate_data": {
+            "candidate_type": CandidateType.STUDENT,
+            "google_id": None,
+            "phone": data.get("phone"),
+            "dob": data.get("dob"),
+            "gender": data.get("gender"),
+            "institution": data.get("institution"),
+            "location": data.get("location"),
+        },
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.users.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    doc.pop("password_hash")
+    logger.info("Admin-created candidate: email=%s", email)
+    return serialize_doc(doc)
+
+
+async def search_candidates_by_email(
+    db: AsyncIOMotorDatabase,
+    email: str,
+) -> dict | None:
+    """Find a single candidate by exact email match. Returns None if not found."""
+    doc = await db.users.find_one(
+        {"email": email, "role": UserRole.CANDIDATE},
+        {"password_hash": 0},
+    )
+    return serialize_doc(doc) if doc else None
 
 
 async def list_users(

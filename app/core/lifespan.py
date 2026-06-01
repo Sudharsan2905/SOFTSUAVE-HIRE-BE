@@ -71,3 +71,9 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
     # Notifications: per-user lookup + unread filter + time ordering
     await db.notifications.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
     await db.notifications.create_index([("user_id", ASCENDING), ("is_read", ASCENDING)])
+
+    # Interview session: ON_HOLD lookup for admin resume dashboard
+    await db.assessment_submissions.create_index(
+        [("status", ASCENDING), ("assessment_id", ASCENDING)]
+    )
+    # Heartbeat + session state fields (no dedicated index needed — reads are by _id)

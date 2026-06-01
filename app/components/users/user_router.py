@@ -7,6 +7,7 @@ from app.components.auth.auth_dependencies import AdminUser, CurrentUser, SuperA
 from app.components.users import user_service
 from app.components.users.user_schemas import (
     CreateAdminUserRequest,
+    CreateCandidateAdminRequest,
     UpdateCandidateRequest,
     UpdateMeRequest,
     UpdateUserRequest,
@@ -33,6 +34,30 @@ async def update_me(
 
 
 # ── Candidates (fixed paths — must be before /{user_id}) ─────────────────────
+
+
+@router.get("/candidates/search", response_model=ApiResponse)
+async def search_candidate_by_email(
+    db: DB,
+    current_user: AdminUser,
+    email: Annotated[str, Query(min_length=1)],
+) -> dict:
+    """Find a single candidate by exact email. Used by the Schedule Wizard."""
+    result = await user_service.search_candidates_by_email(db, email)
+    return success_response("Candidate search result", {"user": result})
+
+
+@router.post("/candidates", response_model=ApiResponse)
+@limiter.limit("30/hour")
+async def create_candidate(
+    request: Request,
+    body: CreateCandidateAdminRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    """Create a new candidate account from admin (Schedule Wizard onboarding)."""
+    result = await user_service.create_candidate_from_admin(db, body.model_dump())
+    return success_response("Candidate created", result)
 
 
 @router.get("/candidates", response_model=ApiResponse)

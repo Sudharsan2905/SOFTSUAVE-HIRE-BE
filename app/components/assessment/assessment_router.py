@@ -3,13 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Query, Request
 
 from app.common.responses import ApiResponse, success_response
-from app.components.assessment import assessment_service
+from app.components.assessment import assessment_service, scheduling_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
     GenerateExpirableLinkRequest,
+    ScheduleCandidateRequest,
     UpdateAssessmentRequest,
 )
 from app.components.auth.auth_dependencies import AdminUser
+from app.components.users import user_service
+from app.components.users.user_schemas import CreateCandidateAdminRequest
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
@@ -152,6 +155,40 @@ async def grant_reaccess(
     return success_response("Re-access granted successfully")
 
 
+@router.post(
+    "/{assessment_id}/submissions/{submission_id}/resume",
+    response_model=ApiResponse,
+)
+async def resume_interview(
+    workspace_id: str,
+    assessment_id: str,
+    submission_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    """Resume an ON_HOLD candidate session.
+
+    Pushes live WebSocket event if candidate is connected.
+    """
+    await assessment_service.admin_resume_interview(db, submission_id, current_user["_id"])
+    return success_response("Interview resumed successfully")
+
+
+@router.post(
+    "/candidates",
+    response_model=ApiResponse,
+)
+async def create_candidate(
+    workspace_id: str,
+    request: CreateCandidateAdminRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    """Create a new candidate account from the schedule wizard (admin action)."""
+    result = await user_service.create_candidate_from_admin(db, request.model_dump())
+    return success_response("Candidate created", result)
+
+
 @router.get(
     "/{assessment_id}/export",
     response_model=ApiResponse,
@@ -174,11 +211,11 @@ async def export_submissions(
     return success_response("Export data retrieved", result)
 
 
-@router.post("/assessments/share/expirable", response_model=ApiResponse)
+@router.post("/share/expirable", response_model=ApiResponse)
 @limiter.limit("10/hour")
 async def generate_expirable_share_link(
     request: Request,
-    workspace_id: Annotated[str, Query()],
+    workspace_id: str,
     body: GenerateExpirableLinkRequest,
     db: DB,
     current_user: AdminUser,
@@ -189,7 +226,51 @@ async def generate_expirable_share_link(
     return success_response("Expirable link generated", {"share_link": link})
 
 
-@router.get("/assessments/share/validate", response_model=ApiResponse)
+# ─── Candidate Scheduling ─────────────────────────────────────────────────────
+
+
+@router.post("/{assessment_id}/schedules", response_model=ApiResponse)
+async def schedule_candidate(
+    workspace_id: str,
+    assessment_id: str,
+    request: ScheduleCandidateRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await scheduling_service.schedule_candidate(
+        db, assessment_id, workspace_id, request.model_dump(), current_user["_id"]
+    )
+    return success_response("Candidate scheduled successfully", result)
+
+
+@router.get("/{assessment_id}/schedules", response_model=ApiResponse)
+async def list_schedules(
+    workspace_id: str,
+    assessment_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await scheduling_service.get_schedules(db, assessment_id, workspace_id)
+    return success_response("Schedules retrieved", result)
+
+
+@router.get("/{assessment_id}/schedules/{schedule_id}", response_model=ApiResponse)
+async def get_schedule(
+    workspace_id: str,
+    assessment_id: str,
+    schedule_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await scheduling_service.get_schedule(db, schedule_id, workspace_id)
+    return success_response("Schedule retrieved", result)
+
+
+# Public router — no workspace prefix, no auth required
+public_router = APIRouter()
+
+
+@public_router.get("/assessments/share/validate", response_model=ApiResponse)
 @limiter.limit("60/minute")
 async def validate_share_link(
     request: Request,
@@ -198,10 +279,6 @@ async def validate_share_link(
 ) -> dict:
     result = await assessment_service.validate_sharelink(db, link)
     return success_response("Share link validated", result)
-
-
-# Public router — no workspace prefix, no auth required
-public_router = APIRouter()
 
 
 @public_router.get("/assessments/share/{share_link}", response_model=ApiResponse)

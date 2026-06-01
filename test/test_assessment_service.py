@@ -157,7 +157,7 @@ class TestUpdateAssessment:
         assert result["accessibility"] == "proctored"
 
     async def test_updates_monitoring_config_dict(self, db, workspace, assessment):
-        mc = {"tab_monitoring": True, "voice_monitoring": False}
+        mc = {"tab_monitoring": True, "audio_monitoring": False}
         result = await assessment_service.update_assessment(
             db, str(workspace["_id"]), assessment["id"], {"monitoring_config": mc}
         )
@@ -166,7 +166,7 @@ class TestUpdateAssessment:
     async def test_updates_monitoring_config_pydantic(self, db, workspace, assessment):
         from app.components.assessment.assessment_schemas import MonitoringConfig
 
-        mc = MonitoringConfig(tab_monitoring=False, voice_monitoring=True, camera_enabled=False)
+        mc = MonitoringConfig(tab_monitoring=False, audio_monitoring=True, video_monitoring=False)
         result = await assessment_service.update_assessment(
             db, str(workspace["_id"]), assessment["id"], {"monitoring_config": mc}
         )

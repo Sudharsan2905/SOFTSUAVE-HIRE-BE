@@ -5,8 +5,9 @@ from app.common.constants.app_constants import AssessmentAccessibility
 
 class MonitoringConfig(BaseModel):
     tab_monitoring: bool = True
-    voice_monitoring: bool = True
-    camera_enabled: bool = True
+    audio_monitoring: bool = True
+    video_monitoring: bool = True
+    screenshot_enabled: bool = True
     screenshot_mode: str = Field("time_interval", pattern="^(time_interval|count)$")
     screenshot_interval_minutes: int | None = Field(None, ge=1)
     screenshot_count: int | None = Field(None, ge=1)
@@ -23,6 +24,18 @@ class MonitoringConfig(BaseModel):
         if self.screenshot_mode == "count" and self.screenshot_count is None:
             raise ValueError("screenshot_count is required when screenshot_mode is 'count'")
         return self
+
+
+class CandidateMonitoringOverrides(BaseModel):
+    """Partial monitoring config — only provided fields override the assessment defaults."""
+
+    tab_monitoring: bool | None = None
+    audio_monitoring: bool | None = None
+    video_monitoring: bool | None = None
+    screenshot_enabled: bool | None = None
+    screenshot_mode: str | None = Field(None, pattern="^(time_interval|count)$")
+    screenshot_interval_minutes: int | None = Field(None, ge=1)
+    screenshot_count: int | None = Field(None, ge=1)
 
 
 class RoundConfig(BaseModel):
@@ -52,3 +65,29 @@ class GenerateExpirableLinkRequest(BaseModel):
     assessment_id: str
     start_time: str  # ISO 8601
     end_time: str  # ISO 8601
+
+
+# ─── Candidate Scheduling ─────────────────────────────────────────────────────
+
+
+class ScheduledRound(BaseModel):
+    """Per-round question selection override for a scheduled candidate."""
+
+    round_number: int = Field(..., ge=1)
+    question_ids: list[str] = Field(..., min_length=1)
+
+
+class ScheduleCandidateRequest(BaseModel):
+    """Request body to schedule a specific candidate for an assessment."""
+
+    candidate_id: str
+    monitoring_overrides: CandidateMonitoringOverrides | None = None
+    rounds: list[ScheduledRound] | None = None
+    start_time: str | None = None  # ISO 8601 — if provided, link is time-limited
+    end_time: str | None = None  # ISO 8601 — required when start_time is set
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "ScheduleCandidateRequest":
+        if (self.start_time is None) != (self.end_time is None):
+            raise ValueError("Both start_time and end_time must be provided together")
+        return self

@@ -63,15 +63,23 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
 async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) -> dict:
     """Resume or raise for an existing submission.
 
+    ON_HOLD sessions are returned as-is so the candidate's interview page can
+    display the "Awaiting admin resume" overlay via WebSocket.
+
     Raises:
-        ForbiddenException: If the submission is in a terminal state (COMPLETED or MALPRACTICE).
+        ForbiddenException: If the submission is in a terminal state.
     """
     status = existing.get("status")
-    if status in [SubmissionStatus.COMPLETED, SubmissionStatus.MALPRACTICE]:
+    if status in [
+        SubmissionStatus.COMPLETED,
+        SubmissionStatus.MALPRACTICE,
+        SubmissionStatus.TERMINATED,
+    ]:
         raise ForbiddenException(
             "You have already completed this assessment. Please contact admin for re-access."
         )
-    if status == SubmissionStatus.IN_PROGRESS:
+    # ON_HOLD and IN_PROGRESS are both returnable — the WS will tell candidate the real state
+    if status in [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]:
         return serialize_doc(existing)
     await db.assessment_submissions.update_one(
         {"_id": existing["_id"]},
@@ -101,15 +109,26 @@ def _sanitize_question(q: dict) -> dict:
     return sq
 
 
-async def _build_round_data(db: AsyncIOMotorDatabase, round_cfg: dict) -> dict:
-    """Sample and sanitize questions for a single assessment round."""
-    question_ids = round_cfg.get("question_ids", [])
+async def _build_round_data(
+    db: AsyncIOMotorDatabase,
+    round_cfg: dict,
+    override_question_ids: list | None = None,
+) -> dict:
+    """Sample and sanitize questions for a single assessment round.
+
+    If override_question_ids is provided (from a candidate schedule) those IDs are
+    used directly instead of randomly sampling from the assessment pool.
+    """
     required = round_cfg["question_count"]
-    selected_ids = (
-        _rng.sample(question_ids, min(required, len(question_ids)))
-        if len(question_ids) >= required
-        else question_ids
-    )
+    if override_question_ids:
+        selected_ids = override_question_ids[: max(required, len(override_question_ids))]
+    else:
+        question_ids = round_cfg.get("question_ids", [])
+        selected_ids = (
+            _rng.sample(question_ids, min(required, len(question_ids)))
+            if len(question_ids) >= required
+            else question_ids
+        )
     questions_raw = await db.questions.find({"_id": {"$in": selected_ids}}).to_list(
         len(selected_ids)
     )
@@ -131,16 +150,23 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
 
     - Returns existing submission if already IN_PROGRESS.
     - Transitions PENDING → IN_PROGRESS without re-sampling questions.
-    - Creates a new submission (randomly sampling questions per round) on first call.
+    - Creates a new submission on first call, honouring candidate-schedule overrides
+      (monitoring + question selection) when the link encodes a schedule_id ("sc" key).
 
     Raises:
         NotFoundException: If the assessment share link is invalid.
         ForbiddenException: If the submission is already COMPLETED or MALPRACTICE.
     """
     assessment = None
+    schedule: dict | None = None
     try:
         decoded = decode_sharelink(share_link)
         assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+        # Candidate-specific link carries "sc" = schedule_id
+        if assessment and decoded.get("sc"):
+            from app.components.assessment.scheduling_service import get_schedule_by_id
+
+            schedule = await get_schedule_by_id(db, decoded["sc"])
     except Exception:
         assessment = await db.assessments.find_one({"share_link": share_link})
 
@@ -156,14 +182,30 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     if existing:
         return await _handle_existing_submission(db, existing)
 
+    # Build per-round question override map from schedule (round_number → [ObjectId])
+    schedule_round_map: dict[int, list] = {}
+    if schedule and schedule.get("rounds"):
+        for sr in schedule["rounds"]:
+            schedule_round_map[sr["round_number"]] = sr.get("question_ids", [])
+
     rounds_data = [
-        await _build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", [])
+        await _build_round_data(
+            db,
+            round_cfg,
+            override_question_ids=schedule_round_map.get(round_cfg["round_number"]),
+        )
+        for round_cfg in assessment.get("rounds", [])
     ]
+
+    # Resolve effective monitoring: assessment defaults + schedule overrides
+    monitoring_overrides: dict | None = schedule.get("monitoring_overrides") if schedule else None
 
     now = utcnow()
     submission = {
         "assessment_id": assessment["_id"],
         "candidate_id": ObjectId(candidate_id),
+        "schedule_id": ObjectId(schedule["_id"]) if schedule else None,
+        "monitoring_overrides": monitoring_overrides,
         "status": SubmissionStatus.IN_PROGRESS,
         "rounds_data": rounds_data,
         "current_round": 1,
@@ -202,6 +244,28 @@ async def get_current_round(
     if not sub:
         raise NotFoundException("Submission not found")
 
+    sub_status = sub.get("status")
+    if sub_status == SubmissionStatus.COMPLETED:
+        logger.warning(
+            f"Security: blocked round access on completed submission "
+            f"submission_id={submission_id} candidate_id={candidate_id}"
+        )
+        raise ForbiddenException("This assessment has already been completed.")
+    if sub_status == SubmissionStatus.MALPRACTICE:
+        logger.warning(
+            f"Security: blocked round access on malpractice submission "
+            f"submission_id={submission_id} candidate_id={candidate_id}"
+        )
+        raise ForbiddenException(
+            "Access to this assessment has been revoked due to a policy violation."
+        )
+    if sub_status == SubmissionStatus.TERMINATED:
+        raise ForbiddenException("This session has been terminated by an administrator.")
+    if sub_status == SubmissionStatus.ON_HOLD:
+        # Allow reading round data so the frontend can restore UI; it will show the
+        # ON_HOLD overlay via WebSocket rather than blocking entirely.
+        pass
+
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
     current = sub.get("current_round", 1)
     idx = current - 1
@@ -211,10 +275,18 @@ async def get_current_round(
         raise NotFoundException("Round not found")
 
     rd = rounds_data[idx]
-    tab_monitoring = False
+
+    # Start from assessment-level monitoring defaults
+    base_monitoring: dict = {}
     if assessment:
-        monitoring = assessment.get("monitoring_config") or {}
-        tab_monitoring = monitoring.get("tab_monitoring", False)
+        base_monitoring = assessment.get("monitoring_config") or {}
+
+    # Apply per-candidate overrides stored on the submission (from schedule)
+    candidate_overrides: dict = sub.get("monitoring_overrides") or {}
+    effective: dict = {
+        **base_monitoring,
+        **{k: v for k, v in candidate_overrides.items() if v is not None},
+    }
 
     return {
         "round": {
@@ -222,7 +294,17 @@ async def get_current_round(
             "questions": rd.get("questions", []),
             "max_duration_minutes": rd.get("max_duration_minutes", 30),
         },
-        "tab_monitoring": tab_monitoring,
+        "tab_monitoring": effective.get("tab_monitoring", False),
+        "audio_monitoring": effective.get("audio_monitoring", False),
+        "video_monitoring": effective.get("video_monitoring", False),
+        "screenshot_enabled": effective.get("screenshot_enabled", False),
+        "screenshot_mode": effective.get("screenshot_mode", "time_interval"),
+        "screenshot_interval_minutes": effective.get("screenshot_interval_minutes"),
+        "screenshot_count": effective.get("screenshot_count"),
+        # Persisted session state for seamless resume after network loss
+        "remaining_seconds": sub.get("remaining_seconds"),
+        "current_question_idx": sub.get("current_question_idx", 0),
+        "session_status": str(sub_status) if sub_status else "in_progress",
     }
 
 
@@ -242,7 +324,7 @@ async def submit_answer(
         {
             "_id": ObjectId(submission_id),
             "candidate_id": ObjectId(candidate_id),
-            "status": SubmissionStatus.IN_PROGRESS,
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
         }
     )
     if not sub:
@@ -431,8 +513,13 @@ async def flag_malpractice(
 
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
     if assessment:
-        monitoring_config = assessment.get("monitoring_config") or {}
-        if not monitoring_config.get("tab_monitoring", True):
+        base_monitoring: dict = assessment.get("monitoring_config") or {}
+        candidate_overrides: dict = sub.get("monitoring_overrides") or {}
+        effective_monitoring = {
+            **base_monitoring,
+            **{k: v for k, v in candidate_overrides.items() if v is not None},
+        }
+        if not effective_monitoring.get("tab_monitoring", True):
             return
 
     await db.assessment_submissions.update_one(
@@ -446,6 +533,54 @@ async def flag_malpractice(
             }
         },
     )
+
+
+async def put_session_on_hold(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+) -> None:
+    """Mark an IN_PROGRESS submission as ON_HOLD after network-loss timeout.
+
+    Called by the WebSocket connection manager after HOLD_DELAY_SECONDS with no
+    reconnection.  Safe to call if already ON_HOLD (idempotent).
+    """
+    now = utcnow()
+    result = await db.assessment_submissions.update_one(
+        {
+            "_id": ObjectId(submission_id),
+            "status": SubmissionStatus.IN_PROGRESS,
+        },
+        {"$set": {"status": SubmissionStatus.ON_HOLD, "paused_at": now, "updated_at": now}},
+    )
+    if result.modified_count:
+        logger.info("Session placed ON_HOLD: submission_id=%s", submission_id)
+
+
+async def get_session_state(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    candidate_id: str,
+) -> dict:
+    """Return the persisted timer/position state for a candidate's submission.
+
+    Used by the frontend on reconnect to restore the timer and question position
+    without a full round reload.
+
+    Raises:
+        NotFoundException: If the submission is not found.
+    """
+    sub = await db.assessment_submissions.find_one(
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
+        {"status": 1, "remaining_seconds": 1, "current_question_idx": 1, "current_round": 1},
+    )
+    if not sub:
+        raise NotFoundException("Submission not found")
+    return {
+        "status": str(sub.get("status", "")),
+        "remaining_seconds": sub.get("remaining_seconds"),
+        "current_question_idx": sub.get("current_question_idx", 0),
+        "current_round": sub.get("current_round", 1),
+    }
 
 
 async def get_live_interviews(
