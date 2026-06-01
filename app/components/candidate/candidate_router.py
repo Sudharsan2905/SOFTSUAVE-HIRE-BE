@@ -104,6 +104,17 @@ async def flag_malpractice(
     return success_response("Activity flagged")
 
 
+@router.get("/submission/{submission_id}/session-state", response_model=ApiResponse)
+async def get_session_state(
+    submission_id: str,
+    db: DB,
+    current_user: CurrentUser,
+) -> dict:
+    """Return persisted timer/position state for resume after network loss."""
+    result = await candidate_service.get_session_state(db, submission_id, current_user["_id"])
+    return success_response("Session state retrieved", result)
+
+
 @router.get("/live-interviews", response_model=ApiResponse)
 async def get_live_interviews(
     db: DB,

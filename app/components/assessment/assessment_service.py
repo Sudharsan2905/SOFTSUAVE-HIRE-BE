@@ -465,6 +465,56 @@ async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
     )
 
 
+async def admin_resume_interview(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    admin_id: str,
+) -> None:
+    """Resume an ON_HOLD session and push a WebSocket event to the candidate if online.
+
+    Transitions:  ON_HOLD → IN_PROGRESS
+
+    Raises:
+        NotFoundException: If the submission is not found.
+        ForbiddenException: If the submission is not currently ON_HOLD.
+    """
+    sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
+    if not sub:
+        raise NotFoundException("Submission not found")
+    if sub.get("status") != SubmissionStatus.ON_HOLD:
+        raise ForbiddenException(
+            f"Cannot resume a submission with status '{sub.get('status')}'. "
+            "Only ON_HOLD submissions can be resumed."
+        )
+
+    now = utcnow()
+    await db.assessment_submissions.update_one(
+        {"_id": sub["_id"]},
+        {
+            "$set": {
+                "status": SubmissionStatus.IN_PROGRESS,
+                "resumed_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+    logger.info("Interview resumed: submission_id=%s admin_id=%s", submission_id, admin_id)
+
+    try:
+        from app.components.websocket.connection_manager import manager
+
+        await manager.send_json(
+            submission_id,
+            {
+                "type": "resume_approved",
+                "remaining_seconds": sub.get("remaining_seconds"),
+                "current_question_idx": sub.get("current_question_idx", 0),
+            },
+        )
+    except Exception as exc:
+        logger.warning("Could not push resume_approved WS event: %s", exc)
+
+
 async def export_submissions(
     db: AsyncIOMotorDatabase,
     assessment_id: str,

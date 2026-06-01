@@ -13,6 +13,7 @@ from app.components.candidate.candidate_router import router as candidate_router
 from app.components.notifications.notification_router import router as notification_router
 from app.components.question_bank.question_router import router as question_router
 from app.components.users.user_router import router as user_router
+from app.components.websocket.ws_router import ws_router
 from app.components.workspace.workspace_router import router as workspace_router
 from app.core.config import settings
 from app.core.lifespan import lifespan
@@ -55,6 +56,7 @@ def create_application() -> FastAPI:
     app.include_router(assessment_public_router, prefix="/api", tags=["Assessments"])
     app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
     app.include_router(notification_router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(ws_router, prefix="/api", tags=["WebSocket"])
 
     @app.get("/api/health", response_model=ApiResponse, tags=["Health"])
     async def health(request: Request) -> dict:

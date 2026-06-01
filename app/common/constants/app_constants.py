@@ -29,6 +29,8 @@ class SubmissionStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     MALPRACTICE = "malpractice"
+    ON_HOLD = "on_hold"  # network loss pause — awaiting admin resume
+    TERMINATED = "terminated"  # admin-forced termination
 
 
 class SortOrder(str, Enum):
@@ -50,3 +52,4 @@ class MalpracticeType(str, Enum):
     NO_FACE = "no_face"
     BACKGROUND_NOISE = "background_noise"
     COPY_PASTE = "copy_paste"
+    AUDIO_VIOLATION = "audio_violation"

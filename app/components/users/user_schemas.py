@@ -59,6 +59,19 @@ class UpdateCandidateRequest(BaseModel):
     candidate_data: CandidateDataUpdateRequest | None = None
 
 
+class CreateCandidateAdminRequest(BaseModel):
+    """Admin creates a candidate account directly (e.g. from the Schedule Wizard)."""
+
+    first_name: str = Field(..., min_length=2, max_length=50)
+    last_name: str | None = Field(None, max_length=50)
+    email: EmailStr
+    phone: str | None = Field(None, max_length=30)
+    gender: str | None = Field(None, pattern="^(male|female|other)$")
+    dob: str | None = None  # ISO date string e.g. "1998-04-15"
+    institution: str | None = None  # college / company name
+    location: str | None = None  # city / location
+
+
 class UpdateMeRequest(BaseModel):
     """Authenticated user updating their own profile."""
 
