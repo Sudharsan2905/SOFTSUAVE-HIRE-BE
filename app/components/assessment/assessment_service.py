@@ -4,7 +4,7 @@ from typing import Any
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import SubmissionStatus
+from app.common.constants.app_constants import QuestionType, SubmissionStatus
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
@@ -22,6 +22,11 @@ from app.core.config import settings
 from app.core.logging import logger
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
+_MATCH = "$match"
+_LOOKUP = "$lookup"
+_UNWIND = "$unwind"
+_REGEX = "$regex"
+_OPTIONS = "$options"
 
 
 def _build_rounds(rounds_data: list) -> list:
@@ -85,7 +90,7 @@ async def get_assessments(
     skip, limit = paginate_query(page, page_size)
     query: dict = {"workspace_id": ObjectId(workspace_id)}
     if search:
-        query["name"] = {"$regex": safe_regex(search), "$options": "i"}
+        query["name"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
     total, docs = await list_paginated(
@@ -318,27 +323,27 @@ async def get_submissions(
     )
 
     pipeline: list[Any] = [
-        {"$match": {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
         {
-            "$lookup": {
+            _LOOKUP: {
                 "from": "users",
                 "localField": "candidate_id",
                 "foreignField": "_id",
                 "as": "candidate",
             }
         },
-        {"$unwind": {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
+        {_UNWIND: {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
         {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
     ]
     if search:
         escaped = safe_regex(search)
         pipeline.append(
             {
-                "$match": {
+                _MATCH: {
                     "$or": [
-                        {"candidate.first_name": {"$regex": escaped, "$options": "i"}},
-                        {"candidate.last_name": {"$regex": escaped, "$options": "i"}},
-                        {"candidate.email": {"$regex": escaped, "$options": "i"}},
+                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
@@ -375,8 +380,35 @@ async def get_submissions(
     }
 
 
+def _enrich_question_from_map(q: dict, answers: dict, original_map: dict) -> None:
+    """Augment a question dict in-place using a pre-fetched map of original question documents."""
+    qid = q["id"]
+    raw_answer = answers.get(qid, [])
+    candidate_answer = [raw_answer] if isinstance(raw_answer, str) else raw_answer
+
+    original = original_map.get(qid)
+    mcq_types = (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI)
+    if original and original.get("question_type") in mcq_types:
+        correct_ids = [str(o["id"]) for o in original.get("options", []) if o.get("is_correct")]
+        q["correct_option_ids"] = correct_ids
+        q["is_correct"] = bool(candidate_answer) and set(candidate_answer) == set(correct_ids)
+    else:
+        q["correct_option_ids"] = []
+        q["is_correct"] = None
+
+    q["candidate_answer"] = candidate_answer
+
+
 async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
-    """Fetch a single submission with the joined candidate user document.
+    """Fetch a single submission enriched with correct-answer data for admin review.
+
+    Each question in rounds_data is augmented with:
+    - candidate_answer: list of option IDs (MCQ) or essay text string the candidate submitted
+    - correct_option_ids: list of option IDs marked correct in the question bank (MCQ only)
+    - is_correct: True/False for MCQ questions, None for essay
+
+    Uses a single batched DB fetch for all question originals (3 total DB calls regardless
+    of question count).
 
     Raises:
         NotFoundException: If the submission does not exist.
@@ -388,6 +420,24 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     candidate = await db.users.find_one({"_id": sub["candidate_id"]}, {"password_hash": 0})
     result = serialize_doc(sub)
     result["candidate"] = serialize_doc(candidate)
+
+    all_qids = [
+        ObjectId(q["id"])
+        for rd in result.get("rounds_data", [])
+        for q in rd.get("questions", [])
+        if q.get("id")
+    ]
+    if all_qids:
+        originals = await db.questions.find({"_id": {"$in": all_qids}}).to_list(len(all_qids))
+        original_map = {str(o["_id"]): o for o in originals}
+    else:
+        original_map = {}
+
+    for rd in result.get("rounds_data", []):
+        answers = rd.get("answers", {})
+        for q in rd.get("questions", []):
+            _enrich_question_from_map(q, answers, original_map)
+
     return result
 
 
@@ -415,28 +465,57 @@ async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
     )
 
 
-async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> list:
-    """Return all submissions for an assessment in a flat format suitable for Excel export."""
+async def export_submissions(
+    db: AsyncIOMotorDatabase,
+    assessment_id: str,
+    status: str | None = None,
+    search: str | None = None,
+    min_percentage: float | None = None,
+    max_percentage: float | None = None,
+) -> list:
+    """Return filtered submissions for an assessment in a flat format suitable for Excel export.
+
+    Filters: status, search (name/email), min_percentage, max_percentage.
+    """
+    match_query: dict = {"assessment_id": ObjectId(assessment_id)}
+    if status:
+        match_query["status"] = status
+    if min_percentage is not None or max_percentage is not None:
+        pct_filter: dict = {}
+        if min_percentage is not None:
+            pct_filter["$gte"] = min_percentage
+        if max_percentage is not None:
+            pct_filter["$lte"] = max_percentage
+        match_query["percentage"] = pct_filter
+
     pipeline: list[Any] = [
-        {"$match": {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: match_query},
         {
-            "$lookup": {
+            _LOOKUP: {
                 "from": "users",
                 "localField": "candidate_id",
                 "foreignField": "_id",
                 "as": "candidate",
             }
         },
-        {"$unwind": "$candidate"},
-        {
-            "$lookup": {
-                "from": "candidates",
-                "localField": "candidate_id",
-                "foreignField": "user_id",
-                "as": "profile",
+        {_UNWIND: "$candidate"},
+    ]
+
+    if search:
+        escaped = safe_regex(search)
+        pipeline.append(
+            {
+                _MATCH: {
+                    "$or": [
+                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
+                    ]
+                }
             }
-        },
-        {"$unwind": {"path": "$profile", "preserveNullAndEmptyArrays": True}},
+        )
+
+    pipeline.append(
         {
             "$project": {
                 "name": {
@@ -447,13 +526,14 @@ async def export_submissions(db: AsyncIOMotorDatabase, assessment_id: str) -> li
                     ]
                 },
                 "email": "$candidate.email",
-                "phone": "$profile.phone",
+                "phone": "$candidate.candidate_data.phone",
                 "percentage": 1,
                 "status": 1,
                 "completed_at": 1,
                 "rounds_count": {"$size": "$rounds_data"},
             }
-        },
-    ]
+        }
+    )
+
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
     return serialize_docs(docs)
