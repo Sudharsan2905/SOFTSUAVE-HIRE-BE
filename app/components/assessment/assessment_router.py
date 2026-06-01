@@ -14,7 +14,6 @@ from app.core.dependencies import DB
 from app.core.limiter import limiter
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
-router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
 @router.get("", response_model=ApiResponse)
