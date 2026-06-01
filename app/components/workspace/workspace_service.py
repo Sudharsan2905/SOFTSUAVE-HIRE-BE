@@ -1,7 +1,7 @@
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import ADMIN_ROLES, UserRole
+from app.common.constants.app_constants import UserRole
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
@@ -13,37 +13,64 @@ from app.common.utils import (
 )
 from app.core.logging import logger
 
+_ERR_WS_NOT_FOUND = "Workspace not found"
+_PUSH = "$push"
+
 
 async def create_workspace(db: AsyncIOMotorDatabase, data: dict, created_by: str) -> dict:
-    """Create a new workspace with an empty members list."""
+    """Create a new workspace and set it as the creator's default if they have none yet.
+
+    Admins get the workspace ID added to their workspace_ids list.
+    Super admins keep workspace_ids empty — they have implicit access to all workspaces.
+    """
     now = utcnow()
     doc = {
         "name": data["name"],
         "description": data.get("description", ""),
         "created_by": ObjectId(created_by),
-        "members": [],
         "created_at": now,
         "updated_at": now,
     }
     result = await db.workspaces.insert_one(doc)
+    workspace_id = str(result.inserted_id)
     doc["_id"] = result.inserted_id
+
+    creator = await db.users.find_one({"_id": ObjectId(created_by)})
+    if creator:
+        set_fields: dict = {"updated_at": utcnow()}
+        if not creator.get("default_workspace_id"):
+            set_fields["default_workspace_id"] = workspace_id
+        if creator.get("role") == UserRole.SUPER_ADMIN:
+            await db.users.update_one({"_id": ObjectId(created_by)}, {"$set": set_fields})
+        else:
+            await db.users.update_one(
+                {"_id": ObjectId(created_by), "workspace_ids": {"$ne": workspace_id}},
+                {_PUSH: {"workspace_ids": workspace_id}, "$set": set_fields},
+            )
+
     logger.info(f"Workspace created: {data['name']} by user_id={created_by}")
     return serialize_doc(doc)
 
 
 async def get_workspaces(
     db: AsyncIOMotorDatabase,
-    user_id: str,
     user_role: str,
+    user_workspace_ids: list,
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
     """Return a paginated list of workspaces visible to the requesting user.
 
-    Super admins see all workspaces; admins see only those they are members of.
+    Super admins see all workspaces.
+    Admins see only their assigned workspaces (sourced from user.workspace_ids).
     """
     skip, limit = paginate_query(page, page_size)
-    query = {} if user_role == UserRole.SUPER_ADMIN else {"members.user_id": ObjectId(user_id)}
+    if user_role == UserRole.SUPER_ADMIN:
+        query: dict = {}
+    else:
+        ws_ids = [ObjectId(wid) for wid in user_workspace_ids if wid]
+        query = {"_id": {"$in": ws_ids}}
+
     total, docs = await list_paginated(
         db.workspaces, query, "created_at", -1, skip, limit, ["created_at"]
     )
@@ -54,26 +81,34 @@ async def get_workspaces(
 
 
 async def get_workspace(
-    db: AsyncIOMotorDatabase, workspace_id: str, user_id: str, user_role: str
+    db: AsyncIOMotorDatabase,
+    workspace_id: str,
+    user_role: str,
+    user_workspace_ids: list,
 ) -> dict:
     """Fetch a single workspace, enforcing membership access for non-super_admin users.
 
+    Membership is checked against user.workspace_ids.
+
     Raises:
         NotFoundException: If the workspace does not exist.
-        ForbiddenException: If the user is not a member (admin role only).
+        ForbiddenException: If the user does not have access.
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
     if user_role != UserRole.SUPER_ADMIN:
-        member_ids = [str(m["user_id"]) for m in workspace.get("members", [])]
-        if user_id not in member_ids:
+        if workspace_id not in user_workspace_ids:
             raise ForbiddenException("No access to this workspace")
     return serialize_doc(workspace)
 
 
 async def update_workspace(
-    db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str, user_role: str
+    db: AsyncIOMotorDatabase,
+    workspace_id: str,
+    data: dict,
+    user_role: str,
+    user_workspace_ids: list,
 ) -> dict:
     """Update workspace fields (name, description) after verifying access.
 
@@ -81,7 +116,7 @@ async def update_workspace(
         NotFoundException: If the workspace does not exist.
         ForbiddenException: If the user does not have access.
     """
-    await get_workspace(db, workspace_id, user_id, user_role)
+    await get_workspace(db, workspace_id, user_role, user_workspace_ids)
     update = {k: v for k, v in data.items() if v is not None}
     update["updated_at"] = utcnow()
     await db.workspaces.update_one({"_id": ObjectId(workspace_id)}, {"$set": update})
@@ -89,106 +124,70 @@ async def update_workspace(
     return serialize_doc(updated)
 
 
-async def invite_members(
-    db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list, current_user_id: str
-) -> dict:
-    """Add admin/super_admin users to a workspace and sync their workspaces list.
+async def invite_members(db: AsyncIOMotorDatabase, workspace_id: str, user_ids: list) -> dict:
+    """Add admin users to a workspace by appending the workspace ID to their workspace_ids list.
 
-    Skips users already in the workspace. Sets the workspace as the user's
-    default if they have no default set yet.
+    Skips users already assigned or with a non-admin role.
+    Sets the workspace as the user's default if they have none yet.
 
     Raises:
         NotFoundException: If the workspace does not exist.
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
-
-    existing_ids = {str(m["user_id"]) for m in workspace.get("members", [])}
-    new_members = []
-    newly_added_users = []
-    newly_added_user_docs: dict = {}
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
     for uid in user_ids:
-        if uid not in existing_ids:
-            user = await db.users.find_one({"_id": ObjectId(uid), "role": {"$in": ADMIN_ROLES}})
-            if user:
-                new_members.append(
-                    {"user_id": ObjectId(uid), "email": user["email"], "role": user["role"]}
-                )
-                newly_added_users.append(uid)
-                newly_added_user_docs[uid] = user
-
-    if new_members:
-        await db.workspaces.update_one(
-            {"_id": ObjectId(workspace_id)},
-            {
-                "$push": {"members": {"$each": new_members}},
-                "$set": {"updated_at": utcnow()},
-            },
+        user = await db.users.find_one({"_id": ObjectId(uid), "role": UserRole.ADMIN})
+        if not user:
+            continue
+        if workspace_id in user.get("workspace_ids", []):
+            continue
+        set_fields: dict = {"updated_at": utcnow()}
+        if not user.get("default_workspace_id"):
+            set_fields["default_workspace_id"] = workspace_id
+        await db.users.update_one(
+            {"_id": ObjectId(uid), "workspace_ids": {"$ne": workspace_id}},
+            {_PUSH: {"workspace_ids": workspace_id}, "$set": set_fields},
         )
-        # Sync each newly added user's workspaces array and set default if unset
-        ws_ref = {"id": workspace_id, "name": workspace["name"]}
-        for uid in newly_added_users:
-            user_doc = newly_added_user_docs[uid]
-            set_fields: dict = {"updated_at": utcnow()}
-            if not user_doc.get("default_workspace_id"):
-                set_fields["default_workspace_id"] = workspace_id
-            await db.users.update_one(
-                {"_id": ObjectId(uid), "workspaces.id": {"$ne": workspace_id}},
-                {
-                    "$push": {"workspaces": ws_ref},
-                    "$set": set_fields,
-                },
-            )
 
-    updated = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
-    return serialize_doc(updated)
+    return serialize_doc(workspace)
 
 
 async def get_members(db: AsyncIOMotorDatabase, workspace_id: str) -> list:
-    """Return the full user documents for all members of a workspace.
+    """Return all admin users who have this workspace in their workspace_ids list.
 
     Raises:
         NotFoundException: If the workspace does not exist.
     """
-    workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
-    if not workspace:
-        raise NotFoundException("Workspace not found")
+    if not await db.workspaces.find_one({"_id": ObjectId(workspace_id)}):
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
-    member_ids = [m["user_id"] for m in workspace.get("members", [])]
-    users = await db.users.find({"_id": {"$in": member_ids}}, {"password_hash": 0}).to_list(200)
+    users = await db.users.find({"workspace_ids": workspace_id}, {"password_hash": 0}).to_list(200)
     return serialize_docs(users)
 
 
 async def delete_workspace(db: AsyncIOMotorDatabase, workspace_id: str) -> None:
-    """Delete a workspace and clean up all affected users' workspace references.
-
-    Updates each user's workspaces list and resets their default_workspace_id
-    if it pointed to the deleted workspace.
+    """Delete a workspace and remove its ID from all affected users' workspace_ids.
 
     Raises:
         NotFoundException: If the workspace does not exist.
     """
     workspace = await db.workspaces.find_one({"_id": ObjectId(workspace_id)})
     if not workspace:
-        raise NotFoundException("Workspace not found")
+        raise NotFoundException(_ERR_WS_NOT_FOUND)
 
-    # Find all users who belong to this workspace
     affected_users = await db.users.find(
-        {"workspaces.id": workspace_id}, {"_id": 1, "workspaces": 1, "default_workspace_id": 1}
+        {"workspace_ids": workspace_id},
+        {"_id": 1, "workspace_ids": 1, "default_workspace_id": 1},
     ).to_list(500)
 
     for user in affected_users:
-        user_id = user["_id"]
-        remaining = [w for w in user.get("workspaces", []) if w["id"] != workspace_id]
-        update: dict = {"workspaces": remaining, "updated_at": utcnow()}
-
-        current_default = user.get("default_workspace_id")
-        if current_default == workspace_id:
-            update["default_workspace_id"] = remaining[0]["id"] if remaining else None
-
-        await db.users.update_one({"_id": user_id}, {"$set": update})
+        remaining = [wid for wid in user.get("workspace_ids", []) if wid != workspace_id]
+        update: dict = {"workspace_ids": remaining, "updated_at": utcnow()}
+        if user.get("default_workspace_id") == workspace_id:
+            update["default_workspace_id"] = remaining[0] if remaining else None
+        await db.users.update_one({"_id": user["_id"]}, {"$set": update})
 
     await db.workspaces.delete_one({"_id": ObjectId(workspace_id)})
 

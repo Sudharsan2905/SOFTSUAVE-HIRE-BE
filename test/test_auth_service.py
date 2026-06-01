@@ -10,6 +10,11 @@ from app.common.utils import utcnow
 from app.components.auth import auth_service
 from app.core.config import settings
 
+_TEST_PASSWORD = "Pass@123"  # NOSONAR - test fixture credential, not a real secret
+_NEW_PASSWORD = "NewPass@123"  # NOSONAR
+_DUP_PASSWORD = "DupPass@123"  # NOSONAR
+_ROOT_PASSWORD = "RootPass@123"  # NOSONAR
+
 
 class TestAdminLogin:
     async def test_success(self, db, super_admin):
@@ -53,7 +58,7 @@ class TestRegisterCandidate:
             "last_name": "User",
             "email": "new@example.com",
             "phone": "9876543210",
-            "password": "NewPass@123",
+            "password": _NEW_PASSWORD,
         }
         result = await auth_service.register_candidate(db, data)
         assert result["access_token"]
@@ -63,7 +68,7 @@ class TestRegisterCandidate:
         data = {
             "first_name": "Dup",
             "email": "candidate@example.com",
-            "password": "DupPass@123",
+            "password": _DUP_PASSWORD,
         }
         with pytest.raises(ConflictException):
             await auth_service.register_candidate(db, data)
@@ -150,7 +155,7 @@ class TestGoogleAuth:
         mock_httpx.AsyncClient.return_value = mock_client_instance
         return mock_httpx
 
-    async def test_new_user_created(self, db):
+    async def test_new_user_returns_pre_auth_data(self, db):
         mock_httpx = self._make_mock_httpx(
             200,
             {
@@ -163,7 +168,10 @@ class TestGoogleAuth:
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
             result = await auth_service.google_auth(db, "valid_credential")
-        assert result["access_token"]
+        assert result["needs_registration"] is True
+        assert result["google_data"]["email"] == "google@example.com"
+        assert result["google_data"]["first_name"] == "Google"
+        assert result["google_data"]["google_id"] == "google123"
 
     async def test_existing_candidate_logs_in(self, db, candidate_user):
         mock_httpx = self._make_mock_httpx(
@@ -220,7 +228,7 @@ class TestSetupSuperAdmin:
                 "first_name": "Root",
                 "last_name": "Admin",
                 "email": "root@example.com",
-                "password": "RootPass@123",
+                "password": _ROOT_PASSWORD,
             },
         )
         assert result["access_token"]
@@ -232,6 +240,6 @@ class TestSetupSuperAdmin:
                 {
                     "first_name": "Another",
                     "email": "another@example.com",
-                    "password": "Pass@123",
+                    "password": _TEST_PASSWORD,
                 },
             )

@@ -22,9 +22,9 @@ async def list_workspaces(
     current_user: AdminUser,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await workspace_service.get_workspaces(
-        db, current_user["_id"], current_user["role"], page, page_size
+        db, current_user["role"], current_user.get("workspace_ids", []), page, page_size
     )
     return success_response("Workspaces retrieved", result)
 
@@ -36,7 +36,7 @@ async def create_workspace(
     body: CreateWorkspaceRequest,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await workspace_service.create_workspace(db, body.model_dump(), current_user["_id"])
     return success_response("Workspace created", result)
 
@@ -45,7 +45,7 @@ async def create_workspace(
 async def list_admin_users(
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     result = await workspace_service.get_all_admin_users(db)
     return success_response("Admin users retrieved", result)
 
@@ -55,9 +55,9 @@ async def get_workspace(
     workspace_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await workspace_service.get_workspace(
-        db, workspace_id, current_user["_id"], current_user["role"]
+        db, workspace_id, current_user["role"], current_user.get("workspace_ids", [])
     )
     return success_response("Workspace retrieved", result)
 
@@ -68,9 +68,13 @@ async def update_workspace(
     request: UpdateWorkspaceRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await workspace_service.update_workspace(
-        db, workspace_id, request.model_dump(), current_user["_id"], current_user["role"]
+        db,
+        workspace_id,
+        request.model_dump(),
+        current_user["role"],
+        current_user.get("workspace_ids", []),
     )
     return success_response("Workspace updated", result)
 
@@ -83,10 +87,8 @@ async def invite_members(
     body: InviteMemberRequest,
     db: DB,
     current_user: SuperAdminUser,
-):
-    result = await workspace_service.invite_members(
-        db, workspace_id, body.user_ids, current_user["_id"]
-    )
+) -> dict:
+    result = await workspace_service.invite_members(db, workspace_id, body.user_ids)
     return success_response("Members invited", result)
 
 
@@ -95,7 +97,7 @@ async def delete_workspace(
     workspace_id: str,
     db: DB,
     current_user: SuperAdminUser,
-):
+) -> dict:
     await workspace_service.delete_workspace(db, workspace_id)
     return success_response("Workspace deleted")
 
@@ -105,6 +107,6 @@ async def get_members(
     workspace_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await workspace_service.get_members(db, workspace_id)
     return success_response("Members retrieved", result)

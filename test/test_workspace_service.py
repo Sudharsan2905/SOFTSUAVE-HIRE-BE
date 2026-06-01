@@ -24,23 +24,20 @@ class TestCreateWorkspace:
 
 class TestGetWorkspaces:
     async def test_super_admin_sees_all(self, db, workspace, super_admin):
-        result = await workspace_service.get_workspaces(
-            db, str(super_admin["_id"]), UserRole.SUPER_ADMIN
-        )
+        result = await workspace_service.get_workspaces(db, UserRole.SUPER_ADMIN, [])
         assert result["pagination"]["total"] >= 1
 
     async def test_admin_sees_own_workspaces(self, db, workspace, admin_user):
-        # Add admin_user as workspace member so the query matches
-        await db.workspaces.update_one(
-            {"_id": workspace["_id"]},
-            {"$push": {"members": {"user_id": admin_user["_id"]}}},
-        )
-        result = await workspace_service.get_workspaces(db, str(admin_user["_id"]), UserRole.ADMIN)
+        result = await workspace_service.get_workspaces(db, UserRole.ADMIN, [str(workspace["_id"])])
         assert result["pagination"]["total"] >= 1
+
+    async def test_admin_without_workspace_sees_none(self, db, workspace, super_admin):
+        result = await workspace_service.get_workspaces(db, UserRole.ADMIN, [])
+        assert result["pagination"]["total"] == 0
 
     async def test_pagination(self, db, workspace, super_admin):
         result = await workspace_service.get_workspaces(
-            db, str(super_admin["_id"]), UserRole.SUPER_ADMIN, page=1, page_size=1
+            db, UserRole.SUPER_ADMIN, [], page=1, page_size=1
         )
         assert result["pagination"]["page_size"] == 1
 
@@ -48,33 +45,23 @@ class TestGetWorkspaces:
 class TestGetWorkspace:
     async def test_super_admin_access(self, db, workspace, super_admin):
         result = await workspace_service.get_workspace(
-            db, str(workspace["_id"]), str(super_admin["_id"]), UserRole.SUPER_ADMIN
+            db, str(workspace["_id"]), UserRole.SUPER_ADMIN, []
         )
         assert result["name"] == "Test Workspace"
 
     async def test_admin_member_access(self, db, workspace, admin_user):
-        # Add admin_user as a member so the access check passes
-        await db.workspaces.update_one(
-            {"_id": workspace["_id"]},
-            {"$push": {"members": {"user_id": admin_user["_id"]}}},
-        )
         result = await workspace_service.get_workspace(
-            db, str(workspace["_id"]), str(admin_user["_id"]), UserRole.ADMIN
+            db, str(workspace["_id"]), UserRole.ADMIN, [str(workspace["_id"])]
         )
         assert result["name"] == "Test Workspace"
 
-    async def test_admin_non_member_forbidden(self, db, workspace, super_admin):
-        other_admin_id = str(ObjectId())
+    async def test_admin_non_member_forbidden(self, db, workspace):
         with pytest.raises(ForbiddenException):
-            await workspace_service.get_workspace(
-                db, str(workspace["_id"]), other_admin_id, UserRole.ADMIN
-            )
+            await workspace_service.get_workspace(db, str(workspace["_id"]), UserRole.ADMIN, [])
 
-    async def test_not_found_raises(self, db, super_admin):
+    async def test_not_found_raises(self, db):
         with pytest.raises(NotFoundException):
-            await workspace_service.get_workspace(
-                db, str(ObjectId()), str(super_admin["_id"]), UserRole.SUPER_ADMIN
-            )
+            await workspace_service.get_workspace(db, str(ObjectId()), UserRole.SUPER_ADMIN, [])
 
 
 class TestUpdateWorkspace:
@@ -83,38 +70,34 @@ class TestUpdateWorkspace:
             db,
             str(workspace["_id"]),
             {"name": "Updated WS"},
-            str(super_admin["_id"]),
             UserRole.SUPER_ADMIN,
+            [],
         )
         assert result["name"] == "Updated WS"
 
 
 class TestInviteMembers:
     async def test_invites_new_member(self, db, workspace, admin_user):
-        result = await workspace_service.invite_members(
-            db, str(workspace["_id"]), [str(admin_user["_id"])], str(admin_user["_id"])
-        )
-        member_ids = [str(m["user_id"]) for m in result.get("members", [])]
-        assert str(admin_user["_id"]) in member_ids
+        await workspace_service.invite_members(db, str(workspace["_id"]), [str(admin_user["_id"])])
+        user = await db.users.find_one({"_id": admin_user["_id"]})
+        ws_ids = user.get("workspace_ids", [])
+        assert str(workspace["_id"]) in ws_ids
 
     async def test_skips_existing_member(self, db, workspace, admin_user):
-        # admin_user is already a member (via conftest admin_user fixture)
-        await workspace_service.invite_members(
-            db, str(workspace["_id"]), [str(admin_user["_id"])], str(admin_user["_id"])
-        )
+        # admin_user already has this workspace in their workspaces array (conftest fixture)
+        await workspace_service.invite_members(db, str(workspace["_id"]), [str(admin_user["_id"])])
 
     async def test_skips_non_admin_user(self, db, workspace, candidate_user, super_admin):
-        result = await workspace_service.invite_members(
-            db, str(workspace["_id"]), [str(candidate_user["_id"])], str(super_admin["_id"])
+        await workspace_service.invite_members(
+            db, str(workspace["_id"]), [str(candidate_user["_id"])]
         )
-        member_ids = [str(m["user_id"]) for m in result.get("members", [])]
-        assert str(candidate_user["_id"]) not in member_ids
+        user = await db.users.find_one({"_id": candidate_user["_id"]})
+        ws_ids = user.get("workspace_ids", [])
+        assert str(workspace["_id"]) not in ws_ids
 
     async def test_not_found_raises(self, db, super_admin):
         with pytest.raises(NotFoundException):
-            await workspace_service.invite_members(
-                db, str(ObjectId()), [str(super_admin["_id"])], str(super_admin["_id"])
-            )
+            await workspace_service.invite_members(db, str(ObjectId()), [str(super_admin["_id"])])
 
     async def test_sets_default_workspace_when_unset(self, db, workspace, super_admin):
         """When a new user has no default_workspace_id, it gets set on invite."""
@@ -126,23 +109,25 @@ class TestInviteMembers:
                 "_id": new_admin_id,
                 "email": "fresh@example.com",
                 "role": UserRole.ADMIN,
+                "workspace_ids": [],
                 "default_workspace_id": None,
-                "workspaces": [],
+                "candidate_data": None,
                 "created_at": utcnow(),
                 "updated_at": utcnow(),
             }
         )
-        await workspace_service.invite_members(
-            db, str(workspace["_id"]), [str(new_admin_id)], str(super_admin["_id"])
-        )
+        await workspace_service.invite_members(db, str(workspace["_id"]), [str(new_admin_id)])
         user = await db.users.find_one({"_id": new_admin_id})
-        assert user["default_workspace_id"] == str(workspace["_id"])
+        assert user.get("default_workspace_id") == str(workspace["_id"])
 
 
 class TestGetMembers:
     async def test_returns_members(self, db, workspace, admin_user):
         result = await workspace_service.get_members(db, str(workspace["_id"]))
         assert isinstance(result, list)
+        # admin_user has this workspace in their workspaces array (conftest fixture)
+        emails = [u["email"] for u in result]
+        assert admin_user["email"] in emails
 
     async def test_not_found_raises(self, db):
         with pytest.raises(NotFoundException):
@@ -159,7 +144,7 @@ class TestDeleteWorkspace:
         """Deleting workspace removes it from admin user's workspaces list."""
         await workspace_service.delete_workspace(db, str(workspace["_id"]))
         user = await db.users.find_one({"_id": admin_user["_id"]})
-        ws_ids = [w["id"] for w in user.get("workspaces", [])]
+        ws_ids = user.get("workspace_ids", [])
         assert str(workspace["_id"]) not in ws_ids
 
     async def test_resets_default_workspace(self, db, workspace, admin_user):

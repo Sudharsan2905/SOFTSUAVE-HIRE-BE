@@ -6,6 +6,7 @@ from slowapi.errors import RateLimitExceeded
 from app.common.exception_handlers import register_exception_handlers
 from app.common.middleware.logging_middleware import RequestLoggingMiddleware
 from app.common.responses import ApiResponse, error_response, success_response
+from app.components.assessment.assessment_router import public_router as assessment_public_router
 from app.components.assessment.assessment_router import router as assessment_router
 from app.components.auth.auth_router import router as auth_router
 from app.components.candidate.candidate_router import router as candidate_router
@@ -51,6 +52,7 @@ def create_application() -> FastAPI:
     app.include_router(workspace_router, prefix="/api/workspaces", tags=["Workspaces"])
     app.include_router(question_router, prefix="/api/questions", tags=["Question Bank"])
     app.include_router(assessment_router, prefix="/api", tags=["Assessments"])
+    app.include_router(assessment_public_router, prefix="/api", tags=["Assessments"])
     app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
     app.include_router(notification_router, prefix="/api/notifications", tags=["Notifications"])
 

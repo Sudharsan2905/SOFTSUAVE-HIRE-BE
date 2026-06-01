@@ -14,7 +14,12 @@ from app.core.dependencies import get_db
 from app.factory import create_application
 
 _ADMIN_EMAIL = "admin@example.com"
-_ADMIN_PASSWORD = "AdminPass@1!"
+_ADMIN_PASSWORD = "AdminPass@1!"  # NOSONAR - test fixture credential, not a real secret
+_CAND_PASSWORD = "CandPass@1!"  # NOSONAR
+_NEW_PASS = "NewPass@123!"  # NOSONAR
+_ROOT_PASS = "RootPass@123!"  # NOSONAR
+_ADMIN_CREATE_PASS = "Pass@1234!"  # NOSONAR
+_REGISTER_PASS = "Pass@123!"  # NOSONAR
 
 
 @pytest.fixture
@@ -44,8 +49,10 @@ async def seeded_admin(mock_db):
         "password_hash": hash_password(_ADMIN_PASSWORD),
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
-        "workspaces": [],
+        "email_verified": False,
+        "workspace_ids": [],
         "default_workspace_id": None,
+        "candidate_data": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -71,16 +78,26 @@ async def seeded_candidate(mock_db):
         "first_name": "Cand",
         "last_name": "User",
         "email": "cand@example.com",
-        "password_hash": hash_password("CandPass@1!"),
+        "password_hash": hash_password(_CAND_PASSWORD),
         "role": UserRole.CANDIDATE,
+        "is_active": True,
+        "email_verified": False,
+        "workspace_ids": [],
+        "default_workspace_id": None,
+        "candidate_data": {
+            "candidate_type": "student",
+            "google_id": None,
+            "phone": "9999999999",
+            "dob": None,
+            "gender": "male",
+            "institution": None,
+            "location": None,
+        },
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
     result = await mock_db.users.insert_one(doc)
     doc["_id"] = result.inserted_id
-    await mock_db.candidates.insert_one(
-        {"user_id": result.inserted_id, "created_at": utcnow(), "updated_at": utcnow()}
-    )
     return doc
 
 
@@ -101,13 +118,6 @@ async def seeded_workspace(mock_db, seeded_admin):
         "name": "Test WS",
         "description": "Router test workspace",
         "created_by": seeded_admin["_id"],
-        "members": [
-            {
-                "user_id": seeded_admin["_id"],
-                "email": seeded_admin["email"],
-                "role": UserRole.SUPER_ADMIN,
-            }
-        ],
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -221,14 +231,14 @@ class TestAuthRoutes:
     def test_admin_login_wrong_password(self, client, seeded_admin):
         resp = client.post(
             "/api/auth/admin/login",
-            json={"email": _ADMIN_EMAIL, "password": "Wrong@1!"},
+            json={"email": _ADMIN_EMAIL, "password": "Wrong@1!"},  # NOSONAR
         )
         assert resp.status_code == 401
 
     def test_candidate_login(self, client, seeded_candidate):
         resp = client.post(
             "/api/auth/login",
-            json={"email": "cand@example.com", "password": "CandPass@1!"},
+            json={"email": "cand@example.com", "password": _CAND_PASSWORD},
         )
         assert resp.status_code == 200
         assert resp.json()["data"]["access_token"]
@@ -241,7 +251,7 @@ class TestAuthRoutes:
                 "last_name": "User",
                 "email": "newcandidate@example.com",
                 "phone": "9876543210",
-                "password": "NewPass@123!",
+                "password": _NEW_PASS,
                 "father_name": "John",
                 "gender": "male",
             },
@@ -255,7 +265,7 @@ class TestAuthRoutes:
             json={
                 "first_name": "Bad",
                 "email": "not-an-email",
-                "password": "Pass@123!",
+                "password": _REGISTER_PASS,
                 "father_name": "Someone",
                 "gender": "male",
             },
@@ -293,7 +303,7 @@ class TestAuthRoutes:
                 "first_name": "Root",
                 "last_name": "Admin",
                 "email": "root@example.com",
-                "password": "RootPass@123!",
+                "password": _ROOT_PASS,
             },
         )
         assert resp.status_code == 200
@@ -357,7 +367,7 @@ class TestUserRoutes:
                 "first_name": "New",
                 "last_name": "Admin",
                 "email": "newadmin@example.com",
-                "password": "Pass@1234!",
+                "password": _ADMIN_CREATE_PASS,
                 "role": "admin",
                 "workspace_ids": [str(seeded_workspace["_id"])],
             },

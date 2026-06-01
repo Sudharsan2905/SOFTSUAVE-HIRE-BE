@@ -13,10 +13,10 @@ from app.components.auth.auth_dependencies import AdminUser
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
-router = APIRouter()
+router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
-@router.get("/workspaces/{workspace_id}/assessments", response_model=ApiResponse)
+@router.get("", response_model=ApiResponse)
 async def list_assessments(
     workspace_id: str,
     db: DB,
@@ -26,45 +26,45 @@ async def list_assessments(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
-):
+) -> dict:
     result = await assessment_service.get_assessments(
         db, workspace_id, search, sort_by, sort_order, page, page_size
     )
     return success_response("Assessments retrieved", result)
 
 
-@router.post("/workspaces/{workspace_id}/assessments", response_model=ApiResponse)
+@router.post("", response_model=ApiResponse)
 async def create_assessment(
     workspace_id: str,
     request: CreateAssessmentRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.create_assessment(
         db, workspace_id, request.model_dump(), current_user["_id"]
     )
     return success_response("Assessment created", result)
 
 
-@router.get("/workspaces/{workspace_id}/assessments/{assessment_id}", response_model=ApiResponse)
+@router.get("/{assessment_id}", response_model=ApiResponse)
 async def get_assessment(
     workspace_id: str,
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.get_assessment(db, workspace_id, assessment_id)
     return success_response("Assessment retrieved", result)
 
 
-@router.put("/workspaces/{workspace_id}/assessments/{assessment_id}", response_model=ApiResponse)
+@router.put("/{assessment_id}", response_model=ApiResponse)
 async def update_assessment(
     workspace_id: str,
     assessment_id: str,
     request: UpdateAssessmentRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.update_assessment(
         db, workspace_id, assessment_id, request.model_dump()
     )
@@ -72,7 +72,7 @@ async def update_assessment(
 
 
 @router.get(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions",
+    "/{assessment_id}/submissions",
     response_model=ApiResponse,
 )
 async def list_submissions(
@@ -87,7 +87,7 @@ async def list_submissions(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
-):
+) -> dict:
     result = await assessment_service.get_submissions(
         db,
         assessment_id,
@@ -103,7 +103,7 @@ async def list_submissions(
 
 
 @router.get(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/export",
+    "/{assessment_id}/submissions/export",
     response_model=ApiResponse,
 )
 async def export_submission_list(
@@ -111,13 +111,19 @@ async def export_submission_list(
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
-    result = await assessment_service.export_submissions(db, assessment_id)
+    status: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    min_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+    max_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+) -> dict:
+    result = await assessment_service.export_submissions(
+        db, assessment_id, status, search, min_percentage, max_percentage
+    )
     return success_response("Export data retrieved", result)
 
 
 @router.get(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}",
+    "/{assessment_id}/submissions/{submission_id}",
     response_model=ApiResponse,
 )
 async def get_submission(
@@ -126,13 +132,13 @@ async def get_submission(
     submission_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     result = await assessment_service.get_submission_detail(db, submission_id)
     return success_response("Submission retrieved", result)
 
 
 @router.post(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/submissions/{submission_id}/reaccess",
+    "/{assessment_id}/submissions/{submission_id}/reaccess",
     response_model=ApiResponse,
 )
 async def grant_reaccess(
@@ -141,13 +147,13 @@ async def grant_reaccess(
     submission_id: str,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     await assessment_service.grant_reaccess(db, submission_id)
     return success_response("Re-access granted successfully")
 
 
 @router.get(
-    "/workspaces/{workspace_id}/assessments/{assessment_id}/export",
+    "/{assessment_id}/export",
     response_model=ApiResponse,
 )
 @limiter.limit("10/hour")
@@ -157,8 +163,14 @@ async def export_submissions(
     assessment_id: str,
     db: DB,
     current_user: AdminUser,
-):
-    result = await assessment_service.export_submissions(db, assessment_id)
+    status: Annotated[str | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
+    min_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+    max_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+) -> dict:
+    result = await assessment_service.export_submissions(
+        db, assessment_id, status, search, min_percentage, max_percentage
+    )
     return success_response("Export data retrieved", result)
 
 
@@ -170,7 +182,7 @@ async def generate_expirable_share_link(
     body: GenerateExpirableLinkRequest,
     db: DB,
     current_user: AdminUser,
-):
+) -> dict:
     link = await assessment_service.generate_expirable_link(
         db, body.assessment_id, workspace_id, body.start_time, body.end_time
     )
@@ -183,13 +195,17 @@ async def validate_share_link(
     request: Request,
     link: Annotated[str, Query()],
     db: DB,
-):
+) -> dict:
     result = await assessment_service.validate_sharelink(db, link)
     return success_response("Share link validated", result)
 
 
-@router.get("/assessments/share/{share_link}", response_model=ApiResponse)
+# Public router — no workspace prefix, no auth required
+public_router = APIRouter()
+
+
+@public_router.get("/assessments/share/{share_link}", response_model=ApiResponse)
 @limiter.limit("30/minute")
-async def get_by_share_link(request: Request, share_link: str, db: DB):
+async def get_by_share_link(request: Request, share_link: str, db: DB) -> dict:
     result = await assessment_service.get_assessment_by_share_link(db, share_link)
     return success_response("Assessment retrieved", result)

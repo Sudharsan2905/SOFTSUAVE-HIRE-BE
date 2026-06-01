@@ -1,11 +1,17 @@
 """Shared pytest fixtures for all tests."""
 
+import os
+
 import pytest
 from mongomock_motor import AsyncMongoMockClient
 
 from app.common.constants.app_constants import UserRole
 from app.common.utils import utcnow
 from app.components.auth.auth_service import hash_password
+from app.core.limiter import limiter as _limiter  # noqa: E402
+
+os.environ["RATELIMIT_ENABLED"] = "0"  # must be set before any app module is imported
+_limiter.limit = lambda *args, **kwargs: (lambda f: f)
 
 
 @pytest.fixture
@@ -25,8 +31,10 @@ async def super_admin(db):
         "password_hash": hash_password("SuperPass@123"),
         "role": UserRole.SUPER_ADMIN,
         "is_active": True,
-        "workspaces": [],
+        "email_verified": False,
+        "workspace_ids": [],
         "default_workspace_id": None,
+        "candidate_data": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -38,7 +46,6 @@ async def super_admin(db):
 @pytest.fixture
 async def admin_user(db, workspace):
     """Pre-seeded admin user linked to a workspace."""
-    ws_ref = {"id": str(workspace["_id"]), "name": workspace["name"]}
     doc = {
         "first_name": "Admin",
         "last_name": "User",
@@ -46,8 +53,10 @@ async def admin_user(db, workspace):
         "password_hash": hash_password("AdminPass@123"),
         "role": UserRole.ADMIN,
         "is_active": True,
-        "workspaces": [ws_ref],
+        "email_verified": False,
+        "workspace_ids": [str(workspace["_id"])],
         "default_workspace_id": str(workspace["_id"]),
+        "candidate_data": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -65,18 +74,24 @@ async def candidate_user(db):
         "email": "candidate@example.com",
         "password_hash": hash_password("CandPass@123"),
         "role": UserRole.CANDIDATE,
+        "is_active": True,
+        "email_verified": False,
+        "workspace_ids": [],
+        "default_workspace_id": None,
+        "candidate_data": {
+            "candidate_type": "student",
+            "google_id": None,
+            "phone": "9999999999",
+            "dob": None,
+            "gender": "male",
+            "institution": None,
+            "location": None,
+        },
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
     result = await db.users.insert_one(doc)
     doc["_id"] = result.inserted_id
-    await db.candidates.insert_one(
-        {
-            "user_id": result.inserted_id,
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
-    )
     return doc
 
 
@@ -87,7 +102,6 @@ async def workspace(db, super_admin):
         "name": "Test Workspace",
         "description": "A workspace for testing",
         "created_by": super_admin["_id"],
-        "members": [],
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
