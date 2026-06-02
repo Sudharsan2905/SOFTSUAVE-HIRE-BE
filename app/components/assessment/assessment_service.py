@@ -202,7 +202,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": "This share link is invalid.",
+            "message": "This link is not valid. Please check the URL or contact the administrator.",
         }
 
     assessment_id = decoded["a"]
@@ -218,7 +218,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": "This share link is invalid.",
+            "message": "This link is not valid. Please check the URL or contact the administrator.",
         }
 
     # Permanent link — always allowed
@@ -246,7 +246,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": True,
             "start_time": decoded["s"],
             "end_time": decoded["e"],
-            "message": "Your interview link is not active yet.",
+            "message": "This interview link will become active at the scheduled time.",
         }
     if now > end:
         return {
@@ -255,7 +255,9 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": True,
             "start_time": decoded["s"],
             "end_time": decoded["e"],
-            "message": "This interview link has expired.",
+            "message": (
+                "This interview session is no longer available. Please contact the administrator."
+            ),
         }
     return {
         "can_allow": True,
@@ -281,7 +283,8 @@ async def generate_expirable_link(
     from app.common.utils import encode_expirable_sharelink
 
     doc = await db.assessments.find_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}, {"_id": 1}
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)},
+        {"_id": 1},
     )
     if not doc:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)

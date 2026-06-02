@@ -34,7 +34,6 @@ ws_router = APIRouter()
 
 _TERMINAL_STATUSES = {
     SubmissionStatus.COMPLETED,
-    SubmissionStatus.MALPRACTICE,
     SubmissionStatus.TERMINATED,
 }
 

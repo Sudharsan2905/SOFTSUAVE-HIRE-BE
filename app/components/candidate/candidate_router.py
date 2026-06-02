@@ -1,21 +1,20 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 
+from app.common.constants.app_constants import MalpracticeType
 from app.common.exceptions import ValidationException
 from app.common.responses import ApiResponse, success_response
 from app.components.auth.auth_dependencies import AdminUser, CurrentUser
 from app.components.candidate import candidate_service
-from app.components.candidate.candidate_schemas import (
-    MalpracticeRequest,
-    SubmitAnswerRequest,
-)
+from app.components.candidate.candidate_schemas import SubmitAnswerRequest
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
 router = APIRouter()
 
-_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png"}
+_JPEG = "image/jpeg"
+_ALLOWED_IMAGE_TYPES = {_JPEG, "image/png"}
 _MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024  # 2 MB
 
 
@@ -86,7 +85,7 @@ async def save_screenshot(
     if len(content) > _MAX_SCREENSHOT_BYTES:
         raise ValidationException("Screenshot must not exceed 2 MB")
     await candidate_service.save_screenshot(
-        db, submission_id, current_user["_id"], content, file.content_type or "image/jpeg"
+        db, submission_id, current_user["_id"], content, file.content_type or _JPEG
     )
     return success_response("Screenshot saved")
 
@@ -96,11 +95,35 @@ async def save_screenshot(
 async def flag_malpractice(
     request: Request,
     submission_id: str,
-    body: MalpracticeRequest,
     db: DB,
     current_user: CurrentUser,
+    type: Annotated[str, Form()],
+    file: Annotated[UploadFile | None, File()] = None,
 ) -> dict:
-    await candidate_service.flag_malpractice(db, submission_id, current_user["_id"], body.type)
+    """Record a malpractice event with an optional screenshot.
+
+    Accepts multipart/form-data so the screenshot binary can accompany the
+    violation type in a single round-trip.
+    """
+    try:
+        malpractice_type = MalpracticeType(type)
+    except ValueError as err:
+        raise ValidationException(f"Invalid malpractice type: {type!r}") from err
+
+    file_bytes: bytes | None = None
+    content_type = _JPEG
+    if file is not None:
+        if file.content_type not in _ALLOWED_IMAGE_TYPES:
+            raise ValidationException("Screenshot must be a JPEG or PNG image")
+        content = await file.read()
+        if len(content) > _MAX_SCREENSHOT_BYTES:
+            raise ValidationException("Screenshot must not exceed 2 MB")
+        file_bytes = content
+        content_type = file.content_type or _JPEG
+
+    await candidate_service.flag_malpractice(
+        db, submission_id, current_user["_id"], malpractice_type, file_bytes, content_type
+    )
     return success_response("Activity flagged")
 
 
@@ -113,6 +136,22 @@ async def get_session_state(
     """Return persisted timer/position state for resume after network loss."""
     result = await candidate_service.get_session_state(db, submission_id, current_user["_id"])
     return success_response("Session state retrieved", result)
+
+
+@router.get("/submission/status", response_model=ApiResponse)
+async def get_submission_status(
+    share_link: Annotated[str, Query()],
+    db: DB,
+    current_user: CurrentUser,
+) -> dict:
+    """Return the current submission status for the authenticated candidate.
+
+    Returns null data when no submission exists yet (assessment not yet started).
+    Used by the frontend route guard to determine candidate access before entering
+    the assessment flow.
+    """
+    result = await candidate_service.get_submission_status(db, share_link, current_user["_id"])
+    return success_response("Submission status retrieved", result)
 
 
 @router.get("/live-interviews", response_model=ApiResponse)

@@ -20,7 +20,8 @@ from app.common.utils import (
 from app.core.config import settings
 from app.core.logging import logger
 
-_EXT_MAP = {"image/jpeg": ".jpg", "image/png": ".png"}
+_DEFAULT_CONTENT_TYPE = "image/jpeg"
+_EXT_MAP = {_DEFAULT_CONTENT_TYPE: ".jpg", "image/png": ".png"}
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 _ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
@@ -72,7 +73,7 @@ async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) 
     status = existing.get("status")
     if status in [
         SubmissionStatus.COMPLETED,
-        SubmissionStatus.MALPRACTICE,
+        SubmissionStatus.TERMINATED,
         SubmissionStatus.TERMINATED,
     ]:
         raise ForbiddenException(
@@ -213,6 +214,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "percentage": 0.0,
         "screenshots": [],
         "is_malpractice": False,
+        "malpractice_flags": [],
         "reaccess_count": 0,
         "started_at": now,
         "completed_at": None,
@@ -226,6 +228,49 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         f"submission_id={result.inserted_id}"
     )
     return serialize_doc(submission)
+
+
+async def get_submission_status(
+    db: AsyncIOMotorDatabase, share_link: str, candidate_id: str
+) -> dict | None:
+    """Return the current submission status for a candidate + assessment pair.
+
+    Uses the share link to resolve the assessment, then looks up the submission
+    by the (assessment_id, candidate_id) unique index.  Returns None when no
+    submission exists yet (assessment not yet started by this candidate).
+
+    Raises:
+        NotFoundException: If the share link does not resolve to any assessment.
+    """
+    assessment = None
+    try:
+        decoded = decode_sharelink(share_link)
+        assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+    except Exception:
+        assessment = await db.assessments.find_one({"share_link": share_link})
+
+    if not assessment:
+        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+
+    sub = await db.assessment_submissions.find_one(
+        {
+            "assessment_id": assessment["_id"],
+            "candidate_id": ObjectId(candidate_id),
+        }
+    )
+    if not sub:
+        return None
+
+    return {
+        "submission_id": str(sub["_id"]),
+        "status": sub.get("status"),
+        "assessment_id": str(sub["assessment_id"]),
+        "candidate_id": str(sub["candidate_id"]),
+        "current_round": sub.get("current_round", 1),
+        "completed_at": sub["completed_at"].isoformat() if sub.get("completed_at") else None,
+        "paused_at": sub["paused_at"].isoformat() if sub.get("paused_at") else None,
+        "malpractice_reason": sub.get("malpractice_reason"),
+    }
 
 
 async def get_current_round(
@@ -251,14 +296,6 @@ async def get_current_round(
             f"submission_id={submission_id} candidate_id={candidate_id}"
         )
         raise ForbiddenException("This assessment has already been completed.")
-    if sub_status == SubmissionStatus.MALPRACTICE:
-        logger.warning(
-            f"Security: blocked round access on malpractice submission "
-            f"submission_id={submission_id} candidate_id={candidate_id}"
-        )
-        raise ForbiddenException(
-            "Access to this assessment has been revoked due to a policy violation."
-        )
     if sub_status == SubmissionStatus.TERMINATED:
         raise ForbiddenException("This session has been terminated by an administrator.")
     if sub_status == SubmissionStatus.ON_HOLD:
@@ -390,11 +427,15 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         )
         return {"completed": True, "percentage": percentage}
 
+    # Reset per-round session state so the next round starts with a clean timer
+    # and question index (not bleed-over from the previous round).
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
         {
             "$set": {
                 "current_round": current + 1,
+                "remaining_seconds": None,
+                "current_question_idx": 0,
                 "updated_at": utcnow(),
                 f"rounds_data.{idx}.completed": True,
             }
@@ -452,7 +493,7 @@ async def save_screenshot(
     submission_id: str,
     candidate_id: str,
     file_bytes: bytes,
-    content_type: str = "image/jpeg",
+    content_type: str = _DEFAULT_CONTENT_TYPE,
 ) -> None:
     """Save a screenshot to disk and record its path in the submission document.
 
@@ -499,11 +540,20 @@ async def flag_malpractice(
     submission_id: str,
     candidate_id: str,
     malpractice_type: str,
+    file_bytes: bytes | None = None,
+    content_type: str = _DEFAULT_CONTENT_TYPE,
 ) -> None:
-    """Mark a submission as MALPRACTICE if tab monitoring is enabled; silently returns otherwise.
+    """Record a malpractice event for a submission.
+
+    - Upserts a per-type entry in ``malpractice_flags`` (increments count on repeat).
+    - Saves an optional screenshot and stores the path on the event record.
+    - Keeps the legacy ``is_malpractice`` / ``malpractice_reason`` fields for
+      backward compatibility with existing admin views.
+
+    Silently returns if monitoring is disabled for this assessment.
 
     Raises:
-        NotFoundException: If no active in-progress submission exists.
+        NotFoundException: If no matching submission exists.
     """
     sub = await db.assessment_submissions.find_one(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
@@ -522,16 +572,67 @@ async def flag_malpractice(
         if not effective_monitoring.get("tab_monitoring", True):
             return
 
+    # ── Save screenshot (if provided) ──────────────────────────────────────
+    image_path: str | None = None
+    if file_bytes:
+        ext = _EXT_MAP.get(content_type, ".jpg")
+        timestamp = utcnow().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"malpractice_{malpractice_type}_{timestamp}{ext}"
+        folder = Path(settings.SCREENSHOTS_DIR) / submission_id
+        folder.mkdir(parents=True, exist_ok=True)
+        file_path = folder / filename
+        await asyncio.to_thread(file_path.write_bytes, file_bytes)
+        image_path = str(file_path).replace("\\", "/")
+
+    now = utcnow()
+
+    # ── Upsert malpractice_flags per type ──────────────────────────────────
+    existing_flags: list[dict] = sub.get("malpractice_flags") or []
+    type_exists = any(f.get("type") == malpractice_type for f in existing_flags)
+
+    if type_exists:
+        update_fields: dict = {
+            "malpractice_flags.$.count": existing_flags[
+                next(i for i, f in enumerate(existing_flags) if f.get("type") == malpractice_type)
+            ].get("count", 0)
+            + 1,
+            "malpractice_flags.$.last_updated": now,
+        }
+        if image_path:
+            update_fields["malpractice_flags.$.image_path"] = image_path
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"], "malpractice_flags.type": malpractice_type},
+            {"$set": update_fields},
+        )
+    else:
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"]},
+            {
+                "$push": {
+                    "malpractice_flags": {
+                        "type": malpractice_type,
+                        "count": 1,
+                        "image_path": image_path,
+                        "last_updated": now,
+                    }
+                }
+            },
+        )
+
+    # ── Legacy fields (backward-compat for admin views) ────────────────────
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
         {
             "$set": {
                 "is_malpractice": True,
                 "malpractice_reason": malpractice_type,
-                "completed_at": utcnow(),
-                "updated_at": utcnow(),
+                "updated_at": now,
             }
         },
+    )
+    logger.info(
+        f"Malpractice flagged: submission_id={submission_id} type={malpractice_type} "
+        f"image={'yes' if image_path else 'no'}"
     )
 
 
@@ -550,7 +651,13 @@ async def put_session_on_hold(
             "_id": ObjectId(submission_id),
             "status": SubmissionStatus.IN_PROGRESS,
         },
-        {"$set": {"status": SubmissionStatus.ON_HOLD, "paused_at": now, "updated_at": now}},
+        {
+            "$set": {
+                "status": SubmissionStatus.ON_HOLD,
+                "paused_at": now,
+                "updated_at": now,
+            }
+        },
     )
     if result.modified_count:
         logger.info("Session placed ON_HOLD: submission_id=%s", submission_id)
@@ -571,7 +678,12 @@ async def get_session_state(
     """
     sub = await db.assessment_submissions.find_one(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
-        {"status": 1, "remaining_seconds": 1, "current_question_idx": 1, "current_round": 1},
+        {
+            "status": 1,
+            "remaining_seconds": 1,
+            "current_question_idx": 1,
+            "current_round": 1,
+        },
     )
     if not sub:
         raise NotFoundException("Submission not found")

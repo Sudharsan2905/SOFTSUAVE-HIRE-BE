@@ -28,7 +28,6 @@ class SubmissionStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
-    MALPRACTICE = "malpractice"
     ON_HOLD = "on_hold"  # network loss pause — awaiting admin resume
     TERMINATED = "terminated"  # admin-forced termination
 
