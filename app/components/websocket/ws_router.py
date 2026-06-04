@@ -189,11 +189,35 @@ async def admin_websocket(websocket: WebSocket) -> None:
     try:
         while True:
             data = await websocket.receive_json()
-            # Admin can send ping to keep alive
-            if data.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
+            await _handle_admin_message(websocket, data)
     except WebSocketDisconnect:
         admin_manager.disconnect(admin_id)
     except Exception as exc:
         logger.error("Admin WS error: admin_id=%s error=%s", admin_id, exc)
         admin_manager.disconnect(admin_id)
+
+
+async def _handle_admin_message(websocket: WebSocket, data: dict) -> None:
+    """Dispatch a single admin WebSocket message."""
+    msg_type = data.get("type")
+
+    if msg_type == "ping":
+        await websocket.send_json({"type": "pong"})
+        return
+
+    if msg_type == "warn_candidate":
+        target_submission_id = data.get("submission_id", "")
+        message = data.get("message", "").strip()
+        if not target_submission_id or not message:
+            return
+        delivered = await manager.send_json(
+            target_submission_id,
+            {"type": "admin_warning", "message": message},
+        )
+        await websocket.send_json(
+            {
+                "type": "warn_ack",
+                "submission_id": target_submission_id,
+                "delivered": delivered,
+            }
+        )

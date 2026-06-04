@@ -154,7 +154,9 @@ async def get_livekit_token(
     try:
         from app.components.livekit import livekit_service
 
-        result = await livekit_service.generate_candidate_token(db, submission_id)
+        result = await livekit_service.generate_candidate_token(
+            db, submission_id, str(current_user["_id"])
+        )
         return success_response("LiveKit token generated", result)
     except Exception as exc:
         from app.common.exceptions import AppException
