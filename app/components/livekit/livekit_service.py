@@ -12,9 +12,19 @@ from app.core.config import settings
 from app.core.logging import logger
 
 
-async def _get_workspace_id_for_submission(db: AsyncIOMotorDatabase, submission_id: str) -> str:
-    """Resolve the workspace_id for a submission via its assessment."""
-    sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
+async def _get_workspace_id_for_submission(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    candidate_id: str | None = None,
+) -> str:
+    """Resolve the workspace_id for a submission via its assessment.
+
+    If candidate_id is provided, verifies the submission belongs to that candidate.
+    """
+    query: dict = {"_id": ObjectId(submission_id)}
+    if candidate_id:
+        query["candidate_id"] = ObjectId(candidate_id)
+    sub = await db.assessment_submissions.find_one(query)
     if not sub:
         raise NotFoundException("Submission not found")
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
@@ -49,9 +59,14 @@ def _make_token(identity: str, room: str, can_publish: bool, can_subscribe: bool
         return ""
 
 
-async def generate_candidate_token(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
-    """Generate a LiveKit token for a candidate to publish their screen track."""
-    workspace_id = await _get_workspace_id_for_submission(db, submission_id)
+async def generate_candidate_token(
+    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str
+) -> dict:
+    """Generate a LiveKit token for a candidate to publish their screen track.
+
+    Raises NotFoundException if the submission does not belong to the candidate.
+    """
+    workspace_id = await _get_workspace_id_for_submission(db, submission_id, candidate_id)
     room = f"workspace-{workspace_id}"
     token = _make_token(
         identity=f"candidate-{submission_id}",

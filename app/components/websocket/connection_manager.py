@@ -15,13 +15,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import WebSocket
 
+from app.core.config import settings
+
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
 
 logger = logging.getLogger(__name__)
-
-# Seconds after disconnect before the session is placed ON_HOLD
-HOLD_DELAY_SECONDS = 60
 
 
 class ConnectionManager:
@@ -41,12 +40,12 @@ class ConnectionManager:
         )
 
     async def disconnect(self, submission_id: str, db: "AsyncIOMotorDatabase") -> None:
-        """Unregister a connection and schedule ON_HOLD transition after HOLD_DELAY_SECONDS."""
+        """Unregister a connection and schedule ON_HOLD transition after delay."""
         self._connections.pop(submission_id, None)
         logger.info(
             "WS disconnected: submission_id=%s — ON_HOLD in %ds",
             submission_id,
-            HOLD_DELAY_SECONDS,
+            settings.HOLD_DELAY_SECONDS,
         )
         task = asyncio.create_task(
             self._put_on_hold_after_delay(submission_id, db),
@@ -89,7 +88,7 @@ class ConnectionManager:
         db: "AsyncIOMotorDatabase",
     ) -> None:
         try:
-            await asyncio.sleep(HOLD_DELAY_SECONDS)
+            await asyncio.sleep(settings.HOLD_DELAY_SECONDS)
         except asyncio.CancelledError:
             logger.debug("ON_HOLD cancelled (reconnected): submission_id=%s", submission_id)
             return

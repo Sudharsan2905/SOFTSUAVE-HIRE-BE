@@ -16,7 +16,7 @@ from app.common.utils import (
     utcnow,
 )
 from app.components.storage import s3_service
-from app.components.websocket.connection_manager import manager
+from app.components.websocket.connection_manager import admin_manager, manager
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -621,8 +621,9 @@ async def _persist_malpractice_event(
     new_count: int,
     is_terminal: bool,
     now: Any,
+    workspace_id: str,
 ) -> None:
-    """Write the malpractice event to DB and push the WS termination event when terminal."""
+    """Write the malpractice event to DB, notify candidate if terminal, and broadcast to admins."""
     update_set: dict = {"malpractice_count": new_count, "updated_at": now}
     if is_terminal:
         update_set["status"] = SubmissionStatus.MALPRACTICE
@@ -635,6 +636,21 @@ async def _persist_malpractice_event(
 
     if is_terminal:
         await manager.send_json(submission_id, {"type": "terminated", "reason": "malpractice"})
+
+    # Broadcast real-time malpractice event to all admins monitoring this workspace
+    await admin_manager.broadcast_event(
+        {
+            "type": "malpractice_event",
+            "submission_id": submission_id,
+            "event_type": event_data.get("type"),
+            "round": event_data.get("round"),
+            "malpractice_count": new_count,
+            "is_terminal": is_terminal,
+            "screen_image_url": event_data.get("screen_image_url"),
+            "timestamp": now.isoformat() if hasattr(now, "isoformat") else str(now),
+        },
+        workspace_id,
+    )
 
 
 async def flag_malpractice(
@@ -670,6 +686,7 @@ async def flag_malpractice(
         **base_monitoring,
         **{k: v for k, v in candidate_overrides.items() if v is not None},
     }
+    workspace_id = str(assessment["workspace_id"]) if assessment else ""
 
     # ── Guard: silently skip if monitoring is disabled for this event type ──
     if not _is_malpractice_event_enabled(malpractice_type, effective_monitoring):
@@ -702,7 +719,7 @@ async def flag_malpractice(
 
     # ── Persist and (if terminal) notify via WebSocket ─────────────────────
     await _persist_malpractice_event(
-        db, sub, submission_id, event_data, new_count, is_terminal, now
+        db, sub, submission_id, event_data, new_count, is_terminal, now, workspace_id
     )
 
     if is_terminal:
@@ -874,7 +891,31 @@ async def get_live_interviews(
             }
         },
         {"$unwind": "$candidate"},
-        {"$project": {"candidate.password_hash": 0, "rounds_data": 0}},
+        {
+            "$addFields": {
+                "submission_id": {"$toString": "$_id"},
+                "candidate_name": {
+                    "$trim": {
+                        "input": {
+                            "$concat": [
+                                {"$ifNull": ["$candidate.first_name", ""]},
+                                " ",
+                                {"$ifNull": ["$candidate.last_name", ""]},
+                            ]
+                        }
+                    }
+                },
+                "assessment_name": "$assessment.name",
+            }
+        },
+        {
+            "$project": {
+                "candidate.password_hash": 0,
+                "rounds_data": 0,
+                "candidate": 0,
+                "assessment": 0,
+            }
+        },
     ]
 
     if monitoring_type:
