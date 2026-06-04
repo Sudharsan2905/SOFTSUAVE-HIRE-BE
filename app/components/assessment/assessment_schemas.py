@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, model_validator
 
-from app.common.constants.app_constants import AssessmentAccessibility
+from app.common.constants.app_constants import AssessmentAccessibility, ReaccessReasonCategory
 
 
 class MonitoringConfig(BaseModel):
@@ -67,27 +67,32 @@ class GenerateExpirableLinkRequest(BaseModel):
     end_time: str  # ISO 8601
 
 
-# ─── Candidate Scheduling ─────────────────────────────────────────────────────
+# ─── Re-access ────────────────────────────────────────────────────────────────
 
 
-class ScheduledRound(BaseModel):
-    """Per-round question selection override for a scheduled candidate."""
-
-    round_number: int = Field(..., ge=1)
-    question_ids: list[str] = Field(..., min_length=1)
+class ReaccessRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
+    reason_category: ReaccessReasonCategory = ReaccessReasonCategory.OTHER
 
 
-class ScheduleCandidateRequest(BaseModel):
-    """Request body to schedule a specific candidate for an assessment."""
+class TerminateSubmissionRequest(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=500)
 
-    candidate_id: str
+
+# ─── Share System ─────────────────────────────────────────────────────────────
+
+
+class CreateShareRequest(BaseModel):
+    share_type: str = Field(..., pattern="^(expirable|custom)$")
+    label: str | None = Field(None, max_length=100)
     monitoring_overrides: CandidateMonitoringOverrides | None = None
-    rounds: list[ScheduledRound] | None = None
-    start_time: str | None = None  # ISO 8601 — if provided, link is time-limited
-    end_time: str | None = None  # ISO 8601 — required when start_time is set
+    start_time: str | None = None  # ISO 8601 — required for expirable
+    end_time: str | None = None  # ISO 8601 — required for expirable
 
     @model_validator(mode="after")
-    def validate_time_window(self) -> "ScheduleCandidateRequest":
-        if (self.start_time is None) != (self.end_time is None):
-            raise ValueError("Both start_time and end_time must be provided together")
+    def validate_share_type_fields(self) -> "CreateShareRequest":
+        if self.share_type == "expirable" and (not self.start_time or not self.end_time):
+            raise ValueError("start_time and end_time are required for expirable links")
+        if self.share_type == "custom" and not self.monitoring_overrides:
+            raise ValueError("monitoring_overrides is required for custom monitoring links")
         return self

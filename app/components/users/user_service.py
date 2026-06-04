@@ -64,7 +64,6 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "email_verified": False,
         "workspace_ids": ws_ids_list,
         "default_workspace_id": first_ws_id,
-        "candidate_data": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -113,15 +112,13 @@ async def create_candidate_from_admin(db: AsyncIOMotorDatabase, data: dict) -> d
         "email_verified": False,
         "workspace_ids": [],
         "default_workspace_id": None,
-        "candidate_data": {
-            "candidate_type": CandidateType.STUDENT,
-            "google_id": None,
-            "phone": data.get("phone"),
-            "dob": data.get("dob"),
-            "gender": data.get("gender"),
-            "institution": data.get("institution"),
-            "location": data.get("location"),
-        },
+        "candidate_type": CandidateType.STUDENT,
+        "google_id": None,
+        "phone": data.get("phone"),
+        "dob": data.get("dob"),
+        "gender": data.get("gender"),
+        "institution": data.get("institution"),
+        "location": data.get("location"),
         "created_at": now,
         "updated_at": now,
     }
@@ -192,7 +189,7 @@ async def list_candidates(
     if is_active is not None:
         query["is_active"] = is_active
     if candidate_type:
-        query["candidate_data.candidate_type"] = candidate_type
+        query["candidate_type"] = candidate_type
 
     skip, limit = paginate_query(page, page_size)
     total = await db.users.count_documents(query)
@@ -259,7 +256,7 @@ async def update_candidate(db: AsyncIOMotorDatabase, user_id: str, data: dict) -
         )
     for field in ("candidate_type", "phone", "dob", "gender", "institution", "location"):
         if cd.get(field) is not None:
-            update[f"candidate_data.{field}"] = cd[field]
+            update[field] = cd[field]
 
     if update:
         update["updated_at"] = utcnow()
@@ -400,7 +397,7 @@ def _apply_candidate_data(data: dict, update: dict) -> None:
         cd = {}
     for field in ("candidate_type", "phone", "dob", "gender", "institution", "location"):
         if cd.get(field) is not None:
-            update[f"candidate_data.{field}"] = cd[field]
+            update[field] = cd[field]
 
 
 async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:

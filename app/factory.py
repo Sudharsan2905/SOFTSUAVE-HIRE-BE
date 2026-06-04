@@ -10,6 +10,7 @@ from app.components.assessment.assessment_router import public_router as assessm
 from app.components.assessment.assessment_router import router as assessment_router
 from app.components.auth.auth_router import router as auth_router
 from app.components.candidate.candidate_router import router as candidate_router
+from app.components.livekit.livekit_router import livekit_router
 from app.components.notifications.notification_router import router as notification_router
 from app.components.question_bank.question_router import router as question_router
 from app.components.users.user_router import router as user_router
@@ -57,6 +58,7 @@ def create_application() -> FastAPI:
     app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
     app.include_router(notification_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(ws_router, prefix="/api", tags=["WebSocket"])
+    app.include_router(livekit_router, prefix="/api", tags=["LiveKit"])
 
     @app.get("/api/health", response_model=ApiResponse, tags=["Health"])
     async def health(request: Request) -> dict:

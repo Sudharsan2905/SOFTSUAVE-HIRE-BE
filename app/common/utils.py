@@ -65,6 +65,28 @@ def encode_schedule_sharelink(
     return f"{encoded}.{sig}"
 
 
+def encode_submission_sharelink(
+    assessment_id: str,
+    submission_id: str,
+    start_iso: str | None = None,
+    end_iso: str | None = None,
+) -> str:
+    """Encode a per-candidate share link embedding the pre-created submission_id.
+
+    The 'sub' key is carried for reference only; validate_sharelink() and
+    start_assessment() continue to work unchanged — they decode 'a' for the
+    assessment lookup and find the submission by (assessment_id, candidate_id).
+    """
+    data: dict = {"a": assessment_id, "sub": submission_id}
+    if start_iso and end_iso:
+        data["s"] = start_iso
+        data["e"] = end_iso
+    payload = json.dumps(data, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+    sig = _hmac.new(_link_secret(), payload, hashlib.sha256).hexdigest()[:12]
+    return f"{encoded}.{sig}"
+
+
 def decode_sharelink(encoded_link: str) -> dict:
     """Decode and verify a share link. Returns payload dict or raises ValueError.
     Payload keys: "a" (assessment_id), optionally "s" (start_iso) and "e" (end_iso).

@@ -1,6 +1,4 @@
-import asyncio
 import random
-from pathlib import Path
 from typing import Any
 
 from bson import ObjectId
@@ -17,11 +15,12 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.components.storage import s3_service
+from app.components.websocket.connection_manager import manager
 from app.core.config import settings
 from app.core.logging import logger
 
 _DEFAULT_CONTENT_TYPE = "image/jpeg"
-_EXT_MAP = {_DEFAULT_CONTENT_TYPE: ".jpg", "image/png": ".png"}
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 _ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
@@ -33,6 +32,18 @@ _OPTIONS = "$options"
 
 # Use SystemRandom (backed by os.urandom) for question shuffling
 _rng = random.SystemRandom()
+
+# Malpractice event type → monitoring field mapping
+_SCREEN_BEHAVIORAL_EVENTS = {
+    "TAB_SWITCH",
+    "FULLSCREEN_EXIT",
+    "SCREEN_SHARE_STOP",
+    "DEVTOOLS_OPEN",
+    "COPY_PASTE",
+    "KEYBOARD_SHORTCUT",
+}
+_VIDEO_EVENTS = {"FACE_ABSENCE", "MULTIPLE_FACES", "EYE_DIRECTION"}
+_AUDIO_EVENTS = {"AUDIO_VIOLATION", "SPEAKING", "BACKGROUND_NOISE"}
 
 
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
@@ -74,7 +85,7 @@ async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) 
     if status in [
         SubmissionStatus.COMPLETED,
         SubmissionStatus.TERMINATED,
-        SubmissionStatus.TERMINATED,
+        SubmissionStatus.MALPRACTICE,
     ]:
         raise ForbiddenException(
             "You have already completed this assessment. Please contact admin for re-access."
@@ -213,11 +224,12 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "score": 0,
         "percentage": 0.0,
         "screenshots": [],
-        "is_malpractice": False,
-        "malpractice_flags": [],
+        "malpractice_count": 0,
+        "malpractice_events": [],
         "reaccess_count": 0,
         "started_at": now,
         "completed_at": None,
+        "terminated_at": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -269,7 +281,7 @@ async def get_submission_status(
         "current_round": sub.get("current_round", 1),
         "completed_at": sub["completed_at"].isoformat() if sub.get("completed_at") else None,
         "paused_at": sub["paused_at"].isoformat() if sub.get("paused_at") else None,
-        "malpractice_reason": sub.get("malpractice_reason"),
+        "malpractice_count": sub.get("malpractice_count", 0),
     }
 
 
@@ -495,9 +507,8 @@ async def save_screenshot(
     file_bytes: bytes,
     content_type: str = _DEFAULT_CONTENT_TYPE,
 ) -> None:
-    """Save a screenshot to disk and record its path in the submission document.
+    """Upload a screenshot to S3 and record its key in the submission document.
 
-    Files are stored under SCREENSHOTS_DIR/{submission_id}/ with a UTC timestamp filename.
     Silently no-ops if the submission is not found.
     """
     sub = await db.assessment_submissions.find_one(
@@ -507,32 +518,123 @@ async def save_screenshot(
         return
 
     round_number = sub.get("current_round", 1)
-    ext = _EXT_MAP.get(content_type, ".jpg")
-    timestamp = utcnow().strftime("%Y%m%d_%H%M%S_%f")
-    filename = f"round{round_number}_{timestamp}{ext}"
+    timestamp = utcnow()
 
-    folder = Path(settings.SCREENSHOTS_DIR) / submission_id
-    folder.mkdir(parents=True, exist_ok=True)
-    file_path = folder / filename
+    s3_key = s3_service.make_screenshot_key(submission_id, round_number, timestamp.isoformat())
+    await s3_service.upload(file_bytes, s3_key, content_type)
 
-    await asyncio.to_thread(file_path.write_bytes, file_bytes)
-
-    relative_path = str(file_path).replace("\\", "/")
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
         {
             "$push": {
                 "screenshots": {
-                    "path": relative_path,
+                    "s3_key": s3_key,
                     "round": round_number,
-                    "taken_at": utcnow(),
+                    "taken_at": timestamp,
                 }
             }
         },
     )
     logger.info(
-        f"Screenshot saved: submission_id={submission_id} round={round_number} path={relative_path}"
+        f"Screenshot uploaded: submission_id={submission_id} round={round_number} s3_key={s3_key}"
     )
+
+
+def _is_malpractice_event_enabled(malpractice_type: str, effective_monitoring: dict) -> bool:
+    """Return False if the event type is gated behind a disabled monitoring flag.
+
+    VIDEO and AUDIO events require their respective monitoring flags.
+    Screen/behavioral events are always allowed through.
+    """
+    mtype_upper = malpractice_type.upper()
+    if mtype_upper in _VIDEO_EVENTS:
+        return bool(effective_monitoring.get("video_monitoring", False))
+    if mtype_upper in _AUDIO_EVENTS:
+        return bool(effective_monitoring.get("audio_monitoring", False))
+    # Screen/behavioral events have no explicit gate
+    return True
+
+
+async def _upload_evidence_files(
+    submission_id: str,
+    round_number: int,
+    malpractice_type: str,
+    now: Any,
+    effective_monitoring: dict,
+    file_bytes_map: dict,
+) -> dict:
+    """Upload applicable evidence files to S3 and return a dict of S3 keys.
+
+    Keys in the returned dict: screen_image_s3_key, face_image_s3_key,
+    screen_video_s3_key, audio_clip_s3_key.  Each is None when not uploaded.
+    """
+    keys: dict = {
+        "screen_image_s3_key": None,
+        "face_image_s3_key": None,
+        "screen_video_s3_key": None,
+        "audio_clip_s3_key": None,
+    }
+
+    if effective_monitoring.get("screenshot_enabled", False):
+        screen_bytes = file_bytes_map.get("screen_image")
+        if screen_bytes:
+            key = s3_service.make_evidence_key(
+                submission_id, round_number, malpractice_type, "screen_image", now.isoformat()
+            )
+            await s3_service.upload(screen_bytes, key, _DEFAULT_CONTENT_TYPE)
+            keys["screen_image_s3_key"] = key
+
+    if effective_monitoring.get("video_monitoring", False):
+        face_bytes = file_bytes_map.get("face_image")
+        if face_bytes:
+            key = s3_service.make_evidence_key(
+                submission_id, round_number, malpractice_type, "face_image", now.isoformat()
+            )
+            await s3_service.upload(face_bytes, key, _DEFAULT_CONTENT_TYPE)
+            keys["face_image_s3_key"] = key
+
+        video_bytes = file_bytes_map.get("video_chunk")
+        if video_bytes:
+            key = s3_service.make_evidence_key(
+                submission_id, round_number, malpractice_type, "video_chunk", now.isoformat()
+            )
+            await s3_service.upload(video_bytes, key, "video/webm")
+            keys["screen_video_s3_key"] = key
+
+    if effective_monitoring.get("audio_monitoring", False):
+        audio_bytes = file_bytes_map.get("audio_clip")
+        if audio_bytes:
+            key = s3_service.make_evidence_key(
+                submission_id, round_number, malpractice_type, "audio_clip", now.isoformat()
+            )
+            await s3_service.upload(audio_bytes, key, "audio/webm")
+            keys["audio_clip_s3_key"] = key
+
+    return keys
+
+
+async def _persist_malpractice_event(
+    db: AsyncIOMotorDatabase,
+    sub: dict,
+    submission_id: str,
+    event_data: dict,
+    new_count: int,
+    is_terminal: bool,
+    now: Any,
+) -> None:
+    """Write the malpractice event to DB and push the WS termination event when terminal."""
+    update_set: dict = {"malpractice_count": new_count, "updated_at": now}
+    if is_terminal:
+        update_set["status"] = SubmissionStatus.MALPRACTICE
+        update_set["terminated_at"] = now
+
+    await db.assessment_submissions.update_one(
+        {"_id": sub["_id"]},
+        {"$set": update_set, "$push": {"malpractice_events": event_data}},
+    )
+
+    if is_terminal:
+        await manager.send_json(submission_id, {"type": "terminated", "reason": "malpractice"})
 
 
 async def flag_malpractice(
@@ -540,17 +642,16 @@ async def flag_malpractice(
     submission_id: str,
     candidate_id: str,
     malpractice_type: str,
-    file_bytes: bytes | None = None,
-    content_type: str = _DEFAULT_CONTENT_TYPE,
-) -> None:
-    """Record a malpractice event for a submission.
+    file_bytes_map: dict | None = None,
+) -> dict:
+    """Record a malpractice event using the 3-strike system.
 
-    - Upserts a per-type entry in ``malpractice_flags`` (increments count on repeat).
-    - Saves an optional screenshot and stores the path on the event record.
-    - Keeps the legacy ``is_malpractice`` / ``malpractice_reason`` fields for
-      backward compatibility with existing admin views.
+    Accepts an optional file_bytes_map with keys: screen_image, face_image,
+    video_chunk, audio_clip.  Files are conditionally uploaded to S3 based on
+    the effective monitoring configuration.
 
-    Silently returns if monitoring is disabled for this assessment.
+    On the 3rd strike (malpractice_count >= MAX_MALPRACTICE_COUNT) the submission
+    is terminated and a WebSocket event is pushed to the candidate.
 
     Raises:
         NotFoundException: If no matching submission exists.
@@ -561,79 +662,120 @@ async def flag_malpractice(
     if not sub:
         raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
+    # ── Resolve effective monitoring config ────────────────────────────────
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
-    if assessment:
-        base_monitoring: dict = assessment.get("monitoring_config") or {}
-        candidate_overrides: dict = sub.get("monitoring_overrides") or {}
-        effective_monitoring = {
-            **base_monitoring,
-            **{k: v for k, v in candidate_overrides.items() if v is not None},
-        }
-        if not effective_monitoring.get("tab_monitoring", True):
-            return
+    base_monitoring: dict = (assessment.get("monitoring_config") or {}) if assessment else {}
+    candidate_overrides: dict = sub.get("monitoring_overrides") or {}
+    effective_monitoring: dict = {
+        **base_monitoring,
+        **{k: v for k, v in candidate_overrides.items() if v is not None},
+    }
 
-    # ── Save screenshot (if provided) ──────────────────────────────────────
-    image_path: str | None = None
-    if file_bytes:
-        ext = _EXT_MAP.get(content_type, ".jpg")
-        timestamp = utcnow().strftime("%Y%m%d_%H%M%S_%f")
-        filename = f"malpractice_{malpractice_type}_{timestamp}{ext}"
-        folder = Path(settings.SCREENSHOTS_DIR) / submission_id
-        folder.mkdir(parents=True, exist_ok=True)
-        file_path = folder / filename
-        await asyncio.to_thread(file_path.write_bytes, file_bytes)
-        image_path = str(file_path).replace("\\", "/")
+    # ── Guard: silently skip if monitoring is disabled for this event type ──
+    if not _is_malpractice_event_enabled(malpractice_type, effective_monitoring):
+        return {"malpractice_count": sub.get("malpractice_count", 0), "is_terminal": False}
 
     now = utcnow()
+    round_number = sub.get("current_round", 1)
 
-    # ── Upsert malpractice_flags per type ──────────────────────────────────
-    existing_flags: list[dict] = sub.get("malpractice_flags") or []
-    type_exists = any(f.get("type") == malpractice_type for f in existing_flags)
+    # ── Upload evidence files to S3 ────────────────────────────────────────
+    s3_keys = await _upload_evidence_files(
+        submission_id,
+        round_number,
+        malpractice_type,
+        now,
+        effective_monitoring,
+        file_bytes_map or {},
+    )
 
-    if type_exists:
-        update_fields: dict = {
-            "malpractice_flags.$.count": existing_flags[
-                next(i for i, f in enumerate(existing_flags) if f.get("type") == malpractice_type)
-            ].get("count", 0)
-            + 1,
-            "malpractice_flags.$.last_updated": now,
-        }
-        if image_path:
-            update_fields["malpractice_flags.$.image_path"] = image_path
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"], "malpractice_flags.type": malpractice_type},
-            {"$set": update_fields},
+    # ── Build event record ─────────────────────────────────────────────────
+    new_count = (sub.get("malpractice_count") or 0) + 1
+    is_terminal = new_count >= settings.MAX_MALPRACTICE_COUNT
+
+    event_data: dict = {
+        "type": malpractice_type,
+        "timestamp": now,
+        "round": round_number,
+        "is_terminal": is_terminal,
+        **s3_keys,
+    }
+
+    # ── Persist and (if terminal) notify via WebSocket ─────────────────────
+    await _persist_malpractice_event(
+        db, sub, submission_id, event_data, new_count, is_terminal, now
+    )
+
+    if is_terminal:
+        logger.warning(
+            f"Malpractice terminal: submission_id={submission_id} type={malpractice_type} "
+            f"count={new_count}"
         )
     else:
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {
-                "$push": {
-                    "malpractice_flags": {
-                        "type": malpractice_type,
-                        "count": 1,
-                        "image_path": image_path,
-                        "last_updated": now,
-                    }
-                }
-            },
+        logger.info(
+            f"Malpractice flagged: submission_id={submission_id} type={malpractice_type} "
+            f"count={new_count}"
         )
 
-    # ── Legacy fields (backward-compat for admin views) ────────────────────
-    await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
+    return {"malpractice_count": new_count, "is_terminal": is_terminal}
+
+
+async def put_session_terminated(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    reason: str,
+) -> None:
+    """Admin force-terminate a session.
+
+    Sets status to TERMINATED, records terminated_at, and pushes a WebSocket
+    terminated event to the candidate.
+
+    Raises:
+        NotFoundException: If no submission with the given ID exists.
+    """
+    now = utcnow()
+    result = await db.assessment_submissions.update_one(
+        {"_id": ObjectId(submission_id)},
         {
             "$set": {
-                "is_malpractice": True,
-                "malpractice_reason": malpractice_type,
+                "status": SubmissionStatus.TERMINATED,
+                "terminated_at": now,
                 "updated_at": now,
             }
         },
     )
-    logger.info(
-        f"Malpractice flagged: submission_id={submission_id} type={malpractice_type} "
-        f"image={'yes' if image_path else 'no'}"
+    if result.matched_count == 0:
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+
+    await manager.send_json(submission_id, {"type": "terminated", "reason": "admin"})
+    logger.info(f"Session force-terminated: submission_id={submission_id} reason={reason}")
+
+
+async def put_session_completed(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+) -> None:
+    """Admin force-complete a session.
+
+    Sets status to COMPLETED and records completed_at.
+
+    Raises:
+        NotFoundException: If no submission with the given ID exists.
+    """
+    now = utcnow()
+    result = await db.assessment_submissions.update_one(
+        {"_id": ObjectId(submission_id)},
+        {
+            "$set": {
+                "status": SubmissionStatus.COMPLETED,
+                "completed_at": now,
+                "updated_at": now,
+            }
+        },
     )
+    if result.matched_count == 0:
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+
+    logger.info(f"Session force-completed: submission_id={submission_id}")
 
 
 async def put_session_on_hold(

@@ -18,7 +18,6 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
-from app.core.config import settings
 from app.core.logging import logger
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
@@ -444,28 +443,25 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     return result
 
 
-async def grant_reaccess(db: AsyncIOMotorDatabase, submission_id: str) -> None:
-    """Reset a completed/malpractice submission to pending so the candidate can retry.
+async def grant_reaccess(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    admin_id: str = "",
+    reason: str = "",
+    reason_category: str = "other",
+) -> None:
+    """Archive current attempt and reset submission to PENDING with reshuffled questions.
 
     Raises:
         NotFoundException: If the submission does not exist.
         ForbiddenException: If MAX_REACCESS_COUNT has been reached.
     """
-    sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
-    if not sub:
-        raise NotFoundException("Submission not found")
-    if sub.get("reaccess_count", 0) >= settings.MAX_REACCESS_COUNT:
-        raise ForbiddenException(
-            f"Maximum re-access limit of {settings.MAX_REACCESS_COUNT} has been reached"
-        )
-    logger.info(f"Re-access granted for submission_id={submission_id}")
-    await db.assessment_submissions.update_one(
-        {"_id": ObjectId(submission_id)},
-        {
-            "$set": {"status": SubmissionStatus.PENDING, "updated_at": utcnow()},
-            "$inc": {"reaccess_count": 1},
-        },
+    from app.components.version_history import version_service
+
+    await version_service.grant_reaccess_with_archive(
+        db, submission_id, admin_id, reason, reason_category
     )
+    logger.info(f"Re-access granted with archive: submission_id={submission_id}")
 
 
 async def admin_resume_interview(
@@ -579,7 +575,7 @@ async def export_submissions(
                     ]
                 },
                 "email": "$candidate.email",
-                "phone": "$candidate.candidate_data.phone",
+                "phone": "$candidate.phone",
                 "percentage": 1,
                 "status": 1,
                 "completed_at": 1,

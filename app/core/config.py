@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     LOG_LEVEL: str = "INFO"
     MAX_REACCESS_COUNT: int = 3
-    SCREENSHOTS_DIR: str = "uploads/screenshots"
+    MAX_MALPRACTICE_COUNT: int = 3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
+    LIVEKIT_HOST: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 

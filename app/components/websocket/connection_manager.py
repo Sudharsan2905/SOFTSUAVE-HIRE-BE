@@ -105,3 +105,41 @@ class ConnectionManager:
 # Module-level singleton — suitable for single-process (single uvicorn worker).
 # Replace with Redis-backed manager for multi-worker / multi-node deployments.
 manager = ConnectionManager()
+
+
+class AdminConnectionManager:
+    """Manages admin WebSocket connections for real-time monitoring events."""
+
+    def __init__(self) -> None:
+        # admin_id → websocket
+        self._connections: dict[str, WebSocket] = {}
+        # admin_id → list of workspace_ids they can see (empty = all)
+        self._workspace_filters: dict[str, list[str]] = {}
+
+    def connect(self, admin_id: str, websocket: WebSocket, workspace_ids: list[str]) -> None:
+        self._connections[admin_id] = websocket
+        self._workspace_filters[admin_id] = workspace_ids
+        logger.info("Admin WS connected: admin_id=%s", admin_id)
+
+    def disconnect(self, admin_id: str) -> None:
+        self._connections.pop(admin_id, None)
+        self._workspace_filters.pop(admin_id, None)
+
+    async def broadcast_event(self, event: dict, workspace_id: str) -> None:
+        """Send event to all admins who have access to workspace_id."""
+        payload = {**event, "workspace_id": workspace_id}
+        disconnected = []
+        for admin_id, ws in self._connections.items():
+            filters = self._workspace_filters.get(admin_id, [])
+            if filters and workspace_id not in filters:
+                continue  # admin doesn't have access to this workspace
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                disconnected.append(admin_id)
+        for aid in disconnected:
+            self._connections.pop(aid, None)
+            self._workspace_filters.pop(aid, None)
+
+
+admin_manager = AdminConnectionManager()

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, Query, Request, UploadFile
 
 from app.common.constants.app_constants import MalpracticeType
 from app.common.exceptions import ValidationException
@@ -15,7 +15,11 @@ router = APIRouter()
 
 _JPEG = "image/jpeg"
 _ALLOWED_IMAGE_TYPES = {_JPEG, "image/png"}
+_ALLOWED_VIDEO_TYPES = {"video/webm", "video/mp4"}
+_ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/ogg", "audio/mpeg"}
 _MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024  # 2 MB
+_MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB
+_MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 @router.get("/assessment/{share_link}", response_model=ApiResponse)
@@ -65,8 +69,16 @@ async def finish_round(
     submission_id: str,
     db: DB,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
+    if result.get("completed"):
+        try:
+            from app.components.scoring import scoring_tasks
+
+            background_tasks.add_task(scoring_tasks.calculate_and_store_score, db, submission_id)
+        except ImportError:
+            pass  # scoring module not yet available
     return success_response("Round finished", result)
 
 
@@ -98,33 +110,56 @@ async def flag_malpractice(
     db: DB,
     current_user: CurrentUser,
     type: Annotated[str, Form()],
-    file: Annotated[UploadFile | None, File()] = None,
+    screen_image: Annotated[UploadFile | None, File()] = None,
+    face_image: Annotated[UploadFile | None, File()] = None,
+    video_chunk: Annotated[UploadFile | None, File()] = None,
+    audio_clip: Annotated[UploadFile | None, File()] = None,
 ) -> dict:
-    """Record a malpractice event with an optional screenshot.
-
-    Accepts multipart/form-data so the screenshot binary can accompany the
-    violation type in a single round-trip.
-    """
     try:
         malpractice_type = MalpracticeType(type)
     except ValueError as err:
         raise ValidationException(f"Invalid malpractice type: {type!r}") from err
 
-    file_bytes: bytes | None = None
-    content_type = _JPEG
-    if file is not None:
-        if file.content_type not in _ALLOWED_IMAGE_TYPES:
-            raise ValidationException("Screenshot must be a JPEG or PNG image")
-        content = await file.read()
-        if len(content) > _MAX_SCREENSHOT_BYTES:
-            raise ValidationException("Screenshot must not exceed 2 MB")
-        file_bytes = content
-        content_type = file.content_type or _JPEG
+    file_bytes_map: dict = {}
 
-    await candidate_service.flag_malpractice(
-        db, submission_id, current_user["_id"], malpractice_type, file_bytes, content_type
+    async def _read_file(
+        upload: UploadFile | None, allowed_types: set, max_bytes: int, field: str
+    ) -> None:
+        if upload is None:
+            return
+        if upload.content_type not in allowed_types:
+            raise ValidationException(f"{field} has invalid content type")
+        content = await upload.read()
+        if len(content) > max_bytes:
+            raise ValidationException(f"{field} exceeds size limit")
+        file_bytes_map[field] = (content, upload.content_type or "application/octet-stream")
+
+    await _read_file(screen_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "screen_image")
+    await _read_file(face_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "face_image")
+    await _read_file(video_chunk, _ALLOWED_VIDEO_TYPES, _MAX_VIDEO_BYTES, "video_chunk")
+    await _read_file(audio_clip, _ALLOWED_AUDIO_TYPES, _MAX_AUDIO_BYTES, "audio_clip")
+
+    result = await candidate_service.flag_malpractice(
+        db, submission_id, current_user["_id"], malpractice_type, file_bytes_map
     )
-    return success_response("Activity flagged")
+    return success_response("Activity flagged", result)
+
+
+@router.post("/submission/{submission_id}/livekit-token", response_model=ApiResponse)
+async def get_livekit_token(
+    submission_id: str,
+    db: DB,
+    current_user: CurrentUser,
+) -> dict:
+    try:
+        from app.components.livekit import livekit_service
+
+        result = await livekit_service.generate_candidate_token(db, submission_id)
+        return success_response("LiveKit token generated", result)
+    except Exception as exc:
+        from app.common.exceptions import AppException
+
+        raise AppException(status_code=503, message=f"LiveKit unavailable: {exc}") from exc
 
 
 @router.get("/submission/{submission_id}/session-state", response_model=ApiResponse)
