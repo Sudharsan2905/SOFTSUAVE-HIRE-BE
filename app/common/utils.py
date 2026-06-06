@@ -35,7 +35,7 @@ def encode_permanent_sharelink(assessment_id: str) -> str:
 
 
 def encode_expirable_sharelink(assessment_id: str, start_iso: str, end_iso: str) -> str:
-    """Encode assessment_id + time window into a tamper-proof expirable link."""
+    """Encode assessment_id + time window into a tamper-proof expirable link (legacy, no nonce)."""
     payload = json.dumps(
         {"a": assessment_id, "s": start_iso, "e": end_iso}, separators=(",", ":")
     ).encode()
@@ -44,15 +44,25 @@ def encode_expirable_sharelink(assessment_id: str, start_iso: str, end_iso: str)
     return f"{encoded}.{sig}"
 
 
-def encode_custom_sharelink(assessment_id: str, nonce: str) -> str:
-    """Encode a custom (permanent-style) share link that is unique per share document.
+def encode_sharelink(
+    assessment_id: str,
+    nonce: str,
+    start_iso: str | None = None,
+    end_iso: str | None = None,
+) -> str:
+    """Encode a share link with a nonce for per-document uniqueness.
 
-    The nonce is a short random token that makes each link unique even when
-    two custom shares point to the same assessment. The decoded payload
-    contains ``{"a": assessment_id, "csh": nonce}`` — callers can distinguish
-    custom links from plain permanent links by the presence of the ``"csh"`` key.
+    Optionally include start/end ISO timestamps for time-bounded shares.
+    The decoded payload contains ``{"a": assessment_id, "n": nonce}`` plus
+    optional ``"s"`` / ``"e"`` keys — the presence of ``"n"`` distinguishes
+    these links from legacy permanent/expirable links.
     """
-    payload = json.dumps({"a": assessment_id, "csh": nonce}, separators=(",", ":")).encode()
+    payload_dict: dict = {"a": assessment_id, "n": nonce}
+    if start_iso:
+        payload_dict["s"] = start_iso
+    if end_iso:
+        payload_dict["e"] = end_iso
+    payload = json.dumps(payload_dict, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(payload).decode().rstrip("=")
     sig = _hmac.new(_link_secret(), payload, hashlib.sha256).hexdigest()[:12]
     return f"{encoded}.{sig}"

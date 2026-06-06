@@ -539,7 +539,7 @@ async def grant_reaccess_with_archive(
     new_version = await archive_submission(db, submission_id, admin_id, reason, reason_category)
 
     # Fetch assessment to re-sample questions
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     if not assessment:
         raise NotFoundException("Assessment not found")
 

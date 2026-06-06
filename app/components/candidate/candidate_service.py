@@ -62,15 +62,15 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
 
     doc = None
     if share_doc:
-        doc = await db.assessments.find_one({"_id": share_doc["assessment_id"]})
+        doc = await db.assessments.find_one({"_id": share_doc["assessment_id"], "is_active": True})
     else:
         # 2. Fall back: decode a signed link directly.
         try:
             decoded = decode_sharelink(share_link)
-            doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+            doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"]), "is_active": True})
         except (ValidationException, Exception):
             # 3. Legacy: plain share_link field on the assessment document.
-            doc = await db.assessments.find_one({"share_link": share_link})
+            doc = await db.assessments.find_one({"share_link": share_link, "is_active": True})
 
     if not doc:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
@@ -79,11 +79,14 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
 
-    if share_doc and share_doc.get("monitoring_overrides"):
-        safe["monitoring_config"] = {
-            **(safe.get("monitoring_config") or {}),
-            **share_doc["monitoring_overrides"],
-        }
+    if share_doc:
+        overrides = share_doc.get("monitoring_overrides") or {}
+        non_null_overrides = {k: v for k, v in overrides.items() if v is not None}
+        if non_null_overrides:
+            safe["monitoring_config"] = {
+                **(safe.get("monitoring_config") or {}),
+                **non_null_overrides,
+            }
 
     return safe
 
@@ -191,15 +194,21 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     # 1. Look up the share document — carries monitoring_overrides and assessment_id.
     share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
     if share_doc:
-        assessment = await db.assessments.find_one({"_id": share_doc["assessment_id"]})
+        assessment = await db.assessments.find_one(
+            {"_id": share_doc["assessment_id"], "is_active": True}
+        )
     else:
         # 2. Fall back: decode a signed link (expirable / permanent) directly.
         try:
             decoded = decode_sharelink(share_link)
-            assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+            assessment = await db.assessments.find_one(
+                {"_id": ObjectId(decoded["a"]), "is_active": True}
+            )
         except Exception:
             # 3. Legacy: plain share_link field on the assessment document.
-            assessment = await db.assessments.find_one({"share_link": share_link})
+            assessment = await db.assessments.find_one(
+                {"share_link": share_link, "is_active": True}
+            )
 
     if not assessment:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
@@ -264,9 +273,11 @@ async def get_submission_status(
     assessment = None
     try:
         decoded = decode_sharelink(share_link)
-        assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+        assessment = await db.assessments.find_one(
+            {"_id": ObjectId(decoded["a"]), "is_active": True}
+        )
     except Exception:
-        assessment = await db.assessments.find_one({"share_link": share_link})
+        assessment = await db.assessments.find_one({"share_link": share_link, "is_active": True})
 
     if not assessment:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
@@ -322,7 +333,7 @@ async def get_current_round(
         # ON_HOLD overlay via WebSocket rather than blocking entirely.
         pass
 
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     current = sub.get("current_round", 1)
     idx = current - 1
     rounds_data = sub.get("rounds_data", [])
@@ -417,7 +428,7 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
     if not sub:
         raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     if not assessment:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
@@ -686,7 +697,7 @@ async def flag_malpractice(
         raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     # ── Resolve effective monitoring config ────────────────────────────────
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     base_monitoring: dict = (assessment.get("monitoring_config") or {}) if assessment else {}
     candidate_overrides: dict = sub.get("monitoring_overrides") or {}
     effective_monitoring: dict = {

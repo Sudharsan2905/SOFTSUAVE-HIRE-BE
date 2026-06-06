@@ -9,7 +9,6 @@ from app.components.assessment import assessment_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
     CreateShareRequest,
-    GenerateExpirableLinkRequest,
     ReaccessRequest,
     TerminateSubmissionRequest,
     UpdateAssessmentRequest,
@@ -60,6 +59,17 @@ async def get_assessment(
 ) -> dict:
     result = await assessment_service.get_assessment(db, workspace_id, assessment_id)
     return success_response("Assessment retrieved", result)
+
+
+@router.delete("/{assessment_id}", response_model=ApiResponse)
+async def delete_assessment(
+    workspace_id: str,
+    assessment_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    await assessment_service.delete_assessment(db, workspace_id, assessment_id)
+    return success_response("Assessment deleted")
 
 
 @router.put("/{assessment_id}", response_model=ApiResponse)
@@ -206,21 +216,6 @@ async def resume_interview(
     return success_response("Interview resumed successfully")
 
 
-@router.post("/share/expirable", response_model=ApiResponse)
-@limiter.limit("10/hour")
-async def generate_expirable_share_link(
-    request: Request,
-    workspace_id: str,
-    body: GenerateExpirableLinkRequest,
-    db: DB,
-    current_user: AdminUser,
-) -> dict:
-    link = await assessment_service.generate_expirable_link(
-        db, body.assessment_id, workspace_id, body.start_time, body.end_time
-    )
-    return success_response("Expirable link generated", {"share_link": link})
-
-
 @router.get("/{assessment_id}/submissions/{submission_id}/pdf")
 async def download_submission_pdf(
     workspace_id: str,
@@ -235,7 +230,9 @@ async def download_submission_pdf(
 
     detail = await assessment_service.get_submission_detail(db, submission_id)
     candidate = detail.get("candidate", {})
-    assessment = await db.assessments.find_one({"_id": __import__("bson").ObjectId(assessment_id)})
+    assessment = await db.assessments.find_one(
+        {"_id": __import__("bson").ObjectId(assessment_id), "is_active": True}
+    )
     assessment_name = assessment.get("name", "Assessment") if assessment else "Assessment"
     pdf_bytes = pdf_service.generate_submission_pdf(detail, candidate, assessment_name)
     filename = f"submission_{submission_id}.pdf"
@@ -274,7 +271,10 @@ async def get_candidate_versions(
     from app.components.version_history import version_service
 
     sub = await db.assessment_submissions.find_one(
-        {"assessment_id": ObjectId(assessment_id), "candidate_id": ObjectId(candidate_id)}
+        {
+            "assessment_id": ObjectId(assessment_id),
+            "candidate_id": ObjectId(candidate_id),
+        }
     )
     if not sub:
         from app.common.exceptions import NotFoundException
@@ -340,10 +340,3 @@ async def validate_share_link(
 ) -> dict:
     result = await assessment_service.validate_sharelink(db, link)
     return success_response("Share link validated", result)
-
-
-@public_router.get("/assessments/share/{share_link}", response_model=ApiResponse)
-@limiter.limit("30/minute")
-async def get_by_share_link(request: Request, share_link: str, db: DB) -> dict:
-    result = await assessment_service.get_assessment_by_share_link(db, share_link)
-    return success_response("Assessment retrieved", result)

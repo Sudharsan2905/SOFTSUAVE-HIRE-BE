@@ -24,7 +24,12 @@ _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
 
 @router.get("/assessment/{share_link}", response_model=ApiResponse)
 @limiter.limit("30/minute")
-async def get_assessment(request: Request, share_link: str, db: DB) -> dict:
+async def get_assessment(
+    request: Request,
+    share_link: str,
+    db: DB,
+    current_user: CurrentUser,
+) -> dict:
     result = await candidate_service.get_candidate_assessment(db, share_link)
     return success_response("Assessment retrieved", result)
 
@@ -132,7 +137,10 @@ async def flag_malpractice(
         content = await upload.read()
         if len(content) > max_bytes:
             raise ValidationException(f"{field} exceeds size limit")
-        file_bytes_map[field] = (content, upload.content_type or "application/octet-stream")
+        file_bytes_map[field] = (
+            content,
+            upload.content_type or "application/octet-stream",
+        )
 
     await _read_file(screen_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "screen_image")
     await _read_file(face_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "face_image")

@@ -62,6 +62,7 @@ async def create_assessment(
         "accessibility": data["accessibility"],
         "monitoring_config": monitoring,
         "created_by": ObjectId(user_id),
+        "is_active": True,
         "created_at": now,
         "updated_at": now,
     }
@@ -88,7 +89,7 @@ async def get_assessments(
 ) -> dict:
     """Return a paginated list of assessments in a workspace, with submission counts."""
     skip, limit = paginate_query(page, page_size)
-    query: dict = {"workspace_id": ObjectId(workspace_id)}
+    query: dict = {"workspace_id": ObjectId(workspace_id), "is_active": True}
     if search:
         query["name"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
 
@@ -121,7 +122,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
         NotFoundException: If the assessment does not exist in the workspace.
     """
     doc = await db.assessments.find_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True}
     )
     if not doc:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
@@ -137,7 +138,7 @@ async def update_assessment(
         NotFoundException: If the assessment does not exist in the workspace.
     """
     if not await db.assessments.find_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)}
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True}
     ):
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
 
@@ -155,41 +156,41 @@ async def update_assessment(
         update["monitoring_config"] = mc.model_dump() if hasattr(mc, "model_dump") else mc
 
     await db.assessments.update_one({"_id": ObjectId(assessment_id)}, {"$set": update})
-    return serialize_doc(await db.assessments.find_one({"_id": ObjectId(assessment_id)}))
+    return serialize_doc(
+        await db.assessments.find_one({"_id": ObjectId(assessment_id), "is_active": True})
+    )
 
 
-async def get_assessment_by_share_link(db: AsyncIOMotorDatabase, share_link: str) -> dict:
-    """Fetch an assessment by its public share link, stripping internal question_ids from rounds.
-
-    Tries to decode the link as a signed token first; falls back to a direct share_link
-    field lookup for backward compatibility with legacy links.
+async def delete_assessment(
+    db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str
+) -> None:
+    """Soft-delete an assessment by setting is_active=False.
 
     Raises:
-        NotFoundException: If no assessment matches the share link.
+        NotFoundException: If the assessment does not exist or is already deleted.
     """
-    from app.common.exceptions import ValidationException
-
-    doc = None
-    try:
-        decoded = decode_sharelink(share_link)
-        assessment_id = decoded["a"]
-        doc = await db.assessments.find_one({"_id": ObjectId(assessment_id)})
-    except (ValidationException, Exception):
-        doc = await db.assessments.find_one({"share_link": share_link})
-
-    if not doc:
+    result = await db.assessments.update_one(
+        {
+            "_id": ObjectId(assessment_id),
+            "workspace_id": ObjectId(workspace_id),
+            "is_active": True,
+        },
+        {"$set": {"is_active": False, "updated_at": utcnow()}},
+    )
+    if result.matched_count == 0:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
-    safe = serialize_doc(doc)
-    for r in safe.get("rounds", []):
-        r.pop("question_ids", None)
-    return safe
+    logger.info(f"Assessment soft-deleted: assessment_id={assessment_id}")
 
 
 async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dict:
-    """Validate a permanent or expirable share link.
+    """Validate a share link.
 
-    Returns dict with: assessment_id, is_expirable, is_expired, can_allow,
-    start_time, end_time, message
+    Returns dict with: is_expirable, is_expired, can_allow,
+    start_time, end_time, message.
+
+    Handles three link formats:
+    * New unified links (payload has ``"n"`` key) — always resolved via
+      assessment_shares; time bounds read from the stored document.
     """
     from app.common.exceptions import ValidationException
 
@@ -198,7 +199,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
     except ValidationException:
         return {
             "can_allow": False,
-            "is_expired": True,
+            "is_expired": False,
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
@@ -207,7 +208,9 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
 
     assessment_id = decoded["a"]
     try:
-        doc = await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"_id": 1})
+        doc = await db.assessments.find_one(
+            {"_id": ObjectId(assessment_id), "is_active": True}, {"_id": 1}
+        )
     except Exception:
         doc = None
 
@@ -221,10 +224,11 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "message": "This link is not valid. Please check the URL or contact the administrator.",
         }
 
-    # Custom share link — permanent but must still be active in assessment_shares.
-    if "csh" in decoded:
+    # New unified share link (nonce present) — always resolved via assessment_shares.
+    if "n" in decoded:
         share_doc = await db.assessment_shares.find_one(
-            {"share_link": encoded_link, "is_active": True}, {"_id": 1}
+            {"share_link": encoded_link, "is_active": True},
+            {"_id": 1, "start_time": 1, "end_time": 1},
         )
         if not share_doc:
             return {
@@ -235,6 +239,47 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
                 "end_time": None,
                 "message": "This link has been revoked. Please contact the administrator.",
             }
+
+        start = share_doc.get("start_time")
+        end = share_doc.get("end_time")
+
+        if start and end:
+            from datetime import datetime as _dt
+
+            now = utcnow().replace(tzinfo=UTC)
+            start_dt = _dt.fromisoformat(start).replace(tzinfo=UTC)
+            end_dt = _dt.fromisoformat(end).replace(tzinfo=UTC)
+
+            if now < start_dt:
+                return {
+                    "can_allow": False,
+                    "is_expired": False,
+                    "is_expirable": True,
+                    "start_time": start,
+                    "end_time": end,
+                    "message": "This interview link will become active at the scheduled time.",
+                }
+            if now > end_dt:
+                return {
+                    "can_allow": False,
+                    "is_expired": True,
+                    "is_expirable": True,
+                    "start_time": start,
+                    "end_time": end,
+                    "message": (
+                        "This interview session is no longer available. "
+                        "Please contact the administrator."
+                    ),
+                }
+            return {
+                "can_allow": True,
+                "is_expired": False,
+                "is_expirable": True,
+                "start_time": start,
+                "end_time": end,
+                "message": _ALLOW_TO_INTERVIEW,
+            }
+
         return {
             "can_allow": True,
             "is_expired": False,
@@ -244,84 +289,14 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "message": _ALLOW_TO_INTERVIEW,
         }
 
-    # Plain permanent link — always allowed
-    if "s" not in decoded:
-        return {
-            "can_allow": True,
-            "is_expired": False,
-            "is_expirable": False,
-            "start_time": None,
-            "end_time": None,
-            "message": _ALLOW_TO_INTERVIEW,
-        }
-
-    # Expirable link
-    from datetime import datetime as _dt
-
-    now = utcnow().replace(tzinfo=UTC)
-    start = _dt.fromisoformat(decoded["s"]).replace(tzinfo=UTC)
-    end = _dt.fromisoformat(decoded["e"]).replace(tzinfo=UTC)
-
-    if now < start:
-        return {
-            "can_allow": False,
-            "is_expired": False,
-            "is_expirable": True,
-            "start_time": decoded["s"],
-            "end_time": decoded["e"],
-            "message": "This interview link will become active at the scheduled time.",
-        }
-    if now > end:
-        return {
-            "can_allow": False,
-            "is_expired": True,
-            "is_expirable": True,
-            "start_time": decoded["s"],
-            "end_time": decoded["e"],
-            "message": (
-                "This interview session is no longer available. Please contact the administrator."
-            ),
-        }
     return {
         "can_allow": True,
         "is_expired": False,
-        "is_expirable": True,
-        "start_time": decoded["s"],
-        "end_time": decoded["e"],
+        "is_expirable": False,
+        "start_time": None,
+        "end_time": None,
         "message": _ALLOW_TO_INTERVIEW,
     }
-
-
-async def generate_expirable_link(
-    db: AsyncIOMotorDatabase,
-    assessment_id: str,
-    workspace_id: str,
-    start_iso: str,
-    end_iso: str,
-) -> str:
-    """Generate an expirable share link for a given assessment."""
-    from datetime import datetime as _dt
-
-    from app.common.exceptions import NotFoundException, ValidationException
-    from app.common.utils import encode_expirable_sharelink
-
-    doc = await db.assessments.find_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id)},
-        {"_id": 1},
-    )
-    if not doc:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
-
-    try:
-        start = _dt.fromisoformat(start_iso).replace(tzinfo=UTC)
-        end = _dt.fromisoformat(end_iso).replace(tzinfo=UTC)
-    except ValueError as err:
-        raise ValidationException("Invalid date format. Use ISO 8601.") from err
-
-    if end <= start:
-        raise ValidationException("End time must be after start time.")
-
-    return encode_expirable_sharelink(assessment_id, start_iso, end_iso)
 
 
 async def get_submissions(

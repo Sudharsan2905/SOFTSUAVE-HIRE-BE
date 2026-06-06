@@ -27,7 +27,7 @@ async def _get_workspace_id_for_submission(
     sub = await db.assessment_submissions.find_one(query)
     if not sub:
         raise NotFoundException("Submission not found")
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"]})
+    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     if not assessment:
         raise NotFoundException("Assessment not found")
     return str(assessment["workspace_id"])

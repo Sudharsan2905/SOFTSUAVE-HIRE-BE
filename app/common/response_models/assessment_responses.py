@@ -39,9 +39,9 @@ class AssessmentDetailResponse(AssessmentListItemResponse):
 
 class ShareLinkResponse(BaseModel):
     id: str
-    share_type: str
-    label: str | None = None
+    label: str
     share_link: str
+    monitoring_overrides: dict | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None
     is_active: bool

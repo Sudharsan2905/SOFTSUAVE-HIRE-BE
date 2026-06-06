@@ -83,16 +83,26 @@ class TerminateSubmissionRequest(BaseModel):
 
 
 class CreateShareRequest(BaseModel):
-    share_type: str = Field(..., pattern="^(expirable|custom)$")
-    label: str | None = Field(None, max_length=100)
+    label: str = Field(..., min_length=1, max_length=100)
     monitoring_overrides: CandidateMonitoringOverrides | None = None
-    start_time: str | None = None  # ISO 8601 — required for expirable
-    end_time: str | None = None  # ISO 8601 — required for expirable
+    start_time: str | None = None  # ISO 8601 — optional; triggers time-bounded link
+    end_time: str | None = None  # ISO 8601 — required when start_time is provided
 
     @model_validator(mode="after")
-    def validate_share_type_fields(self) -> "CreateShareRequest":
-        if self.share_type == "expirable" and (not self.start_time or not self.end_time):
-            raise ValueError("start_time and end_time are required for expirable links")
-        if self.share_type == "custom" and not self.monitoring_overrides:
-            raise ValueError("monitoring_overrides is required for custom monitoring links")
+    def validate_time_fields(self) -> "CreateShareRequest":
+        from datetime import UTC
+        from datetime import datetime as _dt
+
+        if self.start_time and not self.end_time:
+            raise ValueError("end_time is required when start_time is provided")
+        if self.start_time and self.end_time:
+            try:
+                s = _dt.fromisoformat(self.start_time).replace(tzinfo=UTC)
+                e = _dt.fromisoformat(self.end_time).replace(tzinfo=UTC)
+            except ValueError as err:
+                raise ValueError(
+                    "start_time and end_time must be valid ISO 8601 timestamps"
+                ) from err
+            if e <= s:
+                raise ValueError("end_time must be after start_time")
         return self
