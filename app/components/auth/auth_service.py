@@ -108,8 +108,8 @@ async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -
 async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
     """Register a new candidate and issue JWT tokens.
 
-    candidate_data (phone, gender, dob, candidate_type, institution, location) is stored
-    as a nested subdocument on the user. Google-linked registrations set email_verified=True.
+    Candidate fields (phone, gender, dob, candidate_type, institution, location, google_id)
+    are stored flat on the user document. Google-linked registrations set email_verified=True.
 
     Supports Google-linked registrations when google_id is provided.
 
@@ -142,15 +142,13 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "email_verified": bool(google_id),
         "workspace_ids": [],
         "default_workspace_id": None,
-        "candidate_data": {
-            "candidate_type": data.get("candidate_type", CandidateType.STUDENT),
-            "google_id": google_id,
-            "phone": data.get("phone"),
-            "dob": data.get("dob"),
-            "gender": data.get("gender"),
-            "institution": data.get("institution"),
-            "location": data.get("location"),
-        },
+        "candidate_type": data.get("candidate_type", CandidateType.STUDENT),
+        "google_id": google_id,
+        "phone": data.get("phone"),
+        "dob": data.get("dob"),
+        "gender": data.get("gender"),
+        "institution": data.get("institution"),
+        "location": data.get("location"),
         "created_at": now,
         "updated_at": now,
     }
@@ -256,7 +254,6 @@ async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "email_verified": False,
         "workspace_ids": [],
         "default_workspace_id": None,
-        "candidate_data": None,
         "created_at": now,
         "updated_at": now,
     }

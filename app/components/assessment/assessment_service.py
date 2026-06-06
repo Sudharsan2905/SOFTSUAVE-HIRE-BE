@@ -21,6 +21,7 @@ from app.common.utils import (
 from app.core.logging import logger
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
+_ALLOW_TO_INTERVIEW = "You may proceed to attend the interview."
 _MATCH = "$match"
 _LOOKUP = "$lookup"
 _UNWIND = "$unwind"
@@ -220,7 +221,30 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "message": "This link is not valid. Please check the URL or contact the administrator.",
         }
 
-    # Permanent link — always allowed
+    # Custom share link — permanent but must still be active in assessment_shares.
+    if "csh" in decoded:
+        share_doc = await db.assessment_shares.find_one(
+            {"share_link": encoded_link, "is_active": True}, {"_id": 1}
+        )
+        if not share_doc:
+            return {
+                "can_allow": False,
+                "is_expired": True,
+                "is_expirable": False,
+                "start_time": None,
+                "end_time": None,
+                "message": "This link has been revoked. Please contact the administrator.",
+            }
+        return {
+            "can_allow": True,
+            "is_expired": False,
+            "is_expirable": False,
+            "start_time": None,
+            "end_time": None,
+            "message": _ALLOW_TO_INTERVIEW,
+        }
+
+    # Plain permanent link — always allowed
     if "s" not in decoded:
         return {
             "can_allow": True,
@@ -228,7 +252,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": "You may proceed to attend the interview.",
+            "message": _ALLOW_TO_INTERVIEW,
         }
 
     # Expirable link
@@ -264,7 +288,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
         "is_expirable": True,
         "start_time": decoded["s"],
         "end_time": decoded["e"],
-        "message": "You may proceed to attend the interview.",
+        "message": _ALLOW_TO_INTERVIEW,
     }
 
 

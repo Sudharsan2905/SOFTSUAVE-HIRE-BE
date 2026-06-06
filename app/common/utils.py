@@ -44,44 +44,15 @@ def encode_expirable_sharelink(assessment_id: str, start_iso: str, end_iso: str)
     return f"{encoded}.{sig}"
 
 
-def encode_schedule_sharelink(
-    assessment_id: str,
-    schedule_id: str,
-    start_iso: str | None = None,
-    end_iso: str | None = None,
-) -> str:
-    """Encode a candidate-specific share link that embeds the schedule_id.
+def encode_custom_sharelink(assessment_id: str, nonce: str) -> str:
+    """Encode a custom (permanent-style) share link that is unique per share document.
 
-    If start_iso and end_iso are provided the link becomes time-limited.
-    The decoder returns {"a": assessment_id, "sc": schedule_id, "s"?: ..., "e"?: ...}.
+    The nonce is a short random token that makes each link unique even when
+    two custom shares point to the same assessment. The decoded payload
+    contains ``{"a": assessment_id, "csh": nonce}`` — callers can distinguish
+    custom links from plain permanent links by the presence of the ``"csh"`` key.
     """
-    data: dict = {"a": assessment_id, "sc": schedule_id}
-    if start_iso and end_iso:
-        data["s"] = start_iso
-        data["e"] = end_iso
-    payload = json.dumps(data, separators=(",", ":")).encode()
-    encoded = base64.urlsafe_b64encode(payload).decode().rstrip("=")
-    sig = _hmac.new(_link_secret(), payload, hashlib.sha256).hexdigest()[:12]
-    return f"{encoded}.{sig}"
-
-
-def encode_submission_sharelink(
-    assessment_id: str,
-    submission_id: str,
-    start_iso: str | None = None,
-    end_iso: str | None = None,
-) -> str:
-    """Encode a per-candidate share link embedding the pre-created submission_id.
-
-    The 'sub' key is carried for reference only; validate_sharelink() and
-    start_assessment() continue to work unchanged — they decode 'a' for the
-    assessment lookup and find the submission by (assessment_id, candidate_id).
-    """
-    data: dict = {"a": assessment_id, "sub": submission_id}
-    if start_iso and end_iso:
-        data["s"] = start_iso
-        data["e"] = end_iso
-    payload = json.dumps(data, separators=(",", ":")).encode()
+    payload = json.dumps({"a": assessment_id, "csh": nonce}, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(payload).decode().rstrip("=")
     sig = _hmac.new(_link_secret(), payload, hashlib.sha256).hexdigest()[:12]
     return f"{encoded}.{sig}"
@@ -125,6 +96,14 @@ def generate_secure_token() -> str:
     return secrets.token_urlsafe(64)
 
 
+def _serialize_list_item(v: Any) -> Any:
+    if isinstance(v, dict):
+        return serialize_doc(v)
+    if isinstance(v, ObjectId):
+        return str(v)
+    return v
+
+
 def serialize_doc(doc: dict | None) -> dict:
     if doc is None:
         return {}
@@ -137,14 +116,7 @@ def serialize_doc(doc: dict | None) -> dict:
         elif isinstance(value, datetime):
             result[key] = value.isoformat()
         elif isinstance(value, list):
-            result[key] = [
-                (
-                    serialize_doc(v)
-                    if isinstance(v, dict)
-                    else (str(v) if isinstance(v, ObjectId) else v)
-                )
-                for v in value
-            ]
+            result[key] = [_serialize_list_item(v) for v in value]
         elif isinstance(value, dict):
             result[key] = serialize_doc(value)
         else:

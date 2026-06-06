@@ -4,10 +4,11 @@ Provides reusable, non-candidate-specific share links for assessments.
 Two share types are supported:
 
   - expirable: time-bounded link encoded with start_time and end_time
-  - custom:    permanent-style link with a custom prefix to distinguish it
-               from the main assessment share link
+  - custom:    permanent-style decodable link with a random nonce so multiple
+               custom shares can coexist for the same assessment
 """
 
+import secrets
 from datetime import UTC
 from datetime import datetime as _dt
 
@@ -16,8 +17,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.exceptions import NotFoundException, ValidationException
 from app.common.utils import (
+    encode_custom_sharelink,
     encode_expirable_sharelink,
-    encode_permanent_sharelink,
     serialize_doc,
     serialize_docs,
     utcnow,
@@ -25,10 +26,6 @@ from app.common.utils import (
 
 _ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
 _ERR_SHARE_NOT_FOUND = "Share not found"
-
-# Prefix embedded in the payload label to distinguish custom share links
-# from the main permanent assessment share link.
-_CUSTOM_SHARE_PREFIX = "csh"
 
 
 async def create_share(
@@ -90,10 +87,10 @@ async def create_share(
         share_link = encode_expirable_sharelink(assessment_id, start_time, end_time)
 
     elif share_type == "custom":
-        # Build a permanent-style link and embed a distinguishing prefix so
-        # the main assessment share link and custom share links remain unique.
-        base_link = encode_permanent_sharelink(assessment_id)
-        share_link = f"{_CUSTOM_SHARE_PREFIX}.{base_link}"
+        # Each custom link gets a random nonce so multiple shares for the same
+        # assessment produce distinct, decodable links.
+        nonce = secrets.token_urlsafe(8)
+        share_link = encode_custom_sharelink(assessment_id, nonce)
 
     else:
         raise ValidationException(f"Unknown share_type: {share_type!r}")

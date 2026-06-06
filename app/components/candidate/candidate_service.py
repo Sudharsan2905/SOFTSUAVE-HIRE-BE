@@ -49,26 +49,42 @@ _AUDIO_EVENTS = {"AUDIO_VIOLATION", "SPEAKING", "BACKGROUND_NOISE"}
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     """Return assessment metadata for a candidate via share link, without internal question IDs.
 
-    Tries to decode the link as a signed token first; falls back to a direct share_link
-    field lookup for backward compatibility with legacy links.
+    Also patches monitoring_overrides from the matching assessment_shares document so the
+    frontend receives the effective monitoring config for this specific share link.
 
     Raises:
         NotFoundException: If the share link is invalid.
     """
     from app.common.exceptions import ValidationException
 
+    # 1. Look up share document first — carries monitoring_overrides and assessment_id.
+    share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
+
     doc = None
-    try:
-        decoded = decode_sharelink(share_link)
-        doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
-    except (ValidationException, Exception):
-        doc = await db.assessments.find_one({"share_link": share_link})
+    if share_doc:
+        doc = await db.assessments.find_one({"_id": share_doc["assessment_id"]})
+    else:
+        # 2. Fall back: decode a signed link directly.
+        try:
+            decoded = decode_sharelink(share_link)
+            doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+        except (ValidationException, Exception):
+            # 3. Legacy: plain share_link field on the assessment document.
+            doc = await db.assessments.find_one({"share_link": share_link})
 
     if not doc:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+
     safe = serialize_doc(doc)
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
+
+    if share_doc and share_doc.get("monitoring_overrides"):
+        safe["monitoring_config"] = {
+            **(safe.get("monitoring_config") or {}),
+            **share_doc["monitoring_overrides"],
+        }
+
     return safe
 
 
@@ -160,27 +176,30 @@ async def _build_round_data(
 async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_id: str) -> dict:
     """Start or resume a candidate's assessment submission.
 
-    - Returns existing submission if already IN_PROGRESS.
+    - Returns existing submission if already IN_PROGRESS or ON_HOLD.
     - Transitions PENDING → IN_PROGRESS without re-sampling questions.
-    - Creates a new submission on first call, honouring candidate-schedule overrides
-      (monitoring + question selection) when the link encodes a schedule_id ("sc" key).
+    - Creates a new submission on first call, pulling monitoring_overrides from the
+      assessment_shares document that matches the share link.
 
     Raises:
         NotFoundException: If the assessment share link is invalid.
         ForbiddenException: If the submission is already COMPLETED or MALPRACTICE.
     """
     assessment = None
-    schedule: dict | None = None
-    try:
-        decoded = decode_sharelink(share_link)
-        assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
-        # Candidate-specific link carries "sc" = schedule_id
-        if assessment and decoded.get("sc"):
-            from app.components.assessment.scheduling_service import get_schedule_by_id
+    share_doc: dict | None = None
 
-            schedule = await get_schedule_by_id(db, decoded["sc"])
-    except Exception:
-        assessment = await db.assessments.find_one({"share_link": share_link})
+    # 1. Look up the share document — carries monitoring_overrides and assessment_id.
+    share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
+    if share_doc:
+        assessment = await db.assessments.find_one({"_id": share_doc["assessment_id"]})
+    else:
+        # 2. Fall back: decode a signed link (expirable / permanent) directly.
+        try:
+            decoded = decode_sharelink(share_link)
+            assessment = await db.assessments.find_one({"_id": ObjectId(decoded["a"])})
+        except Exception:
+            # 3. Legacy: plain share_link field on the assessment document.
+            assessment = await db.assessments.find_one({"share_link": share_link})
 
     if not assessment:
         raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
@@ -194,29 +213,17 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     if existing:
         return await _handle_existing_submission(db, existing)
 
-    # Build per-round question override map from schedule (round_number → [ObjectId])
-    schedule_round_map: dict[int, list] = {}
-    if schedule and schedule.get("rounds"):
-        for sr in schedule["rounds"]:
-            schedule_round_map[sr["round_number"]] = sr.get("question_ids", [])
-
     rounds_data = [
-        await _build_round_data(
-            db,
-            round_cfg,
-            override_question_ids=schedule_round_map.get(round_cfg["round_number"]),
-        )
-        for round_cfg in assessment.get("rounds", [])
+        await _build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", [])
     ]
 
-    # Resolve effective monitoring: assessment defaults + schedule overrides
-    monitoring_overrides: dict | None = schedule.get("monitoring_overrides") if schedule else None
+    monitoring_overrides: dict | None = share_doc.get("monitoring_overrides") if share_doc else None
 
     now = utcnow()
     submission = {
         "assessment_id": assessment["_id"],
         "candidate_id": ObjectId(candidate_id),
-        "schedule_id": ObjectId(schedule["_id"]) if schedule else None,
+        "share_id": ObjectId(share_doc["_id"]) if share_doc else None,
         "monitoring_overrides": monitoring_overrides,
         "status": SubmissionStatus.IN_PROGRESS,
         "rounds_data": rounds_data,
@@ -908,14 +915,6 @@ async def get_live_interviews(
                 "assessment_name": "$assessment.name",
             }
         },
-        {
-            "$project": {
-                "candidate.password_hash": 0,
-                "rounds_data": 0,
-                "candidate": 0,
-                "assessment": 0,
-            }
-        },
     ]
 
     if monitoring_type:
@@ -928,11 +927,22 @@ async def get_live_interviews(
                     "$or": [
                         {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
                         {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
                         {"assessment.name": {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
         )
+
+    pipeline.append(
+        {
+            "$project": {
+                "rounds_data": 0,
+                "candidate": 0,
+                "assessment": 0,
+            }
+        }
+    )
 
     count_res = await db.assessment_submissions.aggregate(pipeline + [{"$count": "total"}]).to_list(
         1
