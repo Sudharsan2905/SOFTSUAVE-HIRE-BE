@@ -97,9 +97,11 @@ async def interview_websocket(websocket: WebSocket, submission_id: str) -> None:
 
     # Accept + register (also cancels any pending ON_HOLD task)
     await manager.connect(submission_id, websocket)
+    logger.info("WS connected: submission_id=%s candidate_id=%s", submission_id, candidate_id)
 
     # Send initial state
     if status == SubmissionStatus.ON_HOLD:
+        logger.info("WS on_hold sent on connect: submission_id=%s", submission_id)
         await websocket.send_json(
             {
                 "type": "on_hold",

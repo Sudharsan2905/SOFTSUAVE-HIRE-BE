@@ -34,6 +34,7 @@ class MalpracticeEventResponse(BaseModel):
     type: MalpracticeType
     timestamp: datetime
     round: int
+    description: str = ""
     screen_image_url: str | None = None
     face_image_url: str | None = None
     screen_video_url: str | None = None

@@ -19,5 +19,5 @@ async def get_admin_livekit_token(
     workspace_id: Annotated[str, Body(embed=True)],
 ) -> dict:
     """Generate a LiveKit token for an admin to watch a workspace's candidates."""
-    result = await livekit_service.generate_admin_token(current_user["_id"], workspace_id)
+    result = livekit_service.generate_admin_token(current_user["_id"], workspace_id)
     return success_response("LiveKit token generated", result)

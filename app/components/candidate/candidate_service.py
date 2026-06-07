@@ -5,7 +5,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
-from app.common.exceptions import ForbiddenException, NotFoundException
+from app.common.exceptions import AppException, ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
     decode_sharelink,
@@ -366,7 +366,7 @@ async def get_current_round(
         "video_monitoring": effective.get("video_monitoring", False),
         "screenshot_enabled": effective.get("screenshot_enabled", False),
         "screenshot_mode": effective.get("screenshot_mode", "time_interval"),
-        "screenshot_interval_minutes": effective.get("screenshot_interval_minutes"),
+        "screenshot_interval_seconds": effective.get("screenshot_interval_seconds"),
         "screenshot_count": effective.get("screenshot_count"),
         # Persisted session state for seamless resume after network loss
         "remaining_seconds": sub.get("remaining_seconds"),
@@ -593,39 +593,51 @@ async def _upload_evidence_files(
         "audio_clip_s3_key": None,
     }
 
+    def _extract(data: tuple | bytes | None, fallback_ct: str) -> tuple[bytes, str] | None:
+        """Unpack a (bytes, content_type) tuple or a bare bytes value."""
+        if data is None:
+            return None
+        if isinstance(data, tuple):
+            return data[0], data[1] or fallback_ct
+        return data, fallback_ct
+
     if effective_monitoring.get("screenshot_enabled", False):
-        screen_bytes = file_bytes_map.get("screen_image")
-        if screen_bytes:
+        screen_data = _extract(file_bytes_map.get("screen_image"), _DEFAULT_CONTENT_TYPE)
+        if screen_data:
+            screen_bytes, screen_ct = screen_data
             key = s3_service.make_evidence_key(
                 submission_id, round_number, malpractice_type, "screen_image", now.isoformat()
             )
-            await s3_service.upload(screen_bytes, key, _DEFAULT_CONTENT_TYPE)
+            await s3_service.upload(screen_bytes, key, screen_ct)
             keys["screen_image_s3_key"] = key
 
     if effective_monitoring.get("video_monitoring", False):
-        face_bytes = file_bytes_map.get("face_image")
-        if face_bytes:
+        face_data = _extract(file_bytes_map.get("face_image"), _DEFAULT_CONTENT_TYPE)
+        if face_data:
+            face_bytes, face_ct = face_data
             key = s3_service.make_evidence_key(
                 submission_id, round_number, malpractice_type, "face_image", now.isoformat()
             )
-            await s3_service.upload(face_bytes, key, _DEFAULT_CONTENT_TYPE)
+            await s3_service.upload(face_bytes, key, face_ct)
             keys["face_image_s3_key"] = key
 
-        video_bytes = file_bytes_map.get("video_chunk")
-        if video_bytes:
+        video_data = _extract(file_bytes_map.get("video_chunk"), "video/webm")
+        if video_data:
+            video_bytes, video_ct = video_data
             key = s3_service.make_evidence_key(
                 submission_id, round_number, malpractice_type, "video_chunk", now.isoformat()
             )
-            await s3_service.upload(video_bytes, key, "video/webm")
+            await s3_service.upload(video_bytes, key, video_ct)
             keys["screen_video_s3_key"] = key
 
     if effective_monitoring.get("audio_monitoring", False):
-        audio_bytes = file_bytes_map.get("audio_clip")
-        if audio_bytes:
+        audio_data = _extract(file_bytes_map.get("audio_clip"), "audio/webm")
+        if audio_data:
+            audio_bytes, audio_ct = audio_data
             key = s3_service.make_evidence_key(
                 submission_id, round_number, malpractice_type, "audio_clip", now.isoformat()
             )
-            await s3_service.upload(audio_bytes, key, "audio/webm")
+            await s3_service.upload(audio_bytes, key, audio_ct)
             keys["audio_clip_s3_key"] = key
 
     return keys
@@ -677,6 +689,7 @@ async def flag_malpractice(
     candidate_id: str,
     malpractice_type: str,
     file_bytes_map: dict | None = None,
+    description: str | None = None,
 ) -> dict:
     """Record a malpractice event using the 3-strike system.
 
@@ -726,9 +739,12 @@ async def flag_malpractice(
     # ── Build event record ─────────────────────────────────────────────────
     new_count = (sub.get("malpractice_count") or 0) + 1
     is_terminal = new_count >= settings.MAX_MALPRACTICE_COUNT
+    # event_index is the 0-based position this event will occupy after $push
+    event_index = len(sub.get("malpractice_events") or [])
 
     event_data: dict = {
         "type": malpractice_type,
+        "description": description or "",
         "timestamp": now,
         "round": round_number,
         "is_terminal": is_terminal,
@@ -751,7 +767,7 @@ async def flag_malpractice(
             f"count={new_count}"
         )
 
-    return {"malpractice_count": new_count, "is_terminal": is_terminal}
+    return {"malpractice_count": new_count, "is_terminal": is_terminal, "event_index": event_index}
 
 
 async def put_session_terminated(
@@ -870,6 +886,64 @@ async def get_session_state(
         "current_question_idx": sub.get("current_question_idx", 0),
         "current_round": sub.get("current_round", 1),
     }
+
+
+async def upload_malpractice_media(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    event_index: int,
+    candidate_id: str,
+    video_bytes: bytes | None = None,
+    video_content_type: str = "video/webm",
+    audio_bytes: bytes | None = None,
+    audio_content_type: str = "audio/webm",
+) -> None:
+    """Upload video/audio clips for an existing malpractice event (Phase 2 of two-phase flow).
+
+    Validates ownership and index bounds, uploads to S3, then patches the specific
+    malpractice_events array element using the positional dot-notation update.
+
+    Raises:
+        NotFoundException: If submission not found or event_index out of range.
+    """
+    sub = await db.assessment_submissions.find_one(
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+    )
+    if not sub:
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+
+    events = sub.get("malpractice_events") or []
+    if event_index < 0 or event_index >= len(events):
+        raise AppException(f"Invalid event_index: {event_index}")
+
+    event = events[event_index]
+    round_n = event.get("round", sub.get("current_round", 1))
+    mal_type = event.get("type", "unknown")
+    now = utcnow()
+    ts = now.isoformat()
+
+    update_fields: dict = {}
+
+    if video_bytes:
+        key = s3_service.make_evidence_key(submission_id, round_n, mal_type, "video_chunk", ts)
+        await s3_service.upload(video_bytes, key, video_content_type)
+        update_fields[f"malpractice_events.{event_index}.screen_video_s3_key"] = key
+
+    if audio_bytes:
+        key = s3_service.make_evidence_key(submission_id, round_n, mal_type, "audio_clip", ts)
+        await s3_service.upload(audio_bytes, key, audio_content_type)
+        update_fields[f"malpractice_events.{event_index}.audio_clip_s3_key"] = key
+
+    if update_fields:
+        update_fields["updated_at"] = now
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"]},
+            {"$set": update_fields},
+        )
+        logger.info(
+            f"Malpractice media uploaded: submission_id={submission_id} "
+            f"event_index={event_index} fields={list(update_fields.keys())}"
+        )
 
 
 async def get_live_interviews(

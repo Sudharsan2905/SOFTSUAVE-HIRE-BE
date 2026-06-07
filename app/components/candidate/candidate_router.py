@@ -115,10 +115,9 @@ async def flag_malpractice(
     db: DB,
     current_user: CurrentUser,
     type: Annotated[str, Form()],
+    description: Annotated[str | None, Form()] = None,
     screen_image: Annotated[UploadFile | None, File()] = None,
     face_image: Annotated[UploadFile | None, File()] = None,
-    video_chunk: Annotated[UploadFile | None, File()] = None,
-    audio_clip: Annotated[UploadFile | None, File()] = None,
 ) -> dict:
     try:
         malpractice_type = MalpracticeType(type)
@@ -144,13 +143,65 @@ async def flag_malpractice(
 
     await _read_file(screen_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "screen_image")
     await _read_file(face_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "face_image")
-    await _read_file(video_chunk, _ALLOWED_VIDEO_TYPES, _MAX_VIDEO_BYTES, "video_chunk")
-    await _read_file(audio_clip, _ALLOWED_AUDIO_TYPES, _MAX_AUDIO_BYTES, "audio_clip")
 
     result = await candidate_service.flag_malpractice(
-        db, submission_id, current_user["_id"], malpractice_type, file_bytes_map
+        db, submission_id, current_user["_id"], malpractice_type, file_bytes_map, description
     )
     return success_response("Activity flagged", result)
+
+
+@router.post(
+    "/submission/{submission_id}/malpractice/{event_index}/media",
+    response_model=ApiResponse,
+)
+@limiter.limit("20/minute")
+async def upload_malpractice_media(
+    request: Request,
+    submission_id: str,
+    event_index: int,
+    db: DB,
+    current_user: CurrentUser,
+    video_chunk: Annotated[UploadFile | None, File()] = None,
+    audio_clip: Annotated[UploadFile | None, File()] = None,
+) -> dict:
+    """Phase-2 media upload: attaches video/audio clips to an existing malpractice event.
+
+    Accepts POST so navigator.sendBeacon() can be used as a fallback on tab close.
+    """
+    video_bytes: bytes | None = None
+    video_ct = "video/webm"
+    audio_bytes: bytes | None = None
+    audio_ct = "audio/webm"
+
+    if video_chunk is not None:
+        video_ct_base = (video_chunk.content_type or "").split(";")[0].strip()
+        if video_ct_base not in _ALLOWED_VIDEO_TYPES:
+            raise ValidationException("video_chunk has invalid content type")
+        video_bytes = await video_chunk.read()
+        if len(video_bytes) > _MAX_VIDEO_BYTES:
+            raise ValidationException("video_chunk exceeds size limit")
+        video_ct = video_ct_base or video_ct
+
+    if audio_clip is not None:
+        audio_ct_base = (audio_clip.content_type or "").split(";")[0].strip()
+        if audio_ct_base not in _ALLOWED_AUDIO_TYPES:
+            raise ValidationException("audio_clip has invalid content type")
+        audio_bytes = await audio_clip.read()
+        if len(audio_bytes) > _MAX_AUDIO_BYTES:
+            raise ValidationException("audio_clip exceeds size limit")
+        audio_ct = audio_ct_base or audio_ct
+
+    await candidate_service.upload_malpractice_media(
+        db,
+        submission_id,
+        event_index,
+        current_user["_id"],
+        video_bytes,
+        video_ct,
+        audio_bytes,
+        audio_ct,
+    )
+    return success_response("Malpractice media updated")
 
 
 @router.post("/submission/{submission_id}/livekit-token", response_model=ApiResponse)

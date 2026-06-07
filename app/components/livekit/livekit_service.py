@@ -53,9 +53,20 @@ def _make_token(identity: str, room: str, can_publish: bool, can_subscribe: bool
                 can_publish_data=False,
             )
         )
-        return str(token.to_jwt())
+        jwt = str(token.to_jwt())
+        logger.info(
+            "LiveKit token generated: identity=%s room=%s publish=%s subscribe=%s",
+            identity,
+            room,
+            can_publish,
+            can_subscribe,
+        )
+        return jwt
     except ImportError:
-        logger.warning("livekit package not installed — pip install livekit")
+        logger.warning("LiveKit package not installed — pip install livekit")
+        return ""
+    except Exception as exc:
+        logger.error("LiveKit token generation failed: identity=%s error=%s", identity, exc)
         return ""
 
 
@@ -77,7 +88,7 @@ async def generate_candidate_token(
     return {"token": token, "room": room, "workspace_id": workspace_id}
 
 
-async def generate_admin_token(admin_id: str, workspace_id: str) -> dict:
+def generate_admin_token(admin_id: str, workspace_id: str) -> dict:
     """Generate a LiveKit token for admin to subscribe to screen tracks."""
     room = f"workspace-{workspace_id}"
     token = _make_token(

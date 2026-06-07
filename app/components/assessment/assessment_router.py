@@ -164,7 +164,9 @@ async def grant_reaccess(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    await assessment_service.grant_reaccess(db, submission_id)
+    await assessment_service.grant_reaccess(
+        db, submission_id, current_user["_id"], request.reason, request.reason_category
+    )
     return success_response("Re-access granted successfully")
 
 

@@ -9,7 +9,7 @@ class MonitoringConfig(BaseModel):
     video_monitoring: bool = True
     screenshot_enabled: bool = True
     screenshot_mode: str = Field("time_interval", pattern="^(time_interval|count)$")
-    screenshot_interval_minutes: int | None = Field(None, ge=1)
+    screenshot_interval_seconds: int | None = Field(None, ge=5)
     screenshot_count: int | None = Field(None, ge=1)
 
     @model_validator(mode="after")
@@ -17,9 +17,9 @@ class MonitoringConfig(BaseModel):
         # Only enforce when screenshot_mode was explicitly provided by the caller.
         if "screenshot_mode" not in self.model_fields_set:
             return self
-        if self.screenshot_mode == "time_interval" and self.screenshot_interval_minutes is None:
+        if self.screenshot_mode == "time_interval" and self.screenshot_interval_seconds is None:
             raise ValueError(
-                "screenshot_interval_minutes is required when screenshot_mode is 'time_interval'"
+                "screenshot_interval_seconds is required when screenshot_mode is 'time_interval'"
             )
         if self.screenshot_mode == "count" and self.screenshot_count is None:
             raise ValueError("screenshot_count is required when screenshot_mode is 'count'")
@@ -34,7 +34,7 @@ class CandidateMonitoringOverrides(BaseModel):
     video_monitoring: bool | None = None
     screenshot_enabled: bool | None = None
     screenshot_mode: str | None = Field(None, pattern="^(time_interval|count)$")
-    screenshot_interval_minutes: int | None = Field(None, ge=1)
+    screenshot_interval_seconds: int | None = Field(None, ge=5)
     screenshot_count: int | None = Field(None, ge=1)
 
 

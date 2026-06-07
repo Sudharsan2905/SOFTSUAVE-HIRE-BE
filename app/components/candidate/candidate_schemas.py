@@ -10,3 +10,4 @@ class SubmitAnswerRequest(BaseModel):
 
 class MalpracticeRequest(BaseModel):
     type: MalpracticeType
+    description: str | None = None
