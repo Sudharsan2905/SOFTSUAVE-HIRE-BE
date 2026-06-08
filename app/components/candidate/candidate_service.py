@@ -986,6 +986,7 @@ async def get_live_interviews(
         {
             "$addFields": {
                 "submission_id": {"$toString": "$_id"},
+                "workspace_id": {"$toString": "$assessment.workspace_id"},
                 "candidate_name": {
                     "$trim": {
                         "input": {

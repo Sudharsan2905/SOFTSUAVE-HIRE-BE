@@ -42,18 +42,20 @@ def _make_token(identity: str, room: str, can_publish: bool, can_subscribe: bool
     try:
         from livekit.api import AccessToken, VideoGrants
 
-        token = AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
-        token.identity = identity
-        token.add_grants(
-            VideoGrants(
-                room_join=True,
-                room=room,
-                can_publish=can_publish,
-                can_subscribe=can_subscribe,
-                can_publish_data=False,
+        token = (
+            AccessToken(settings.LIVEKIT_API_KEY, settings.LIVEKIT_API_SECRET)
+            .with_identity(identity)
+            .with_grants(
+                VideoGrants(
+                    room_join=True,
+                    room=room,
+                    can_publish=can_publish,
+                    can_subscribe=can_subscribe,
+                    can_publish_data=False,
+                )
             )
         )
-        jwt = str(token.to_jwt())
+        jwt: str = token.to_jwt()
         logger.info(
             "LiveKit token generated: identity=%s room=%s publish=%s subscribe=%s",
             identity,
