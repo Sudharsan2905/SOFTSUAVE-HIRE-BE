@@ -76,14 +76,13 @@ async def finish_round(
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ) -> dict:
-    result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
-    if result.get("completed"):
-        try:
-            from app.components.scoring import scoring_tasks
+    from app.components.scoring import scoring_tasks
 
-            background_tasks.add_task(scoring_tasks.calculate_and_store_score, db, submission_id)
-        except ImportError:
-            pass  # scoring module not yet available
+    result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
+    finished_round = result.pop("finished_round")
+    background_tasks.add_task(
+        scoring_tasks.calculate_and_store_score, db, submission_id, finished_round
+    )
     return success_response("Round finished", result)
 
 
@@ -114,6 +113,7 @@ async def flag_malpractice(
     submission_id: str,
     db: DB,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
     type: Annotated[str, Form()],
     description: Annotated[str | None, Form()] = None,
     screen_image: Annotated[UploadFile | None, File()] = None,
@@ -147,6 +147,15 @@ async def flag_malpractice(
     result = await candidate_service.flag_malpractice(
         db, submission_id, current_user["_id"], malpractice_type, file_bytes_map, description
     )
+    if result.get("is_terminal"):
+        from app.components.scoring import scoring_tasks
+
+        background_tasks.add_task(
+            scoring_tasks.calculate_and_store_score,
+            db,
+            submission_id,
+            result["current_round"],
+        )
     return success_response("Activity flagged", result)
 
 

@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from bson import ObjectId
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Query, Request
 from fastapi.responses import Response
 
 from app.common.responses import ApiResponse, success_response
@@ -178,10 +178,17 @@ async def terminate_submission(
     request: TerminateSubmissionRequest,
     db: DB,
     current_user: AdminUser,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     from app.components.candidate import candidate_service
+    from app.components.scoring import scoring_tasks
 
-    await candidate_service.put_session_terminated(db, submission_id, request.reason)
+    current_round = await candidate_service.put_session_terminated(
+        db, submission_id, request.reason
+    )
+    background_tasks.add_task(
+        scoring_tasks.calculate_and_store_score, db, submission_id, current_round
+    )
     return success_response("Session terminated")
 
 
@@ -192,10 +199,15 @@ async def force_complete_submission(
     submission_id: str,
     db: DB,
     current_user: AdminUser,
+    background_tasks: BackgroundTasks,
 ) -> dict:
     from app.components.candidate import candidate_service
+    from app.components.scoring import scoring_tasks
 
-    await candidate_service.put_session_completed(db, submission_id)
+    current_round = await candidate_service.put_session_completed(db, submission_id)
+    background_tasks.add_task(
+        scoring_tasks.calculate_and_store_score, db, submission_id, current_round
+    )
     return success_response("Session completed")
 
 

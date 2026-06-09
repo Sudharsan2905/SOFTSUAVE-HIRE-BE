@@ -10,4 +10,4 @@ class VersionHistoryListResponse(BaseModel):
     reaccess_reason: str | None = None
     reaccess_reason_category: str | None = None
     started_at: str | None = None
-    ended_at: str | None = None
+    completed_at: str | None = None

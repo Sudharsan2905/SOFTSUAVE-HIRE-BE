@@ -61,7 +61,7 @@ async def get_versions_list(db: AsyncIOMotorDatabase, submission_id: str) -> lis
 
     Returns:
         List of dicts with keys: version, status, score, percentage, malpractice_count,
-        reaccess_reason, reaccess_reason_category, started_at, ended_at.
+        reaccess_reason, reaccess_reason_category, started_at, completed_at.
     """
     cursor = db.assessment_version_history.find({"submission_id": ObjectId(submission_id)}).sort(
         "version", 1
@@ -80,7 +80,7 @@ async def get_versions_list(db: AsyncIOMotorDatabase, submission_id: str) -> lis
                 "reaccess_reason": doc.get("reaccess_reason"),
                 "reaccess_reason_category": doc.get("reaccess_reason_category"),
                 "started_at": _iso(doc.get("started_at")),
-                "ended_at": _iso(doc.get("ended_at")),
+                "completed_at": _iso(doc.get("completed_at")),
             }
         )
     return result
@@ -288,7 +288,7 @@ async def get_candidate_submission(
             "status": vd.get("status"),
             "percentage": vd.get("percentage", 0.0),
             "started_at": _iso(vd.get("started_at")),
-            "ended_at": _iso(vd.get("ended_at")),
+            "completed_at": _iso(vd.get("completed_at")),
         }
         for vd in version_docs
     ]
@@ -331,7 +331,7 @@ async def get_candidate_submission(
             "malpractice_count": hist.get("malpractice_count", 0),
             "reaccess_count": hist.get("reaccess_count", 0),
             "started_at": _iso(hist.get("started_at")),
-            "completed_at": _iso(hist.get("ended_at")),
+            "completed_at": _iso(hist.get("completed_at")),
             "current_version": current_version,
             "available_versions": available_versions,
             "rounds": hist.get("rounds", []),
@@ -485,7 +485,7 @@ async def archive_submission(
         "reaccess_reason_category": reason_category,
         "archived_by": ObjectId(admin_id),
         "started_at": sub.get("started_at"),
-        "ended_at": sub.get("completed_at") or sub.get("terminated_at"),
+        "completed_at": sub.get("completed_at"),
         "archived_at": now,
         # Carry forward reaccess_count at time of archiving for reference
         "reaccess_count": sub.get("reaccess_count", 0),
@@ -535,6 +535,17 @@ async def grant_reaccess_with_archive(
             f"Maximum re-access count ({settings.MAX_REACCESS_COUNT}) already reached."
         )
 
+    _reaccess_eligible_statuses = {
+        SubmissionStatus.COMPLETED,
+        SubmissionStatus.MALPRACTICE,
+        SubmissionStatus.TERMINATED,
+    }
+    if sub.get("status") not in _reaccess_eligible_statuses:
+        raise ForbiddenException(
+            f"Cannot grant re-access to a submission with status '{sub.get('status')}'. "
+            "Only completed, malpractice, or terminated submissions are eligible."
+        )
+
     # Archive current attempt and get the new version number
     new_version = await archive_submission(db, submission_id, admin_id, reason, reason_category)
 
@@ -568,7 +579,6 @@ async def grant_reaccess_with_archive(
                 "reaccess_count": new_version,
                 "screenshots": [],
                 "completed_at": None,
-                "terminated_at": None,
                 "updated_at": now,
             }
         },

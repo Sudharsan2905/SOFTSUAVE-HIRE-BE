@@ -127,17 +127,20 @@ async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) 
 
 
 def _sanitize_question(q: dict) -> dict:
-    """Strip answer metadata and shuffle MCQ options for candidate-facing use."""
+    """Return only candidate-facing fields; strip answers and shuffle MCQ options."""
     sq = serialize_doc(q)
-    q_type = sq.pop("question_type", "essay")
+    q_type = sq.get("question_type", "essay")
+    options: list = []
     if q_type in (QuestionType.MCQ_SINGLE, QuestionType.MCQ_MULTI):
-        opts = [{k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])]
-        _rng.shuffle(opts)
-        sq["options"] = opts
-    sq.pop("correct_answer", None)
-    sq["text"] = sq.pop("question_text", "")
-    sq["type"] = "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type
-    return sq
+        options = [{k: v for k, v in o.items() if k != "is_correct"} for o in sq.get("options", [])]
+        _rng.shuffle(options)
+    return {
+        "id": sq.get("id") or sq.get("_id", ""),
+        "type": "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type,
+        "text": sq.get("question_text", ""),
+        "complexity": sq.get("complexity"),
+        "options": options,
+    }
 
 
 async def _build_round_data(
@@ -229,6 +232,11 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     monitoring_overrides: dict | None = share_doc.get("monitoring_overrides") if share_doc else None
 
     now = utcnow()
+    for rd in rounds_data:
+        if rd.get("round_number") == 1:
+            rd["started_at"] = now
+            break
+
     submission = {
         "assessment_id": assessment["_id"],
         "candidate_id": ObjectId(candidate_id),
@@ -245,7 +253,6 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "reaccess_count": 0,
         "started_at": now,
         "completed_at": None,
-        "terminated_at": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -411,16 +418,16 @@ async def submit_answer(
 
 
 async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
-    """Mark the current round complete and advance to the next round or finalize the assessment.
+    """Mark the current round complete and advance or finalise the assessment.
 
-    On the final round, calculates score/percentage and sets status to COMPLETED.
+    Does NOT score the round — scoring is handled by a background task after this returns.
 
     Returns:
-        {'completed': True, 'percentage': float} if all rounds are done,
-        {'completed': False, 'next_round': int} otherwise.
+        {'completed': True, 'finished_round': int} if all rounds are done,
+        {'completed': False, 'next_round': int, 'finished_round': int} otherwise.
 
     Raises:
-        NotFoundException: If no active submission is found.
+        NotFoundException: If no active submission or round is found.
     """
     sub = await db.assessment_submissions.find_one(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
@@ -434,88 +441,57 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
 
     current = sub.get("current_round", 1)
     total_rounds = len(assessment.get("rounds", []))
-    idx = current - 1
 
-    if current >= total_rounds:
-        score, percentage = await _calculate_score(db, sub)
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {
-                "$set": {
-                    "status": SubmissionStatus.COMPLETED,
-                    "score": score,
-                    "percentage": percentage,
-                    "completed_at": utcnow(),
-                    "updated_at": utcnow(),
-                    f"rounds_data.{idx}.completed": True,
-                }
-            },
-        )
-        logger.info(
-            f"Assessment completed: submission_id={submission_id} "
-            f"candidate_id={candidate_id} score={percentage:.1f}%"
-        )
-        return {"completed": True, "percentage": percentage}
+    current_rd = next(
+        (rd for rd in sub.get("rounds_data", []) if rd.get("round_number") == current),
+        None,
+    )
+    if not current_rd:
+        raise NotFoundException("Round not found")
 
-    # Reset per-round session state so the next round starts with a clean timer
-    # and question index (not bleed-over from the previous round).
+    now = utcnow()
+    is_last_round = current >= total_rounds
+
+    set_fields: dict = {
+        "rounds_data.$[rd].completed": True,
+        "rounds_data.$[rd].completed_at": now,
+        "updated_at": now,
+    }
+
+    if is_last_round:
+        set_fields["status"] = SubmissionStatus.COMPLETED
+        set_fields["completed_at"] = now
+    else:
+        set_fields["current_round"] = current + 1
+        set_fields["remaining_seconds"] = None
+        set_fields["current_question_idx"] = 0
+
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
-        {
-            "$set": {
-                "current_round": current + 1,
-                "remaining_seconds": None,
-                "current_question_idx": 0,
-                "updated_at": utcnow(),
-                f"rounds_data.{idx}.completed": True,
-            }
-        },
+        {"$set": set_fields},
+        array_filters=[{"rd.round_number": current}],
     )
+
+    if not is_last_round:
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"]},
+            {"$set": {"rounds_data.$[nxt].started_at": now}},
+            array_filters=[{"nxt.round_number": current + 1}],
+        )
+
+    if is_last_round:
+        logger.info(
+            "Assessment completed: submission_id=%s candidate_id=%s", submission_id, candidate_id
+        )
+        return {"completed": True, "finished_round": current}
+
     logger.info(
-        f"Round {current} finished: submission_id={submission_id} "
-        f"→ advancing to round {current + 1}"
+        "Round %d finished: submission_id=%s → advancing to round %d",
+        current,
+        submission_id,
+        current + 1,
     )
-    return {"completed": False, "next_round": current + 1}
-
-
-def _score_mcq(original: dict, given_answer: Any) -> int:
-    """Return 1 if the candidate's MCQ answer exactly matches the correct option IDs, else 0."""
-    correct_ids = {o["id"] for o in original.get("options", []) if o.get("is_correct")}
-    given = [given_answer] if isinstance(given_answer, str) else (given_answer or [])
-    return 1 if set(given) == correct_ids else 0
-
-
-async def _calculate_score(db: AsyncIOMotorDatabase, submission: dict) -> tuple[int, float]:
-    """Compute (correct_count, percentage) across all MCQ questions in a submission.
-
-    Only MCQ questions (mcq_single / mcq_multiple) contribute to the total.
-    Essay questions are excluded from both numerator and denominator so they
-    do not deflate the percentage.
-
-    Uses a single batched DB fetch for all question originals instead of
-    one query per question.
-    """
-    mcq_pairs: list[tuple[str, Any]] = []  # (question_id, candidate_answer)
-    for rd in submission.get("rounds_data", []):
-        answers = rd.get("answers", {})
-        for q in rd.get("questions", []):
-            if q.get("type") in ("mcq_single", "mcq_multiple"):
-                qid = q.get("id", "")
-                mcq_pairs.append((qid, answers.get(qid, [])))
-
-    if not mcq_pairs:
-        return 0, 0.0
-
-    qids = [ObjectId(qid) for qid, _ in mcq_pairs]
-    originals = await db.questions.find({"_id": {"$in": qids}}).to_list(len(qids))
-    original_map = {str(o["_id"]): o for o in originals}
-
-    total = len(mcq_pairs)
-    correct = sum(
-        _score_mcq(original_map[qid], given) for qid, given in mcq_pairs if qid in original_map
-    )
-    pct = round((correct / total * 100) if total > 0 else 0.0, 2)
-    return correct, pct
+    return {"completed": False, "next_round": current + 1, "finished_round": current}
 
 
 async def save_screenshot(
@@ -657,7 +633,7 @@ async def _persist_malpractice_event(
     update_set: dict = {"malpractice_count": new_count, "updated_at": now}
     if is_terminal:
         update_set["status"] = SubmissionStatus.MALPRACTICE
-        update_set["terminated_at"] = now
+        update_set["completed_at"] = now
 
     await db.assessment_submissions.update_one(
         {"_id": sub["_id"]},
@@ -767,53 +743,85 @@ async def flag_malpractice(
             f"count={new_count}"
         )
 
-    return {"malpractice_count": new_count, "is_terminal": is_terminal, "event_index": event_index}
+    return {
+        "malpractice_count": new_count,
+        "is_terminal": is_terminal,
+        "event_index": event_index,
+        "current_round": round_number,
+    }
 
 
 async def put_session_terminated(
     db: AsyncIOMotorDatabase,
     submission_id: str,
     reason: str,
-) -> None:
+) -> int:
     """Admin force-terminate a session.
 
-    Sets status to TERMINATED, records terminated_at, and pushes a WebSocket
+    Sets status to TERMINATED, records completed_at, and pushes a WebSocket
     terminated event to the candidate.
+
+    Returns:
+        The current_round at time of termination (for background scoring).
 
     Raises:
         NotFoundException: If no submission with the given ID exists.
+        ForbiddenException: If the submission is not in a terminable state.
     """
+    sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
+    if not sub:
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+
+    if sub.get("status") not in {SubmissionStatus.PENDING, SubmissionStatus.IN_PROGRESS}:
+        raise ForbiddenException(
+            f"Cannot terminate a submission with status '{sub.get('status')}'. "
+            "Only pending or in-progress submissions can be terminated."
+        )
+
     now = utcnow()
-    result = await db.assessment_submissions.update_one(
+    await db.assessment_submissions.update_one(
         {"_id": ObjectId(submission_id)},
         {
             "$set": {
                 "status": SubmissionStatus.TERMINATED,
-                "terminated_at": now,
+                "completed_at": now,
                 "updated_at": now,
             }
         },
     )
-    if result.matched_count == 0:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     await manager.send_json(submission_id, {"type": "terminated", "reason": "admin"})
     logger.info(f"Session force-terminated: submission_id={submission_id} reason={reason}")
+    return int(sub.get("current_round", 1))
 
 
 async def put_session_completed(
     db: AsyncIOMotorDatabase,
     submission_id: str,
-) -> None:
+) -> int:
     """Admin force-complete a session.
 
     Sets status to COMPLETED and records completed_at.
 
+    Returns:
+        The current_round at time of completion (for background scoring).
+
     Raises:
         NotFoundException: If no submission with the given ID exists.
+        ForbiddenException: If the submission is not in a completable state.
     """
+    sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
+    if not sub:
+        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+
+    if sub.get("status") not in {SubmissionStatus.PENDING, SubmissionStatus.IN_PROGRESS}:
+        raise ForbiddenException(
+            f"Cannot complete a submission with status '{sub.get('status')}'. "
+            "Only pending or in-progress submissions can be completed."
+        )
+
     now = utcnow()
-    result = await db.assessment_submissions.update_one(
+    await db.assessment_submissions.update_one(
         {"_id": ObjectId(submission_id)},
         {
             "$set": {
@@ -823,10 +831,9 @@ async def put_session_completed(
             }
         },
     )
-    if result.matched_count == 0:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
 
     logger.info(f"Session force-completed: submission_id={submission_id}")
+    return int(sub.get("current_round", 1))
 
 
 async def put_session_on_hold(

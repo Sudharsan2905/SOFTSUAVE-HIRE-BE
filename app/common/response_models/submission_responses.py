@@ -53,7 +53,7 @@ class VersionSummaryResponse(BaseModel):
     status: str
     percentage: float
     started_at: datetime | None = None
-    ended_at: datetime | None = None
+    completed_at: datetime | None = None
     reaccess_reason: str | None = None
 
 
