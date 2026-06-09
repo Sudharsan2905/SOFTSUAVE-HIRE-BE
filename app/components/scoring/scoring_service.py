@@ -9,6 +9,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.config import settings
 from app.core.logging import logger
 
+_MCQ_TYPES = ("mcq_single", "mcq_multiple", "mcq_multi")
+
 
 def _score_mcq(original: dict, given_answer: Any) -> tuple[int, bool]:
     """Return (score, is_correct) for MCQ answer."""
@@ -20,6 +22,36 @@ def _score_mcq(original: dict, given_answer: Any) -> tuple[int, bool]:
     given = [given_answer] if isinstance(given_answer, str) else (given_answer or [])
     is_correct = bool(given) and {str(g) for g in given} == correct_ids
     return (1 if is_correct else 0), is_correct
+
+
+def _collect_round(
+    rd: dict, originals: dict, essays: list[tuple[str, str, str, str]]
+) -> tuple[int, int, dict[str, dict]]:
+    """Process one round: score MCQs inline and append essays to ``essays``.
+
+    Returns (correct_mcq, total_questions, mcq_results).  The ``essays`` list is
+    mutated in place so the caller can batch all rounds' essays into one LLM call.
+    """
+    answers = rd.get("answers", {})
+    correct_mcq = 0
+    total = 0
+    mcq_results: dict[str, dict] = {}
+    for q in rd.get("questions", []):
+        qid = q.get("id", "")
+        qtype = q.get("type", "essay")
+        original = originals.get(qid, {})
+        answer = answers.get(qid)
+        total += 1
+        if qtype in _MCQ_TYPES:
+            score, is_correct = _score_mcq(original, answer)
+            correct_mcq += score
+            mcq_results[qid] = {"is_correct": is_correct}
+        else:
+            q_text = q.get("text", "") or original.get("question_text", "")
+            expected = original.get("correct_answer", "")
+            candidate_ans = answer if isinstance(answer, str) else ""
+            essays.append((qid, q_text, expected, candidate_ans))
+    return correct_mcq, total, mcq_results
 
 
 async def _score_essays_batch(
@@ -93,28 +125,8 @@ async def score_round(db: AsyncIOMotorDatabase, rd: dict) -> dict:
         docs = await db.questions.find({"_id": {"$in": qids}}).to_list(len(qids))
         originals = {str(d["_id"]): d for d in docs}
 
-    answers = rd.get("answers", {})
-    total_questions = 0
-    correct_mcq = 0
-    question_results: dict[str, dict] = {}
     essays: list[tuple[str, str, str, str]] = []
-
-    for q in rd.get("questions", []):
-        qid = q.get("id", "")
-        qtype = q.get("type", "essay")
-        original = originals.get(qid, {})
-        answer = answers.get(qid)
-        total_questions += 1
-
-        if qtype in ("mcq_single", "mcq_multiple", "mcq_multi"):
-            score, is_correct = _score_mcq(original, answer)
-            correct_mcq += score
-            question_results[qid] = {"is_correct": is_correct}
-        else:
-            q_text = q.get("text", "") or original.get("question_text", "")
-            expected = original.get("correct_answer", "")
-            candidate_ans = answer if isinstance(answer, str) else ""
-            essays.append((qid, q_text, expected, candidate_ans))
+    correct_mcq, total_questions, question_results = _collect_round(rd, originals, essays)
 
     correct_essay = 0
     if essays:
@@ -166,22 +178,9 @@ async def calculate_submission_score(db: AsyncIOMotorDatabase, sub: dict) -> dic
     essays: list[tuple[str, str, str, str]] = []
 
     for rd in sub.get("rounds_data", []):
-        answers = rd.get("answers", {})
-        for q in rd.get("questions", []):
-            qid = q.get("id", "")
-            qtype = q.get("type", "essay")
-            original = originals.get(qid, {})
-            answer = answers.get(qid)
-            total_questions += 1
-
-            if qtype in ("mcq_single", "mcq_multiple", "mcq_multi"):
-                score, _ = _score_mcq(original, answer)
-                correct_mcq += score
-            else:
-                q_text = q.get("text", "") or original.get("question_text", "")
-                expected = original.get("correct_answer", "")
-                candidate_ans = answer if isinstance(answer, str) else ""
-                essays.append((qid, q_text, expected, candidate_ans))
+        rd_mcq, rd_total, _ = _collect_round(rd, originals, essays)
+        correct_mcq += rd_mcq
+        total_questions += rd_total
 
     correct_essay = 0
     if essays:

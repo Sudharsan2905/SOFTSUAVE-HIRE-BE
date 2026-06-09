@@ -60,8 +60,6 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
     Raises:
         NotFoundException: If the share link is invalid.
     """
-    from app.common.exceptions import ValidationException
-
     # 1. Look up share document first — carries monitoring_overrides and assessment_id.
     share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
 
@@ -73,7 +71,7 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
         try:
             decoded = decode_sharelink(share_link)
             doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"]), "is_active": True})
-        except (ValidationException, Exception):
+        except Exception:
             # 3. Legacy: plain share_link field on the assessment document.
             doc = await db.assessments.find_one({"share_link": share_link, "is_active": True})
 
@@ -574,52 +572,31 @@ async def _upload_evidence_files(
         "audio_clip_s3_key": None,
     }
 
-    def _extract(data: tuple | bytes | None, fallback_ct: str) -> tuple[bytes, str] | None:
-        """Unpack a (bytes, content_type) tuple or a bare bytes value."""
+    async def _upload(map_key: str, fallback_ct: str, evidence_type: str) -> str | None:
+        """Upload one evidence file (if present) and return its S3 key, else None."""
+        data = file_bytes_map.get(map_key)
         if data is None:
             return None
-        if isinstance(data, tuple):
-            return data[0], data[1] or fallback_ct
-        return data, fallback_ct
+        file_bytes, content_type = (
+            (data[0], data[1] or fallback_ct) if isinstance(data, tuple) else (data, fallback_ct)
+        )
+        key = s3_service.make_evidence_key(
+            submission_id, round_number, malpractice_type, evidence_type, now.isoformat()
+        )
+        await s3_service.upload(file_bytes, key, content_type)
+        return key
 
     if effective_monitoring.get("screenshot_enabled", False):
-        screen_data = _extract(file_bytes_map.get("screen_image"), _DEFAULT_CONTENT_TYPE)
-        if screen_data:
-            screen_bytes, screen_ct = screen_data
-            key = s3_service.make_evidence_key(
-                submission_id, round_number, malpractice_type, "screen_image", now.isoformat()
-            )
-            await s3_service.upload(screen_bytes, key, screen_ct)
-            keys["screen_image_s3_key"] = key
+        keys["screen_image_s3_key"] = await _upload(
+            "screen_image", _DEFAULT_CONTENT_TYPE, "screen_image"
+        )
 
     if effective_monitoring.get("video_monitoring", False):
-        face_data = _extract(file_bytes_map.get("face_image"), _DEFAULT_CONTENT_TYPE)
-        if face_data:
-            face_bytes, face_ct = face_data
-            key = s3_service.make_evidence_key(
-                submission_id, round_number, malpractice_type, "face_image", now.isoformat()
-            )
-            await s3_service.upload(face_bytes, key, face_ct)
-            keys["face_image_s3_key"] = key
-
-        video_data = _extract(file_bytes_map.get("video_chunk"), "video/webm")
-        if video_data:
-            video_bytes, video_ct = video_data
-            key = s3_service.make_evidence_key(
-                submission_id, round_number, malpractice_type, "video_chunk", now.isoformat()
-            )
-            await s3_service.upload(video_bytes, key, video_ct)
-            keys["screen_video_s3_key"] = key
+        keys["face_image_s3_key"] = await _upload("face_image", _DEFAULT_CONTENT_TYPE, "face_image")
+        keys["screen_video_s3_key"] = await _upload("video_chunk", "video/webm", "video_chunk")
 
     if effective_monitoring.get("audio_monitoring", False):
-        audio_data = _extract(file_bytes_map.get("audio_clip"), "audio/webm")
-        if audio_data:
-            audio_bytes, audio_ct = audio_data
-            key = s3_service.make_evidence_key(
-                submission_id, round_number, malpractice_type, "audio_clip", now.isoformat()
-            )
-            await s3_service.upload(audio_bytes, key, audio_ct)
-            keys["audio_clip_s3_key"] = key
+        keys["audio_clip_s3_key"] = await _upload("audio_clip", "audio/webm", "audio_clip")
 
     return keys
 

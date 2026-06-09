@@ -379,9 +379,8 @@ def _split_outside_brackets(text: str) -> list[str]:
     for ch in text:
         if ch in "([{":
             stack.append(ch)
-        elif ch in ")]}":
-            if stack and stack[-1] == pairs[ch]:
-                stack.pop()
+        elif ch in ")]}" and stack and stack[-1] == pairs[ch]:
+            stack.pop()
         if ch == "," and not stack:
             result.append("".join(current).strip())
             current = []
@@ -425,6 +424,28 @@ def _classify_and_build(
     return question_type, options, None
 
 
+def _parse_question_row(row_dict: dict, cols: dict) -> dict | None:
+    """Build a question dict from one spreadsheet row, or ``None`` to skip it."""
+    question_text = row_dict.get(cols["question"])
+    if not question_text:
+        return None
+
+    options_raw = row_dict.get(cols["options"]) if cols["options"] else None
+    answer_raw = row_dict.get(cols["answer"]) if cols["answer"] else None
+    complexity_raw = str(row_dict.get(cols["complexity"], "")).lower() if cols["complexity"] else ""
+    complexity = complexity_raw if complexity_raw in ("low", "medium", "high") else "medium"
+
+    question_type, options, correct_answer = _classify_and_build(options_raw, answer_raw)
+
+    return {
+        "question_text": str(question_text).strip(),
+        "question_type": question_type,
+        "complexity": complexity,
+        "options": options,
+        "correct_answer": correct_answer,
+    }
+
+
 async def process_excel_import(
     db: AsyncIOMotorDatabase,
     category_id: str,
@@ -456,37 +477,21 @@ async def process_excel_import(
 
     # Use explicit column_map first, fall back to case-insensitive auto-detect
     col_map = column_map or {}
-    col_question = col_map.get("question") or _find_column(raw_headers, "question")
-    col_options = col_map.get("options") or _find_column(raw_headers, "options")
-    col_answer = col_map.get("answer") or _find_column(raw_headers, "answer")
-    col_complexity = col_map.get("complexity") or _find_column(raw_headers, "complexity")
+    cols = {
+        "question": col_map.get("question") or _find_column(raw_headers, "question"),
+        "options": col_map.get("options") or _find_column(raw_headers, "options"),
+        "answer": col_map.get("answer") or _find_column(raw_headers, "answer"),
+        "complexity": col_map.get("complexity") or _find_column(raw_headers, "complexity"),
+    }
 
-    if not col_question:
+    if not cols["question"]:
         return BulkOperationResponse(created=0, error="Missing 'Question' column")
 
     questions = []
     for row in ws.iter_rows(min_row=2, values_only=True):
         row_dict = dict(zip(raw_headers, row, strict=False))
-
-        question_text = row_dict.get(col_question)
-        if not question_text:
-            continue
-
-        options_raw = row_dict.get(col_options) if col_options else None
-        answer_raw = row_dict.get(col_answer) if col_answer else None
-        complexity_raw = str(row_dict.get(col_complexity, "")).lower() if col_complexity else ""
-        complexity = complexity_raw if complexity_raw in ("low", "medium", "high") else "medium"
-
-        question_type, options, correct_answer = _classify_and_build(options_raw, answer_raw)
-
-        questions.append(
-            {
-                "question_text": str(question_text).strip(),
-                "question_type": question_type,
-                "complexity": complexity,
-                "options": options,
-                "correct_answer": correct_answer,
-            }
-        )
+        parsed = _parse_question_row(row_dict, cols)
+        if parsed:
+            questions.append(parsed)
 
     return await bulk_create_questions(db, category_id, questions, user_id)

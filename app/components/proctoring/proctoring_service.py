@@ -25,37 +25,65 @@ async def upload_evidence(
         "audio_clip_s3_key": None,
     }
 
-    if effective_monitoring.get("screenshot_enabled") and screen_image:
-        key = f"evidence/{submission_id}/screen_{event_type}_{ts}.jpg"
+    async def _upload(
+        enabled: bool,
+        file_bytes: bytes | None,
+        prefix: str,
+        ext: str,
+        content_type: str,
+        result_key: str,
+        label: str,
+    ) -> None:
+        """Upload one evidence file when enabled, recording its key in ``result``."""
+        if not (enabled and file_bytes):
+            return
+        key = f"evidence/{submission_id}/{prefix}_{event_type}_{ts}.{ext}"
         try:
-            await s3_service.upload(screen_image, key, content_type="image/jpeg")
-            result["screen_image_s3_key"] = key
+            await s3_service.upload(file_bytes, key, content_type=content_type)
+            result[result_key] = key
         except Exception:
-            logger.warning("Failed to upload screen_image for submission %s", submission_id)
+            logger.warning("Failed to upload %s for submission %s", label, submission_id)
 
-    if effective_monitoring.get("video_monitoring") and face_image:
-        key = f"evidence/{submission_id}/face_{event_type}_{ts}.jpg"
-        try:
-            await s3_service.upload(face_image, key, content_type="image/jpeg")
-            result["face_image_s3_key"] = key
-        except Exception:
-            logger.warning("Failed to upload face_image for submission %s", submission_id)
+    screenshot_on = bool(effective_monitoring.get("screenshot_enabled"))
+    video_on = bool(effective_monitoring.get("video_monitoring"))
+    audio_on = bool(effective_monitoring.get("audio_monitoring"))
 
-    if effective_monitoring.get("video_monitoring") and video_chunk:
-        key = f"evidence/{submission_id}/clip_{event_type}_{ts}.webm"
-        try:
-            await s3_service.upload(video_chunk, key, content_type="video/webm")
-            result["screen_video_s3_key"] = key
-        except Exception:
-            logger.warning("Failed to upload video_chunk for submission %s", submission_id)
-
-    if effective_monitoring.get("audio_monitoring") and audio_clip:
-        key = f"evidence/{submission_id}/audio_{event_type}_{ts}.webm"
-        try:
-            await s3_service.upload(audio_clip, key, content_type="audio/webm")
-            result["audio_clip_s3_key"] = key
-        except Exception:
-            logger.warning("Failed to upload audio_clip for submission %s", submission_id)
+    await _upload(
+        screenshot_on,
+        screen_image,
+        "screen",
+        "jpg",
+        "image/jpeg",
+        "screen_image_s3_key",
+        "screen_image",
+    )
+    await _upload(
+        video_on,
+        face_image,
+        "face",
+        "jpg",
+        "image/jpeg",
+        "face_image_s3_key",
+        "face_image",
+    )
+    await _upload(
+        video_on,
+        video_chunk,
+        "clip",
+        "webm",
+        "video/webm",
+        "screen_video_s3_key",
+        "video_chunk",
+    )
+    await _upload(
+        audio_on,
+        audio_clip,
+        "audio",
+        "webm",
+        "audio/webm",
+        "audio_clip_s3_key",
+        "audio_clip",
+    )
 
     return result
 

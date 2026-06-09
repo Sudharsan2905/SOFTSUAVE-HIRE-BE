@@ -21,6 +21,8 @@ from app.common.constants.types import MongoDocument, PaginatedDocs
 from app.common.exceptions import NotFoundException
 from app.common.utils import safe_regex, serialize_doc, serialize_docs, utcnow
 
+_RESOURCE_NOT_FOUND = "Resource not found"
+
 
 class BaseRepository:
     """Thin async wrapper around a single Motor collection.
@@ -43,7 +45,7 @@ class BaseRepository:
         return serialize_doc(doc) if doc else None
 
     async def find_by_id_or_raise(
-        self, doc_id: str, not_found_msg: str = "Resource not found"
+        self, doc_id: str, not_found_msg: str = _RESOURCE_NOT_FOUND
     ) -> MongoDocument:
         """Return a serialised document, raising ``NotFoundException`` when absent."""
         doc = await self.find_by_id(doc_id)
@@ -56,7 +58,7 @@ class BaseRepository:
         return serialize_doc(doc) if doc else None
 
     async def find_one_or_raise(
-        self, query: dict, not_found_msg: str = "Resource not found"
+        self, query: dict, not_found_msg: str = _RESOURCE_NOT_FOUND
     ) -> MongoDocument:
         doc = await self.find_one(query)
         if doc is None:
@@ -133,7 +135,7 @@ class BaseRepository:
         await self._col.update_one({"_id": ObjectId(doc_id)}, {"$set": update_fields})
         return await self.find_by_id_or_raise(doc_id)
 
-    async def soft_delete(self, doc_id: str, not_found_msg: str = "Resource not found") -> None:
+    async def soft_delete(self, doc_id: str, not_found_msg: str = _RESOURCE_NOT_FOUND) -> None:
         """Set ``is_active=False`` on a document, treating 0 matches as not-found."""
         result = await self._col.update_one(
             {"_id": ObjectId(doc_id), "is_active": True},
@@ -142,7 +144,7 @@ class BaseRepository:
         if result.matched_count == 0:
             raise NotFoundException(not_found_msg)
 
-    async def hard_delete(self, doc_id: str, not_found_msg: str = "Resource not found") -> None:
+    async def hard_delete(self, doc_id: str, not_found_msg: str = _RESOURCE_NOT_FOUND) -> None:
         result = await self._col.delete_one({"_id": ObjectId(doc_id)})
         if result.deleted_count == 0:
             raise NotFoundException(not_found_msg)
