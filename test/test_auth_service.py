@@ -19,8 +19,8 @@ _ROOT_PASSWORD = "RootPass@123"  # NOSONAR
 class TestAdminLogin:
     async def test_success(self, db, super_admin):
         result = await auth_service.admin_login(db, "superadmin@example.com", "SuperPass@123")
-        assert result["access_token"]
-        assert result["user"]["email"] == "superadmin@example.com"
+        assert result.access_token
+        assert result.user.email == "superadmin@example.com"
 
     async def test_wrong_password(self, db, super_admin):
         with pytest.raises(UnauthorizedException):
@@ -39,8 +39,8 @@ class TestAdminLogin:
 class TestCandidateLogin:
     async def test_success(self, db, candidate_user):
         result = await auth_service.candidate_login(db, "candidate@example.com", "CandPass@123")
-        assert result["access_token"]
-        assert result["user"]["role"] == "candidate"
+        assert result.access_token
+        assert result.user.role == "candidate"
 
     async def test_wrong_password(self, db, candidate_user):
         with pytest.raises(UnauthorizedException):
@@ -61,8 +61,8 @@ class TestRegisterCandidate:
             "password": _NEW_PASSWORD,
         }
         result = await auth_service.register_candidate(db, data)
-        assert result["access_token"]
-        assert result["user"]["email"] == "new@example.com"
+        assert result.access_token
+        assert result.user.email == "new@example.com"
 
     async def test_duplicate_email(self, db, candidate_user):
         data = {
@@ -103,8 +103,8 @@ class TestTokens:
 class TestRefreshAccessToken:
     async def test_success(self, db, super_admin):
         tokens = await auth_service.admin_login(db, "superadmin@example.com", "SuperPass@123")
-        result = await auth_service.refresh_access_token(db, tokens["refresh_token"])
-        assert result["access_token"]
+        result = await auth_service.refresh_access_token(db, tokens.refresh_token)
+        assert result.access_token
 
     async def test_expired_token_raises(self, db, super_admin):
         tokens = await auth_service.admin_login(db, "superadmin@example.com", "SuperPass@123")
@@ -112,11 +112,11 @@ class TestRefreshAccessToken:
         from app.common.utils import hash_token
 
         await db.refresh_tokens.update_one(
-            {"token_hash": hash_token(tokens["refresh_token"])},
+            {"token_hash": hash_token(tokens.refresh_token)},
             {"$set": {"expires_at": utcnow() - timedelta(days=1)}},
         )
         with pytest.raises(UnauthorizedException):
-            await auth_service.refresh_access_token(db, tokens["refresh_token"])
+            await auth_service.refresh_access_token(db, tokens.refresh_token)
 
     async def test_invalid_token_raises(self, db):
         with pytest.raises(UnauthorizedException):
@@ -127,16 +127,16 @@ class TestRefreshAccessToken:
         # Delete the user to simulate a stale refresh token
         await db.users.delete_one({"_id": super_admin["_id"]})
         with pytest.raises(UnauthorizedException, match="User not found"):
-            await auth_service.refresh_access_token(db, tokens["refresh_token"])
+            await auth_service.refresh_access_token(db, tokens.refresh_token)
 
 
 class TestLogout:
     async def test_logout_removes_token(self, db, super_admin):
         tokens = await auth_service.admin_login(db, "superadmin@example.com", "SuperPass@123")
-        await auth_service.logout(db, tokens["refresh_token"])
+        await auth_service.logout(db, tokens.refresh_token)
         from app.common.utils import hash_token
 
-        doc = await db.refresh_tokens.find_one({"token_hash": hash_token(tokens["refresh_token"])})
+        doc = await db.refresh_tokens.find_one({"token_hash": hash_token(tokens.refresh_token)})
         assert doc is None
 
 
@@ -168,10 +168,10 @@ class TestGoogleAuth:
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
             result = await auth_service.google_auth(db, "valid_credential")
-        assert result["needs_registration"] is True
-        assert result["google_data"]["email"] == "google@example.com"
-        assert result["google_data"]["first_name"] == "Google"
-        assert result["google_data"]["google_id"] == "google123"
+        assert result.needs_registration is True
+        assert result.google_data.email == "google@example.com"
+        assert result.google_data.first_name == "Google"
+        assert result.google_data.google_id == "google123"
 
     async def test_existing_candidate_logs_in(self, db, candidate_user):
         mock_httpx = self._make_mock_httpx(
@@ -186,7 +186,7 @@ class TestGoogleAuth:
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
             result = await auth_service.google_auth(db, "cred")
-        assert result["access_token"]
+        assert result.access_token
 
     async def test_invalid_credential_raises(self, db):
         mock_httpx = self._make_mock_httpx(400, {})
@@ -231,7 +231,7 @@ class TestSetupSuperAdmin:
                 "password": _ROOT_PASSWORD,
             },
         )
-        assert result["access_token"]
+        assert result.access_token
 
     async def test_already_exists_raises(self, db, super_admin):
         with pytest.raises(ForbiddenException, match="already exists"):

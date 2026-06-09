@@ -5,6 +5,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
+from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
@@ -20,8 +21,6 @@ from app.common.utils import (
 )
 from app.core.logging import logger
 
-_ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
-_ALLOW_TO_INTERVIEW = "You may proceed to attend the interview."
 _MATCH = "$match"
 _LOOKUP = "$lookup"
 _UNWIND = "$unwind"
@@ -125,7 +124,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True}
     )
     if not doc:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
     return serialize_doc(doc)
 
 
@@ -140,7 +139,7 @@ async def update_assessment(
     if not await db.assessments.find_one(
         {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True}
     ):
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     update: dict = {"updated_at": utcnow()}
     if data.get("name"):
@@ -178,7 +177,7 @@ async def delete_assessment(
         {"$set": {"is_active": False, "updated_at": utcnow()}},
     )
     if result.matched_count == 0:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
     logger.info(f"Assessment soft-deleted: assessment_id={assessment_id}")
 
 
@@ -203,7 +202,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": "This link is not valid. Please check the URL or contact the administrator.",
+            "message": ErrorMessages.SHARE_LINK_NOT_VALID,
         }
 
     assessment_id = decoded["a"]
@@ -221,7 +220,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": "This link is not valid. Please check the URL or contact the administrator.",
+            "message": ErrorMessages.SHARE_LINK_NOT_VALID,
         }
 
     # New unified share link (nonce present) — always resolved via assessment_shares.
@@ -237,7 +236,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
                 "is_expirable": False,
                 "start_time": None,
                 "end_time": None,
-                "message": "This link has been revoked. Please contact the administrator.",
+                "message": ErrorMessages.SHARE_LINK_REVOKED_CONTACT,
             }
 
         start = share_doc.get("start_time")
@@ -257,7 +256,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
                     "is_expirable": True,
                     "start_time": start,
                     "end_time": end,
-                    "message": "This interview link will become active at the scheduled time.",
+                    "message": ErrorMessages.SHARE_LINK_NOT_ACTIVE,
                 }
             if now > end_dt:
                 return {
@@ -266,10 +265,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
                     "is_expirable": True,
                     "start_time": start,
                     "end_time": end,
-                    "message": (
-                        "This interview session is no longer available. "
-                        "Please contact the administrator."
-                    ),
+                    "message": ErrorMessages.SHARE_LINK_SESSION_UNAVAILABLE,
                 }
             return {
                 "can_allow": True,
@@ -277,7 +273,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
                 "is_expirable": True,
                 "start_time": start,
                 "end_time": end,
-                "message": _ALLOW_TO_INTERVIEW,
+                "message": ErrorMessages.ALLOW_TO_INTERVIEW,
             }
 
         return {
@@ -286,7 +282,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
             "is_expirable": False,
             "start_time": None,
             "end_time": None,
-            "message": _ALLOW_TO_INTERVIEW,
+            "message": ErrorMessages.ALLOW_TO_INTERVIEW,
         }
 
     return {
@@ -295,7 +291,7 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
         "is_expirable": False,
         "start_time": None,
         "end_time": None,
-        "message": _ALLOW_TO_INTERVIEW,
+        "message": ErrorMessages.ALLOW_TO_INTERVIEW,
     }
 
 
@@ -416,7 +412,7 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
-        raise NotFoundException("Submission not found")
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     candidate = await db.users.find_one({"_id": sub["candidate_id"]}, {"password_hash": 0})
     result = serialize_doc(sub)
@@ -478,7 +474,7 @@ async def admin_resume_interview(
     """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
-        raise NotFoundException("Submission not found")
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
     if sub.get("status") != SubmissionStatus.ON_HOLD:
         raise ForbiddenException(
             f"Cannot resume a submission with status '{sub.get('status')}'. "

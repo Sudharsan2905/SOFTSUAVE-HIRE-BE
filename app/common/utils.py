@@ -6,7 +6,10 @@ import re
 import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.common.schemas.pagination import PaginationMeta
 
 from bson import ObjectId
 
@@ -157,6 +160,13 @@ def build_pagination_meta(total: int, page: int, page_size: int) -> dict:
         "has_next": page * page_size < total,
         "has_prev": page > 1,
     }
+
+
+def build_pagination_model(total: int, page: int, page_size: int) -> "PaginationMeta":
+    """Return a typed ``PaginationMeta`` instance instead of a raw dict."""
+    from app.common.schemas.pagination import PaginationMeta
+
+    return PaginationMeta.build(total, page, page_size)
 
 
 async def list_paginated(

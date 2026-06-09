@@ -1,10 +1,16 @@
 from typing import Annotated
 
 from bson import ObjectId
-from fastapi import APIRouter, BackgroundTasks, Query, Request
+from fastapi import BackgroundTasks, Query, Request
 from fastapi.responses import Response
 
+from app.common.constants.messages import ErrorMessages, SuccessMessages
+from app.common.response_models.assessment_responses import (
+    AssessmentDetailResponse,
+    ShareLinkResponse,
+)
 from app.common.responses import ApiResponse, success_response
+from app.common.router import DefaultResponseRouter
 from app.components.assessment import assessment_service
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
@@ -17,10 +23,10 @@ from app.components.auth.auth_dependencies import AdminUser
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
-router = APIRouter(prefix="/workspaces/{workspace_id}/assessments")
+router = DefaultResponseRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
-@router.get("", response_model=ApiResponse)
+@router.get("")
 async def list_assessments(
     workspace_id: str,
     db: DB,
@@ -34,10 +40,10 @@ async def list_assessments(
     result = await assessment_service.get_assessments(
         db, workspace_id, search, sort_by, sort_order, page, page_size
     )
-    return success_response("Assessments retrieved", result)
+    return success_response(SuccessMessages.ASSESSMENTS_RETRIEVED, result)
 
 
-@router.post("", response_model=ApiResponse)
+@router.post("", response_model=ApiResponse[AssessmentDetailResponse])
 async def create_assessment(
     workspace_id: str,
     request: CreateAssessmentRequest,
@@ -47,10 +53,10 @@ async def create_assessment(
     result = await assessment_service.create_assessment(
         db, workspace_id, request.model_dump(), current_user["_id"]
     )
-    return success_response("Assessment created", result)
+    return success_response(SuccessMessages.ASSESSMENT_CREATED, result)
 
 
-@router.get("/{assessment_id}", response_model=ApiResponse)
+@router.get("/{assessment_id}", response_model=ApiResponse[AssessmentDetailResponse])
 async def get_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -58,10 +64,10 @@ async def get_assessment(
     current_user: AdminUser,
 ) -> dict:
     result = await assessment_service.get_assessment(db, workspace_id, assessment_id)
-    return success_response("Assessment retrieved", result)
+    return success_response(SuccessMessages.ASSESSMENT_RETRIEVED, result)
 
 
-@router.delete("/{assessment_id}", response_model=ApiResponse)
+@router.delete("/{assessment_id}")
 async def delete_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -69,10 +75,10 @@ async def delete_assessment(
     current_user: AdminUser,
 ) -> dict:
     await assessment_service.delete_assessment(db, workspace_id, assessment_id)
-    return success_response("Assessment deleted")
+    return success_response(SuccessMessages.ASSESSMENT_DELETED)
 
 
-@router.put("/{assessment_id}", response_model=ApiResponse)
+@router.put("/{assessment_id}", response_model=ApiResponse[AssessmentDetailResponse])
 async def update_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -83,13 +89,10 @@ async def update_assessment(
     result = await assessment_service.update_assessment(
         db, workspace_id, assessment_id, request.model_dump()
     )
-    return success_response("Assessment updated", result)
+    return success_response(SuccessMessages.ASSESSMENT_UPDATED, result)
 
 
-@router.get(
-    "/{assessment_id}/submissions",
-    response_model=ApiResponse,
-)
+@router.get("/{assessment_id}/submissions")
 async def list_submissions(
     workspace_id: str,
     assessment_id: str,
@@ -114,13 +117,10 @@ async def list_submissions(
         from_date=from_date,
         to_date=to_date,
     )
-    return success_response("Submissions retrieved", result)
+    return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, result)
 
 
-@router.get(
-    "/{assessment_id}/submissions/export",
-    response_model=ApiResponse,
-)
+@router.get("/{assessment_id}/submissions/export")
 async def export_submission_list(
     workspace_id: str,
     assessment_id: str,
@@ -134,13 +134,10 @@ async def export_submission_list(
     result = await assessment_service.export_submissions(
         db, assessment_id, status, search, min_percentage, max_percentage
     )
-    return success_response("Export data retrieved", result)
+    return success_response(SuccessMessages.EXPORT_READY, result)
 
 
-@router.get(
-    "/{assessment_id}/submissions/{submission_id}",
-    response_model=ApiResponse,
-)
+@router.get("/{assessment_id}/submissions/{submission_id}")
 async def get_submission(
     workspace_id: str,
     assessment_id: str,
@@ -149,13 +146,10 @@ async def get_submission(
     current_user: AdminUser,
 ) -> dict:
     result = await assessment_service.get_submission_detail(db, submission_id)
-    return success_response("Submission retrieved", result)
+    return success_response(SuccessMessages.SUBMISSION_RETRIEVED, result)
 
 
-@router.post(
-    "/{assessment_id}/submissions/{submission_id}/reaccess",
-    response_model=ApiResponse,
-)
+@router.post("/{assessment_id}/submissions/{submission_id}/reaccess")
 async def grant_reaccess(
     workspace_id: str,
     assessment_id: str,
@@ -167,10 +161,10 @@ async def grant_reaccess(
     await assessment_service.grant_reaccess(
         db, submission_id, current_user["_id"], request.reason, request.reason_category
     )
-    return success_response("Re-access granted successfully")
+    return success_response(SuccessMessages.REACCESS_GRANTED)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/terminate", response_model=ApiResponse)
+@router.post("/{assessment_id}/submissions/{submission_id}/terminate")
 async def terminate_submission(
     workspace_id: str,
     assessment_id: str,
@@ -189,10 +183,10 @@ async def terminate_submission(
     background_tasks.add_task(
         scoring_tasks.calculate_and_store_score, db, submission_id, current_round
     )
-    return success_response("Session terminated")
+    return success_response(SuccessMessages.SESSION_TERMINATED)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/complete", response_model=ApiResponse)
+@router.post("/{assessment_id}/submissions/{submission_id}/complete")
 async def force_complete_submission(
     workspace_id: str,
     assessment_id: str,
@@ -208,13 +202,10 @@ async def force_complete_submission(
     background_tasks.add_task(
         scoring_tasks.calculate_and_store_score, db, submission_id, current_round
     )
-    return success_response("Session completed")
+    return success_response(SuccessMessages.SESSION_COMPLETED)
 
 
-@router.post(
-    "/{assessment_id}/submissions/{submission_id}/resume",
-    response_model=ApiResponse,
-)
+@router.post("/{assessment_id}/submissions/{submission_id}/resume")
 async def resume_interview(
     workspace_id: str,
     assessment_id: str,
@@ -222,15 +213,12 @@ async def resume_interview(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    """Resume an ON_HOLD candidate session.
-
-    Pushes live WebSocket event if candidate is connected.
-    """
+    """Resume an ON_HOLD candidate session. Pushes a live WebSocket event if connected."""
     await assessment_service.admin_resume_interview(db, submission_id, current_user["_id"])
-    return success_response("Interview resumed successfully")
+    return success_response(SuccessMessages.INTERVIEW_RESUMED)
 
 
-@router.get("/{assessment_id}/submissions/{submission_id}/pdf")
+@router.get("/{assessment_id}/submissions/{submission_id}/pdf", response_model=None)
 async def download_submission_pdf(
     workspace_id: str,
     assessment_id: str,
@@ -257,7 +245,9 @@ async def download_submission_pdf(
     )
 
 
-@router.get("/{assessment_id}/candidates/{candidate_id}/submission", response_model=ApiResponse)
+@router.get(
+    "/{assessment_id}/candidates/{candidate_id}/submission",
+)
 async def get_candidate_submission(
     workspace_id: str,
     assessment_id: str,
@@ -271,10 +261,12 @@ async def get_candidate_submission(
     result = await version_service.get_candidate_submission(
         db, assessment_id, candidate_id, version
     )
-    return success_response("Candidate submission retrieved", result)
+    return success_response(SuccessMessages.SUBMISSION_RETRIEVED, result)
 
 
-@router.get("/{assessment_id}/candidates/{candidate_id}/versions", response_model=ApiResponse)
+@router.get(
+    "/{assessment_id}/candidates/{candidate_id}/versions",
+)
 async def get_candidate_versions(
     workspace_id: str,
     assessment_id: str,
@@ -293,12 +285,12 @@ async def get_candidate_versions(
     if not sub:
         from app.common.exceptions import NotFoundException
 
-        raise NotFoundException("Submission not found")
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
     versions = await version_service.get_versions_list(db, str(sub["_id"]))
-    return success_response("Versions retrieved", {"versions": versions})
+    return success_response(SuccessMessages.VERSIONS_RETRIEVED, {"versions": versions})
 
 
-@router.post("/{assessment_id}/shares", response_model=ApiResponse)
+@router.post("/{assessment_id}/shares", response_model=ApiResponse[ShareLinkResponse])
 async def create_share(
     workspace_id: str,
     assessment_id: str,
@@ -311,10 +303,10 @@ async def create_share(
     result = await share_service.create_share(
         db, assessment_id, workspace_id, request.model_dump(), current_user["_id"]
     )
-    return success_response("Share link created", result)
+    return success_response(SuccessMessages.SHARE_LINK_CREATED, result)
 
 
-@router.get("/{assessment_id}/shares", response_model=ApiResponse)
+@router.get("/{assessment_id}/shares")
 async def list_shares(
     workspace_id: str,
     assessment_id: str,
@@ -324,10 +316,10 @@ async def list_shares(
     from app.components.assessment import share_service
 
     result = await share_service.get_shares(db, assessment_id, workspace_id)
-    return success_response("Shares retrieved", result)
+    return success_response(SuccessMessages.SHARES_RETRIEVED, result)
 
 
-@router.delete("/{assessment_id}/shares/{share_id}", response_model=ApiResponse)
+@router.delete("/{assessment_id}/shares/{share_id}")
 async def delete_share(
     workspace_id: str,
     assessment_id: str,
@@ -338,14 +330,14 @@ async def delete_share(
     from app.components.assessment import share_service
 
     await share_service.delete_share(db, share_id, workspace_id)
-    return success_response("Share revoked")
+    return success_response(SuccessMessages.SHARE_REVOKED)
 
 
 # Public router — no workspace prefix, no auth required
-public_router = APIRouter()
+public_router = DefaultResponseRouter()
 
 
-@public_router.get("/assessments/share/validate", response_model=ApiResponse)
+@public_router.get("/assessments/share/validate")
 @limiter.limit("60/minute")
 async def validate_share_link(
     request: Request,
@@ -353,4 +345,4 @@ async def validate_share_link(
     db: DB,
 ) -> dict:
     result = await assessment_service.validate_sharelink(db, link)
-    return success_response("Share link validated", result)
+    return success_response(SuccessMessages.SHARE_LINK_VALIDATED, result)

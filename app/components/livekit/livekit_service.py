@@ -8,6 +8,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.exceptions import NotFoundException
+from app.common.response_models.livekit_responses import LiveKitTokenResponse
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -74,7 +75,7 @@ def _make_token(identity: str, room: str, can_publish: bool, can_subscribe: bool
 
 async def generate_candidate_token(
     db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str
-) -> dict:
+) -> LiveKitTokenResponse:
     """Generate a LiveKit token for a candidate to publish their screen track.
 
     Raises NotFoundException if the submission does not belong to the candidate.
@@ -87,10 +88,10 @@ async def generate_candidate_token(
         can_publish=True,
         can_subscribe=False,
     )
-    return {"token": token, "room": room, "workspace_id": workspace_id}
+    return LiveKitTokenResponse(token=token, room=room, workspace_id=workspace_id)
 
 
-def generate_admin_token(admin_id: str, workspace_id: str) -> dict:
+def generate_admin_token(admin_id: str, workspace_id: str) -> LiveKitTokenResponse:
     """Generate a LiveKit token for admin to subscribe to screen tracks."""
     room = f"workspace-{workspace_id}"
     token = _make_token(
@@ -99,4 +100,4 @@ def generate_admin_token(admin_id: str, workspace_id: str) -> dict:
         can_publish=False,
         can_subscribe=True,
     )
-    return {"token": token, "room": room}
+    return LiveKitTokenResponse(token=token, room=room)

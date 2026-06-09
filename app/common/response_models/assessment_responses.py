@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from app.common.constants.app_constants import AssessmentAccessibility
 
@@ -35,6 +36,14 @@ class AssessmentListItemResponse(BaseModel):
 class AssessmentDetailResponse(AssessmentListItemResponse):
     rounds: list[RoundConfigResponse] = []
     monitoring_config: MonitoringConfigResponse | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def derive_rounds_count(cls, v: Any) -> Any:
+        if isinstance(v, dict) and "rounds_count" not in v:
+            v = dict(v)
+            v["rounds_count"] = len(v.get("rounds") or [])
+        return v
 
 
 class ShareLinkResponse(BaseModel):

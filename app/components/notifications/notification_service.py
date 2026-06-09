@@ -4,12 +4,16 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import DESCENDING
 
 from app.common.exceptions import NotFoundException
+from app.common.response_models.notification_responses import (
+    MarkAllReadResponse,
+    NotificationResponse,
+    UnreadCountResponse,
+)
 from app.common.utils import (
     build_pagination_meta,
     generate_uuid,
     paginate_query,
     serialize_doc,
-    serialize_docs,
 )
 
 
@@ -33,21 +37,22 @@ async def list_notifications(
     unread_count = await db.notifications.count_documents({**query, "is_read": False})
 
     return {
-        "notifications": serialize_docs(docs),
+        "notifications": [NotificationResponse.model_validate(serialize_doc(d)) for d in docs],
         "pagination": build_pagination_meta(total, page, page_size),
         "unread_count": unread_count,
     }
 
 
-async def get_unread_count(db: AsyncIOMotorDatabase, user_id: str) -> int:
-    return await db.notifications.count_documents({"user_id": user_id, "is_read": False})
+async def get_unread_count(db: AsyncIOMotorDatabase, user_id: str) -> UnreadCountResponse:
+    count = await db.notifications.count_documents({"user_id": user_id, "is_read": False})
+    return UnreadCountResponse(count=count)
 
 
 async def mark_as_read(
     db: AsyncIOMotorDatabase,
     notification_id: str,
     user_id: str,
-) -> dict:
+) -> NotificationResponse:
     doc = await db.notifications.find_one_and_update(
         {"_id": notification_id, "user_id": user_id},
         {"$set": {"is_read": True, "read_at": datetime.now(UTC)}},
@@ -55,15 +60,15 @@ async def mark_as_read(
     )
     if not doc:
         raise NotFoundException("Notification not found")
-    return serialize_doc(doc)
+    return NotificationResponse.model_validate(serialize_doc(doc))
 
 
-async def mark_all_as_read(db: AsyncIOMotorDatabase, user_id: str) -> dict:
+async def mark_all_as_read(db: AsyncIOMotorDatabase, user_id: str) -> MarkAllReadResponse:
     result = await db.notifications.update_many(
         {"user_id": user_id, "is_read": False},
         {"$set": {"is_read": True, "read_at": datetime.now(UTC)}},
     )
-    return {"modified": result.modified_count}
+    return MarkAllReadResponse(modified=result.modified_count)
 
 
 async def create_notification(
@@ -73,7 +78,7 @@ async def create_notification(
     title: str,
     message: str,
     link: str | None = None,
-) -> dict:
+) -> NotificationResponse:
     doc = {
         "_id": generate_uuid(),
         "user_id": user_id,
@@ -86,7 +91,7 @@ async def create_notification(
         "created_at": datetime.now(UTC),
     }
     await db.notifications.insert_one(doc)
-    return serialize_doc(doc)
+    return NotificationResponse.model_validate(serialize_doc(doc))
 
 
 async def delete_notification(

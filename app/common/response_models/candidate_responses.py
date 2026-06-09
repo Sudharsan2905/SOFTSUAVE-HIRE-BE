@@ -39,3 +39,35 @@ class CandidateRoundSummaryResponse(BaseModel):
     percentage: float
     started_at: datetime | None = None
     completed_at: datetime | None = None
+
+
+# ── Candidate session response models ─────────────────────────────────────────
+
+
+class AnswerSavedResponse(BaseModel):
+    saved: bool
+
+
+class MalpracticeRecordResponse(BaseModel):
+    malpractice_count: int
+    is_terminal: bool
+    event_index: int | None = None
+    current_round: int
+
+
+class SessionStateResponse(BaseModel):
+    status: str
+    remaining_seconds: int | None = None
+    current_question_idx: int
+    current_round: int
+
+
+class SubmissionStatusResponse(BaseModel):
+    submission_id: str
+    status: str
+    assessment_id: str
+    candidate_id: str
+    current_round: int
+    completed_at: str | None = None
+    paused_at: str | None = None
+    malpractice_count: int

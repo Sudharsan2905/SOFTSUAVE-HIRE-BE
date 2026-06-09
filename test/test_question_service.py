@@ -11,8 +11,8 @@ class TestCreateCategory:
         result = await question_service.create_category(
             db, {"name": "JavaScript", "description": "JS questions"}, str(super_admin["_id"])
         )
-        assert result["name"] == "JavaScript"
-        assert result["question_count"] == 0
+        assert result.name == "JavaScript"
+        assert result.question_count == 0
 
     async def test_duplicate_name_raises(self, db, category, super_admin):
         with pytest.raises(ConflictException):
@@ -38,7 +38,7 @@ class TestCreateQuestion:
         result = await question_service.create_question(
             db, str(category["_id"]), data, str(super_admin["_id"])
         )
-        assert result["question_text"] == data["question_text"]
+        assert result.question_text == data["question_text"]
 
     async def test_mcq_no_correct_option_raises(self, db, category, super_admin):
         data = {
@@ -89,7 +89,7 @@ class TestCreateQuestion:
         result = await question_service.create_question(
             db, str(category["_id"]), data, str(super_admin["_id"])
         )
-        assert result["question_type"] == "essay"
+        assert result.question_type == "essay"
 
     async def test_nonexistent_category_raises(self, db, super_admin):
         from bson import ObjectId
@@ -134,7 +134,7 @@ class TestBulkCreateQuestions:
         result = await question_service.bulk_create_questions(
             db, str(category["_id"]), questions, str(super_admin["_id"])
         )
-        assert result["created"] == 3
+        assert result.created == 3
         updated_cat = await db.question_categories.find_one({"_id": category["_id"]})
         assert updated_cat["question_count"] == 3
 
@@ -163,7 +163,7 @@ class TestUpdateCategory:
         result = await question_service.update_category(
             db, str(category["_id"]), {"name": "Updated Python", "description": "New desc"}
         )
-        assert result["name"] == "Updated Python"
+        assert result.name == "Updated Python"
 
     async def test_not_found_raises(self, db):
         from bson import ObjectId
@@ -219,7 +219,7 @@ class TestUpdateQuestion:
                 ],
             },
         )
-        assert result["question_text"] == "Updated text"
+        assert result.question_text == "Updated text"
 
     async def test_not_found_raises(self, db):
         from bson import ObjectId
@@ -248,7 +248,7 @@ class TestBulkCreateEmpty:
         result = await question_service.bulk_create_questions(
             db, str(category["_id"]), [], str(super_admin["_id"])
         )
-        assert result["created"] == 0
+        assert result.created == 0
 
     async def test_nonexistent_category_raises(self, db, super_admin):
         from bson import ObjectId
@@ -294,7 +294,7 @@ class TestAiGenerateQuestions:
                 "mcq_single",
                 str(super_admin["_id"]),
             )
-        assert "created" in result
+        assert result.created >= 0
 
     async def test_empty_content_returns_error(self, db, category, super_admin):
         from unittest.mock import MagicMock, patch
@@ -310,7 +310,7 @@ class TestAiGenerateQuestions:
             result = await question_service.ai_generate_questions(
                 db, str(category["_id"]), "Python", 1, "low", "essay", str(super_admin["_id"])
             )
-        assert result.get("error")
+        assert result.error
 
     async def test_exception_returns_error(self, db, category, super_admin):
         from unittest.mock import MagicMock, patch
@@ -322,7 +322,7 @@ class TestAiGenerateQuestions:
             result = await question_service.ai_generate_questions(
                 db, str(category["_id"]), "Topic", 1, "low", "essay", str(super_admin["_id"])
             )
-        assert result.get("error")
+        assert result.error
 
 
 class TestInternalHelpers:
@@ -417,7 +417,7 @@ class TestProcessExcelImport:
         result = await question_service.process_excel_import(
             db, str(category["_id"]), buf.getvalue(), str(super_admin["_id"])
         )
-        assert result["created"] == 2
+        assert result.created == 2
 
     async def test_missing_question_column(self, db, category, super_admin):
         import io
@@ -435,7 +435,7 @@ class TestProcessExcelImport:
         result = await question_service.process_excel_import(
             db, str(category["_id"]), buf.getvalue(), str(super_admin["_id"])
         )
-        assert result.get("error")
+        assert result.error
 
     async def test_with_explicit_column_map(self, db, category, super_admin):
         import io
@@ -457,7 +457,7 @@ class TestProcessExcelImport:
             str(super_admin["_id"]),
             column_map={"question": "Q", "options": "Opts", "answer": "Ans", "complexity": "Diff"},
         )
-        assert result["created"] == 1
+        assert result.created == 1
 
     async def test_skips_empty_rows(self, db, category, super_admin):
         import io
@@ -475,4 +475,4 @@ class TestProcessExcelImport:
         result = await question_service.process_excel_import(
             db, str(category["_id"]), buf.getvalue(), str(super_admin["_id"])
         )
-        assert result["created"] == 0
+        assert result.created == 0

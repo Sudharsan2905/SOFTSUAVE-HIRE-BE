@@ -207,7 +207,7 @@ class TestSubmitAnswer:
             "q_id_001",
             "Option B",
         )
-        assert result["saved"] is True
+        assert result.saved is True
         updated = await db.assessment_submissions.find_one({"_id": active_submission["_id"]})
         assert updated["rounds_data"][0]["answers"].get("q_id_001") == "Option B"
 
@@ -432,8 +432,8 @@ class TestFlagMalpractice:
         result = await candidate_service.flag_malpractice(
             db, str(active_submission["_id"]), str(candidate_user["_id"]), "tab_switch"
         )
-        assert result["malpractice_count"] == 1
-        assert result["is_terminal"] is False
+        assert result.malpractice_count == 1
+        assert result.is_terminal is False
         updated = await db.assessment_submissions.find_one({"_id": active_submission["_id"]})
         assert updated["status"] == SubmissionStatus.IN_PROGRESS
 
@@ -447,7 +447,7 @@ class TestFlagMalpractice:
         result = await candidate_service.flag_malpractice(
             db, str(active_submission["_id"]), str(candidate_user["_id"]), "tab_switch"
         )
-        assert result["is_terminal"] is True
+        assert result.is_terminal is True
         updated = await db.assessment_submissions.find_one({"_id": active_submission["_id"]})
         assert updated["status"] == SubmissionStatus.MALPRACTICE
 
@@ -499,8 +499,8 @@ class TestFlagMalpractice:
             db, str(res.inserted_id), str(candidate_user["_id"]), "face_absence"
         )
         # Should be silently skipped — count unchanged
-        assert result["malpractice_count"] == 0
-        assert result["is_terminal"] is False
+        assert result.malpractice_count == 0
+        assert result.is_terminal is False
         updated = await db.assessment_submissions.find_one({"_id": res.inserted_id})
         assert updated["status"] == SubmissionStatus.IN_PROGRESS
 
@@ -552,7 +552,7 @@ class TestFlagMalpractice:
             db, str(res.inserted_id), str(candidate_user["_id"]), "tab_switch"
         )
         # Screen events always go through regardless of tab_monitoring
-        assert result["malpractice_count"] == 1
+        assert result.malpractice_count == 1
 
     async def test_not_found_raises(self, db, candidate_user):
         with pytest.raises(NotFoundException):
@@ -587,8 +587,8 @@ class TestGetSubmissionStatus:
             db, "test-link-001", str(candidate_user["_id"])
         )
         assert result is not None
-        assert result["status"] == SubmissionStatus.IN_PROGRESS
-        assert "submission_id" in result
+        assert result.status == str(SubmissionStatus.IN_PROGRESS)
+        assert result.submission_id is not None
 
     async def test_invalid_share_link_raises(self, db, candidate_user):
         with pytest.raises(NotFoundException):
@@ -602,10 +602,10 @@ class TestGetSessionState:
         result = await candidate_service.get_session_state(
             db, str(active_submission["_id"]), str(candidate_user["_id"])
         )
-        assert "status" in result
-        assert "current_round" in result
-        assert "remaining_seconds" in result
-        assert "current_question_idx" in result
+        assert result.status is not None
+        assert result.current_round is not None
+        assert result.remaining_seconds is None or isinstance(result.remaining_seconds, int)
+        assert result.current_question_idx is not None
 
     async def test_not_found_raises(self, db, candidate_user):
         with pytest.raises(NotFoundException):

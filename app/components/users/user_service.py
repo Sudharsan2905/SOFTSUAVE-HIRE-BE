@@ -2,6 +2,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import ADMIN_ROLES, CandidateType, UserRole
+from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import (
     ConflictException,
     ForbiddenException,
@@ -9,6 +10,7 @@ from app.common.exceptions import (
     UnauthorizedException,
     ValidationException,
 )
+from app.common.response_models.user_responses import AdminUserResponse, CandidateProfileResponse
 from app.common.utils import (
     build_pagination_meta,
     paginate_query,
@@ -20,12 +22,39 @@ from app.common.utils import (
 from app.components.auth.auth_service import hash_password, verify_password
 from app.core.logging import logger
 
-_ERR_USER_NOT_FOUND = "User not found"
 _REGEX = "$regex"
 _OPTIONS = "$options"
 
+# ---------------------------------------------------------------------------
+# Inclusion-based field projections — only fetch what the response models need.
+# Never use exclusion projections ({field: 0}) for sensitive fields; use these
+# allowlists instead so new fields are not accidentally exposed.
+# ---------------------------------------------------------------------------
+_ADMIN_USER_PROJECTION = {
+    "first_name": 1,
+    "last_name": 1,
+    "email": 1,
+    "role": 1,
+    "is_active": 1,
+    "workspace_ids": 1,
+    "default_workspace_id": 1,
+    "created_at": 1,
+}
+_CANDIDATE_PROFILE_PROJECTION = {
+    "first_name": 1,
+    "last_name": 1,
+    "email": 1,
+    "phone": 1,
+    "gender": 1,
+    "dob": 1,
+    "institution": 1,
+    "location": 1,
+    "candidate_type": 1,
+    "created_at": 1,
+}
 
-async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
+
+async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> AdminUserResponse:
     """Create an admin or super_admin user and sync their workspace memberships.
 
     Super admins do not require workspace assignment.
@@ -35,8 +64,8 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
         ConflictException: If the email is already registered.
         ForbiddenException: If the role is not super_admin and no valid workspace is provided.
     """
-    if await db.users.find_one({"email": data["email"]}):
-        raise ConflictException("Email already registered")
+    if await db.users.find_one({"email": data["email"]}, {"_id": 1}):
+        raise ConflictException(ErrorMessages.EMAIL_TAKEN)
 
     role = data.get("role", UserRole.ADMIN)
     workspace_ids = data.get("workspace_ids") or []
@@ -44,7 +73,7 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
 
     if role != UserRole.SUPER_ADMIN:
         for wid in workspace_ids:
-            ws = await db.workspaces.find_one({"_id": ObjectId(wid)})
+            ws = await db.workspaces.find_one({"_id": ObjectId(wid)}, {"_id": 1})
             if ws:
                 workspaces.append(ws)
         if not workspaces:
@@ -68,33 +97,36 @@ async def create_admin_user(db: AsyncIOMotorDatabase, data: dict) -> dict:
         "updated_at": now,
     }
     result = await db.users.insert_one(doc)
-    user_id = result.inserted_id
-    doc["_id"] = user_id
-    doc.pop("password_hash")
+    doc["_id"] = result.inserted_id
     logger.info(f"Admin user created: {data['email']} role={role}")
-    return serialize_doc(doc)
+    # Re-fetch using the allowlist projection so we never return internal fields
+    created = await db.users.find_one({"_id": doc["_id"]}, _ADMIN_USER_PROJECTION)
+    return AdminUserResponse.model_validate(serialize_doc(created))
 
 
-async def create_candidate_from_admin(db: AsyncIOMotorDatabase, data: dict) -> dict:
+async def create_candidate_from_admin(
+    db: AsyncIOMotorDatabase, data: dict
+) -> CandidateProfileResponse:
     """Create a candidate account from an admin action (e.g. Schedule Wizard).
 
     Generates a secure random password so the candidate can later log in.
-    Returns the created user document (without the password hash).
+    Returns only the public candidate profile fields.
 
     Raises:
-        ConflictException: If the email is already registered.
+        ConflictException: If the email is already registered as a non-candidate.
     """
     import secrets as _secrets
     import string as _string
 
     email = data["email"]
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"email": email}, {"_id": 1}):
         # Return the existing candidate instead of erroring — admin may be re-scheduling
-        existing = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
+        existing = await db.users.find_one(
+            {"email": email, "role": UserRole.CANDIDATE},
+            _CANDIDATE_PROFILE_PROJECTION,
+        )
         if existing:
-            return serialize_doc(
-                await db.users.find_one({"_id": existing["_id"]}, {"password_hash": 0})
-            )
+            return CandidateProfileResponse.model_validate(serialize_doc(existing))
         raise ConflictException("An account with this email already exists but is not a candidate.")
 
     # Auto-generate a 16-char password — candidate must reset via email in production
@@ -123,22 +155,21 @@ async def create_candidate_from_admin(db: AsyncIOMotorDatabase, data: dict) -> d
         "updated_at": now,
     }
     result = await db.users.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    doc.pop("password_hash")
     logger.info("Admin-created candidate: email=%s", email)
-    return serialize_doc(doc)
+    created = await db.users.find_one({"_id": result.inserted_id}, _CANDIDATE_PROFILE_PROJECTION)
+    return CandidateProfileResponse.model_validate(serialize_doc(created))
 
 
 async def search_candidates_by_email(
     db: AsyncIOMotorDatabase,
     email: str,
-) -> dict | None:
+) -> CandidateProfileResponse | None:
     """Find a single candidate by exact email match. Returns None if not found."""
     doc = await db.users.find_one(
         {"email": email, "role": UserRole.CANDIDATE},
-        {"password_hash": 0},
+        _CANDIDATE_PROFILE_PROJECTION,
     )
-    return serialize_doc(doc) if doc else None
+    return CandidateProfileResponse.model_validate(serialize_doc(doc)) if doc else None
 
 
 async def list_users(
@@ -146,27 +177,27 @@ async def list_users(
     current_user_id: str,
     role_filter: str | None = None,
     is_active_filter: bool | None = None,
-) -> list:
+) -> list[AdminUserResponse]:
     """Return all admin/super_admin users, optionally filtered by role or active status."""
     query: dict = {"role": {"$in": ADMIN_ROLES}, "_id": {"$ne": ObjectId(current_user_id)}}
     if role_filter:
         query["role"] = role_filter
     if is_active_filter is not None:
         query["is_active"] = is_active_filter
-    docs = await db.users.find(query, {"password_hash": 0}).to_list(500)
-    return serialize_docs(docs)
+    docs = await db.users.find(query, _ADMIN_USER_PROJECTION).to_list(500)
+    return [AdminUserResponse.model_validate(d) for d in serialize_docs(docs)]
 
 
-async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> dict:
-    """Fetch a single user by ID, excluding the password hash.
+async def get_user(db: AsyncIOMotorDatabase, user_id: str) -> AdminUserResponse:
+    """Fetch a single admin/super_admin user by ID.
 
     Raises:
         NotFoundException: If the user does not exist.
     """
-    doc = await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0})
+    doc = await db.users.find_one({"_id": ObjectId(user_id)}, _ADMIN_USER_PROJECTION)
     if not doc:
-        raise NotFoundException(_ERR_USER_NOT_FOUND)
-    return serialize_doc(doc)
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
+    return AdminUserResponse.model_validate(serialize_doc(doc))
 
 
 async def list_candidates(
@@ -194,33 +225,37 @@ async def list_candidates(
     skip, limit = paginate_query(page, page_size)
     total = await db.users.count_documents(query)
     docs = (
-        await db.users.find(query, {"password_hash": 0})
+        await db.users.find(query, _CANDIDATE_PROFILE_PROJECTION)
         .sort("created_at", -1)
         .skip(skip)
         .limit(limit)
         .to_list(limit)
     )
+    candidates = [CandidateProfileResponse.model_validate(d) for d in serialize_docs(docs)]
     return {
-        "candidates": serialize_docs(docs),
+        "candidates": [c.model_dump() for c in candidates],
         "pagination": build_pagination_meta(total, page, page_size),
     }
 
 
-async def get_candidate(db: AsyncIOMotorDatabase, user_id: str) -> dict:
+async def get_candidate(db: AsyncIOMotorDatabase, user_id: str) -> CandidateProfileResponse:
     """Fetch a single candidate by ID.
 
     Raises:
         NotFoundException: If the user does not exist or is not a candidate.
     """
     doc = await db.users.find_one(
-        {"_id": ObjectId(user_id), "role": UserRole.CANDIDATE}, {"password_hash": 0}
+        {"_id": ObjectId(user_id), "role": UserRole.CANDIDATE},
+        _CANDIDATE_PROFILE_PROJECTION,
     )
     if not doc:
-        raise NotFoundException("Candidate not found")
-    return serialize_doc(doc)
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
+    return CandidateProfileResponse.model_validate(serialize_doc(doc))
 
 
-async def update_candidate(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
+async def update_candidate(
+    db: AsyncIOMotorDatabase, user_id: str, data: dict
+) -> CandidateProfileResponse:
     """Super admin or admin update of a candidate's profile and candidate_data.
 
     Role and admin_data cannot be changed through this endpoint.
@@ -231,7 +266,7 @@ async def update_candidate(db: AsyncIOMotorDatabase, user_id: str, data: dict) -
     """
     user = await db.users.find_one({"_id": ObjectId(user_id), "role": UserRole.CANDIDATE})
     if not user:
-        raise NotFoundException("Candidate not found")
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
 
     _validate_super_admin_constraints(user, data)
     update: dict = {}
@@ -262,7 +297,8 @@ async def update_candidate(db: AsyncIOMotorDatabase, user_id: str, data: dict) -
         update["updated_at"] = utcnow()
         await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
 
-    return serialize_doc(await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0}))
+    refreshed = await db.users.find_one({"_id": ObjectId(user_id)}, _CANDIDATE_PROFILE_PROJECTION)
+    return CandidateProfileResponse.model_validate(serialize_doc(refreshed))
 
 
 def _validate_super_admin_constraints(user: dict, data: dict) -> None:
@@ -282,7 +318,7 @@ async def _apply_email_update(
     if new_email == user["email"]:
         return
     if await db.users.find_one({"email": new_email, "_id": {"$ne": ObjectId(user_id)}}):
-        raise ConflictException("Email already in use")
+        raise ConflictException(ErrorMessages.EMAIL_TAKEN)
     update["email"] = new_email
 
 
@@ -300,7 +336,7 @@ async def _sync_workspace_memberships(
         update["default_workspace_id"] = valid_ids[0] if valid_ids else None
 
 
-async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
+async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> AdminUserResponse:
     """Super admin update of any user's profile, status, role, email, password, or workspaces.
 
     Workspace membership in the workspaces collection is kept in sync automatically.
@@ -313,7 +349,7 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
     """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
-        raise NotFoundException(_ERR_USER_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
 
     _validate_super_admin_constraints(user, data)
     update: dict = {}
@@ -364,7 +400,8 @@ async def update_user(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dic
         update["updated_at"] = utcnow()
         await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": update})
 
-    return serialize_doc(await db.users.find_one({"_id": ObjectId(user_id)}, {"password_hash": 0}))
+    refreshed = await db.users.find_one({"_id": ObjectId(user_id)}, _ADMIN_USER_PROJECTION)
+    return AdminUserResponse.model_validate(serialize_doc(refreshed))
 
 
 def _apply_password_change(user: dict, data: dict, update: dict) -> None:
@@ -412,7 +449,7 @@ async def update_me(db: AsyncIOMotorDatabase, user_id: str, data: dict) -> dict:
     """
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
-        raise NotFoundException(_ERR_USER_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
 
     update: dict = {}
 

@@ -4,7 +4,13 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType
+from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ConflictException, NotFoundException, ValidationException
+from app.common.response_models.question_responses import (
+    BulkOperationResponse,
+    CategoryResponse,
+    QuestionResponse,
+)
 from app.common.utils import (
     build_pagination_meta,
     list_paginated,
@@ -15,6 +21,9 @@ from app.common.utils import (
     utcnow,
 )
 from app.core.logging import logger
+
+_REGEX = "$regex"
+_OPTIONS = "$options"
 
 
 def _validate_question_options(data: dict) -> None:
@@ -35,14 +44,14 @@ def _validate_question_options(data: dict) -> None:
         raise ValidationException("Essay questions must not have options")
 
 
-async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) -> dict:
+async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) -> CategoryResponse:
     """Create a new question category (case-insensitive duplicate check).
 
     Raises:
         ConflictException: If a category with the same name already exists.
     """
     if await db.question_categories.find_one(
-        {"name": {"$regex": f"^{safe_regex(data['name'])}$", "$options": "i"}}
+        {"name": {_REGEX: f"^{safe_regex(data['name'])}$", _OPTIONS: "i"}}
     ):
         raise ConflictException(f"Category '{data['name']}' already exists")
 
@@ -57,7 +66,7 @@ async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) ->
     }
     result = await db.question_categories.insert_one(doc)
     doc["_id"] = result.inserted_id
-    return serialize_doc(doc)
+    return CategoryResponse.model_validate(serialize_doc(doc))
 
 
 async def get_categories(
@@ -72,7 +81,7 @@ async def get_categories(
     skip, limit = paginate_query(page, page_size)
     query = {}
     if search:
-        query["name"] = {"$regex": safe_regex(search), "$options": "i"}
+        query["name"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
 
     sort_dir = 1 if sort_order == "asc" else -1
     total, docs = await list_paginated(
@@ -90,18 +99,21 @@ async def get_categories(
     }
 
 
-async def update_category(db: AsyncIOMotorDatabase, category_id: str, data: dict) -> dict:
+async def update_category(
+    db: AsyncIOMotorDatabase, category_id: str, data: dict
+) -> CategoryResponse:
     """Update a category's name or description.
 
     Raises:
         NotFoundException: If the category does not exist.
     """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
-        raise NotFoundException("Category not found")
+        raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
     update = {k: v for k, v in data.items() if v is not None}
     update["updated_at"] = utcnow()
     await db.question_categories.update_one({"_id": ObjectId(category_id)}, {"$set": update})
-    return serialize_doc(await db.question_categories.find_one({"_id": ObjectId(category_id)}))
+    updated = await db.question_categories.find_one({"_id": ObjectId(category_id)})
+    return CategoryResponse.model_validate(serialize_doc(updated))
 
 
 async def delete_category(db: AsyncIOMotorDatabase, category_id: str) -> None:
@@ -111,7 +123,7 @@ async def delete_category(db: AsyncIOMotorDatabase, category_id: str) -> None:
         NotFoundException: If the category does not exist.
     """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
-        raise NotFoundException("Category not found")
+        raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
     await db.question_categories.delete_one({"_id": ObjectId(category_id)})
     await db.questions.delete_many({"category_id": ObjectId(category_id)})
 
@@ -131,7 +143,7 @@ async def get_questions(
     skip, limit = paginate_query(page, page_size)
     query: dict = {"category_id": ObjectId(category_id)}
     if search:
-        query["question_text"] = {"$regex": safe_regex(search), "$options": "i"}
+        query["question_text"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
     if complexity:
         query["complexity"] = complexity
     if question_type:
@@ -155,7 +167,7 @@ async def get_questions(
 
 async def create_question(
     db: AsyncIOMotorDatabase, category_id: str, data: dict, user_id: str
-) -> dict:
+) -> QuestionResponse:
     """Create a single question in a category, enforcing MCQ/essay option rules.
 
     Raises:
@@ -163,7 +175,7 @@ async def create_question(
         ValidationException: If MCQ has no correct option, or essay has options.
     """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
-        raise NotFoundException("Category not found")
+        raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
 
     _validate_question_options(data)
     now = utcnow()
@@ -187,12 +199,12 @@ async def create_question(
     await db.question_categories.update_one(
         {"_id": ObjectId(category_id)}, {"$inc": {"question_count": 1}}
     )
-    return serialize_doc(doc)
+    return QuestionResponse.model_validate(serialize_doc(doc))
 
 
 async def bulk_create_questions(
     db: AsyncIOMotorDatabase, category_id: str, questions: list, user_id: str
-) -> dict:
+) -> BulkOperationResponse:
     """Insert multiple questions at once and increment the category's question_count.
 
     Returns:
@@ -202,7 +214,7 @@ async def bulk_create_questions(
         NotFoundException: If the category does not exist.
     """
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
-        raise NotFoundException("Category not found")
+        raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
 
     now = utcnow()
     docs = []
@@ -229,11 +241,13 @@ async def bulk_create_questions(
         await db.question_categories.update_one(
             {"_id": ObjectId(category_id)}, {"$inc": {"question_count": len(docs)}}
         )
-        return {"created": len(result.inserted_ids)}
-    return {"created": 0}
+        return BulkOperationResponse(created=len(result.inserted_ids))
+    return BulkOperationResponse(created=0)
 
 
-async def update_question(db: AsyncIOMotorDatabase, question_id: str, data: dict) -> dict:
+async def update_question(
+    db: AsyncIOMotorDatabase, question_id: str, data: dict
+) -> QuestionResponse:
     """Update a question's fields, re-validating MCQ/essay option rules.
 
     Raises:
@@ -250,7 +264,8 @@ async def update_question(db: AsyncIOMotorDatabase, question_id: str, data: dict
         ]
     update["updated_at"] = utcnow()
     await db.questions.update_one({"_id": ObjectId(question_id)}, {"$set": update})
-    return serialize_doc(await db.questions.find_one({"_id": ObjectId(question_id)}))
+    updated = await db.questions.find_one({"_id": ObjectId(question_id)})
+    return QuestionResponse.model_validate(serialize_doc(updated))
 
 
 async def delete_question(db: AsyncIOMotorDatabase, question_id: str) -> None:
@@ -261,7 +276,7 @@ async def delete_question(db: AsyncIOMotorDatabase, question_id: str) -> None:
     """
     q = await db.questions.find_one({"_id": ObjectId(question_id)})
     if not q:
-        raise NotFoundException("Question not found")
+        raise NotFoundException(ErrorMessages.QUESTION_NOT_FOUND)
     await db.questions.delete_one({"_id": ObjectId(question_id)})
     await db.question_categories.update_one(
         {"_id": q["category_id"]}, {"$inc": {"question_count": -1}}
@@ -276,7 +291,7 @@ async def ai_generate_questions(
     complexity: str,
     question_type: str,
     user_id: str,
-) -> dict:
+) -> BulkOperationResponse:
     """Generate questions via OpenAI GPT-4o and bulk-insert them into the category.
 
     Returns:
@@ -325,7 +340,7 @@ No extra explanation outside the JSON array. Return only the JSON array."""
         )
         content = message.choices[0].message.content
         if not content:
-            return {"created": 0, "error": "AI generation failed or unavailable"}
+            return BulkOperationResponse(created=0, error="AI generation failed or unavailable")
         json_match = re.search(r"\[.*\]", content, re.DOTALL)
         if json_match:
             questions_data = json.loads(json_match.group())
@@ -335,7 +350,7 @@ No extra explanation outside the JSON array. Return only the JSON array."""
             ]
             result = await bulk_create_questions(db, category_id, enriched, user_id)
             logger.info(
-                f"AI generated {result.get('created', 0)} questions for category_id={category_id} "
+                f"AI generated {result.created} questions for category_id={category_id} "
                 f"topic='{topic}' type={question_type}"
             )
             return result
@@ -344,7 +359,7 @@ No extra explanation outside the JSON array. Return only the JSON array."""
             f"AI question generation failed for category_id={category_id} topic='{topic}'"
         )
 
-    return {"created": 0, "error": "AI generation failed or unavailable"}
+    return BulkOperationResponse(created=0, error="AI generation failed or unavailable")
 
 
 def _find_column(headers_lower: list, name: str) -> str | None:
@@ -416,7 +431,7 @@ async def process_excel_import(
     file_data: bytes,
     user_id: str,
     column_map: dict | None = None,
-) -> dict:
+) -> BulkOperationResponse:
     """Parse an Excel file and bulk-import questions into a category.
 
     Args:
@@ -447,7 +462,7 @@ async def process_excel_import(
     col_complexity = col_map.get("complexity") or _find_column(raw_headers, "complexity")
 
     if not col_question:
-        return {"created": 0, "error": "Missing 'Question' column"}
+        return BulkOperationResponse(created=0, error="Missing 'Question' column")
 
     questions = []
     for row in ws.iter_rows(min_row=2, values_only=True):

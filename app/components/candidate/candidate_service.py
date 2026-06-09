@@ -5,7 +5,14 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
+from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import AppException, ForbiddenException, NotFoundException
+from app.common.response_models.candidate_responses import (
+    AnswerSavedResponse,
+    MalpracticeRecordResponse,
+    SessionStateResponse,
+    SubmissionStatusResponse,
+)
 from app.common.utils import (
     build_pagination_meta,
     decode_sharelink,
@@ -22,8 +29,6 @@ from app.core.logging import logger
 
 _DEFAULT_CONTENT_TYPE = "image/jpeg"
 
-_ERR_ASSESSMENT_NOT_FOUND = "Assessment not found"
-_ERR_ACTIVE_SUBMISSION_NOT_FOUND = "Active submission not found"
 
 # MongoDB pipeline operator constants
 _MATCH = "$match"
@@ -73,7 +78,7 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
             doc = await db.assessments.find_one({"share_link": share_link, "is_active": True})
 
     if not doc:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     safe = serialize_doc(doc)
     for r in safe.get("rounds", []):
@@ -214,7 +219,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
             )
 
     if not assessment:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     existing = await db.assessment_submissions.find_one(
         {
@@ -267,7 +272,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
 
 async def get_submission_status(
     db: AsyncIOMotorDatabase, share_link: str, candidate_id: str
-) -> dict | None:
+) -> SubmissionStatusResponse | None:
     """Return the current submission status for a candidate + assessment pair.
 
     Uses the share link to resolve the assessment, then looks up the submission
@@ -287,7 +292,7 @@ async def get_submission_status(
         assessment = await db.assessments.find_one({"share_link": share_link, "is_active": True})
 
     if not assessment:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     sub = await db.assessment_submissions.find_one(
         {
@@ -298,16 +303,16 @@ async def get_submission_status(
     if not sub:
         return None
 
-    return {
-        "submission_id": str(sub["_id"]),
-        "status": sub.get("status"),
-        "assessment_id": str(sub["assessment_id"]),
-        "candidate_id": str(sub["candidate_id"]),
-        "current_round": sub.get("current_round", 1),
-        "completed_at": sub["completed_at"].isoformat() if sub.get("completed_at") else None,
-        "paused_at": sub["paused_at"].isoformat() if sub.get("paused_at") else None,
-        "malpractice_count": sub.get("malpractice_count", 0),
-    }
+    return SubmissionStatusResponse(
+        submission_id=str(sub["_id"]),
+        status=str(sub.get("status", "")),
+        assessment_id=str(sub["assessment_id"]),
+        candidate_id=str(sub["candidate_id"]),
+        current_round=sub.get("current_round", 1),
+        completed_at=sub["completed_at"].isoformat() if sub.get("completed_at") else None,
+        paused_at=sub["paused_at"].isoformat() if sub.get("paused_at") else None,
+        malpractice_count=sub.get("malpractice_count", 0),
+    )
 
 
 async def get_current_round(
@@ -388,7 +393,7 @@ async def submit_answer(
     candidate_id: str,
     question_id: str,
     answer: Any,
-) -> dict:
+) -> AnswerSavedResponse:
     """Persist a candidate's answer for a question in the current round.
 
     Raises:
@@ -402,7 +407,7 @@ async def submit_answer(
         }
     )
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     idx = sub.get("current_round", 1) - 1
     await db.assessment_submissions.update_one(
@@ -414,7 +419,7 @@ async def submit_answer(
             }
         },
     )
-    return {"saved": True}
+    return AnswerSavedResponse(saved=True)
 
 
 async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
@@ -433,11 +438,11 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     if not assessment:
-        raise NotFoundException(_ERR_ASSESSMENT_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     current = sub.get("current_round", 1)
     total_rounds = len(assessment.get("rounds", []))
@@ -666,7 +671,7 @@ async def flag_malpractice(
     malpractice_type: str,
     file_bytes_map: dict | None = None,
     description: str | None = None,
-) -> dict:
+) -> MalpracticeRecordResponse:
     """Record a malpractice event using the 3-strike system.
 
     Accepts an optional file_bytes_map with keys: screen_image, face_image,
@@ -683,7 +688,7 @@ async def flag_malpractice(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     # ── Resolve effective monitoring config ────────────────────────────────
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
@@ -697,7 +702,11 @@ async def flag_malpractice(
 
     # ── Guard: silently skip if monitoring is disabled for this event type ──
     if not _is_malpractice_event_enabled(malpractice_type, effective_monitoring):
-        return {"malpractice_count": sub.get("malpractice_count", 0), "is_terminal": False}
+        return MalpracticeRecordResponse(
+            malpractice_count=sub.get("malpractice_count", 0),
+            is_terminal=False,
+            current_round=sub.get("current_round", 1),
+        )
 
     now = utcnow()
     round_number = sub.get("current_round", 1)
@@ -743,12 +752,12 @@ async def flag_malpractice(
             f"count={new_count}"
         )
 
-    return {
-        "malpractice_count": new_count,
-        "is_terminal": is_terminal,
-        "event_index": event_index,
-        "current_round": round_number,
-    }
+    return MalpracticeRecordResponse(
+        malpractice_count=new_count,
+        is_terminal=is_terminal,
+        event_index=event_index,
+        current_round=round_number,
+    )
 
 
 async def put_session_terminated(
@@ -770,7 +779,7 @@ async def put_session_terminated(
     """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     if sub.get("status") not in {SubmissionStatus.PENDING, SubmissionStatus.IN_PROGRESS}:
         raise ForbiddenException(
@@ -812,7 +821,7 @@ async def put_session_completed(
     """
     sub = await db.assessment_submissions.find_one({"_id": ObjectId(submission_id)})
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     if sub.get("status") not in {SubmissionStatus.PENDING, SubmissionStatus.IN_PROGRESS}:
         raise ForbiddenException(
@@ -867,7 +876,7 @@ async def get_session_state(
     db: AsyncIOMotorDatabase,
     submission_id: str,
     candidate_id: str,
-) -> dict:
+) -> SessionStateResponse:
     """Return the persisted timer/position state for a candidate's submission.
 
     Used by the frontend on reconnect to restore the timer and question position
@@ -887,12 +896,12 @@ async def get_session_state(
     )
     if not sub:
         raise NotFoundException("Submission not found")
-    return {
-        "status": str(sub.get("status", "")),
-        "remaining_seconds": sub.get("remaining_seconds"),
-        "current_question_idx": sub.get("current_question_idx", 0),
-        "current_round": sub.get("current_round", 1),
-    }
+    return SessionStateResponse(
+        status=str(sub.get("status", "")),
+        remaining_seconds=sub.get("remaining_seconds"),
+        current_question_idx=sub.get("current_question_idx", 0),
+        current_round=sub.get("current_round", 1),
+    )
 
 
 async def upload_malpractice_media(
@@ -917,7 +926,7 @@ async def upload_malpractice_media(
         {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
-        raise NotFoundException(_ERR_ACTIVE_SUBMISSION_NOT_FOUND)
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     events = sub.get("malpractice_events") or []
     if event_index < 0 or event_index >= len(events):

@@ -1,9 +1,16 @@
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi import File, Form, Query, Request, UploadFile
 
+from app.common.constants.messages import SuccessMessages
+from app.common.response_models.question_responses import (
+    BulkOperationResponse,
+    CategoryResponse,
+    QuestionResponse,
+)
 from app.common.responses import ApiResponse, success_response
+from app.common.router import DefaultResponseRouter
 from app.components.auth.auth_dependencies import AdminUser
 from app.components.question_bank import question_service
 from app.components.question_bank.question_schemas import (
@@ -17,10 +24,10 @@ from app.components.question_bank.question_schemas import (
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
-router = APIRouter()
+router = DefaultResponseRouter()
 
 
-@router.get("/categories", response_model=ApiResponse)
+@router.get("/categories")
 async def list_categories(
     db: DB,
     current_user: AdminUser,
@@ -31,20 +38,20 @@ async def list_categories(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
     result = await question_service.get_categories(db, search, sort_by, sort_order, page, page_size)
-    return success_response("Categories retrieved", result)
+    return success_response(SuccessMessages.CATEGORIES_RETRIEVED, result)
 
 
-@router.post("/categories", response_model=ApiResponse)
+@router.post("/categories", response_model=ApiResponse[CategoryResponse])
 async def create_category(
     request: CreateCategoryRequest,
     db: DB,
     current_user: AdminUser,
 ) -> dict:
     result = await question_service.create_category(db, request.model_dump(), current_user["_id"])
-    return success_response("Category created", result)
+    return success_response(SuccessMessages.CATEGORY_CREATED, result)
 
 
-@router.put("/categories/{category_id}", response_model=ApiResponse)
+@router.put("/categories/{category_id}", response_model=ApiResponse[CategoryResponse])
 async def update_category(
     category_id: str,
     request: UpdateCategoryRequest,
@@ -52,20 +59,20 @@ async def update_category(
     current_user: AdminUser,
 ) -> dict:
     result = await question_service.update_category(db, category_id, request.model_dump())
-    return success_response("Category updated", result)
+    return success_response(SuccessMessages.CATEGORY_UPDATED, result)
 
 
-@router.delete("/categories/{category_id}", response_model=ApiResponse)
+@router.delete("/categories/{category_id}")
 async def delete_category(
     category_id: str,
     db: DB,
     current_user: AdminUser,
 ) -> dict:
     await question_service.delete_category(db, category_id)
-    return success_response("Category and its questions deleted")
+    return success_response(SuccessMessages.CATEGORY_DELETED)
 
 
-@router.get("/categories/{category_id}/questions", response_model=ApiResponse)
+@router.get("/categories/{category_id}/questions")
 async def list_questions(
     category_id: str,
     db: DB,
@@ -81,10 +88,10 @@ async def list_questions(
     result = await question_service.get_questions(
         db, category_id, search, complexity, question_type, sort_by, sort_order, page, page_size
     )
-    return success_response("Questions retrieved", result)
+    return success_response(SuccessMessages.QUESTIONS_RETRIEVED, result)
 
 
-@router.post("/categories/{category_id}/questions", response_model=ApiResponse)
+@router.post("/categories/{category_id}/questions", response_model=ApiResponse[QuestionResponse])
 async def create_question(
     category_id: str,
     request: CreateQuestionRequest,
@@ -94,10 +101,10 @@ async def create_question(
     result = await question_service.create_question(
         db, category_id, request.model_dump(), current_user["_id"]
     )
-    return success_response("Question created", result)
+    return success_response(SuccessMessages.QUESTION_CREATED, result)
 
 
-@router.post("/categories/{category_id}/bulk", response_model=ApiResponse)
+@router.post("/categories/{category_id}/bulk", response_model=ApiResponse[BulkOperationResponse])
 async def bulk_create(
     category_id: str,
     request: BulkCreateRequest,
@@ -107,10 +114,12 @@ async def bulk_create(
     result = await question_service.bulk_create_questions(
         db, category_id, [q.model_dump() for q in request.questions], current_user["_id"]
     )
-    return success_response("Questions created in bulk", result)
+    return success_response(SuccessMessages.BULK_QUESTIONS_CREATED, result)
 
 
-@router.post("/categories/{category_id}/ai-generate", response_model=ApiResponse)
+@router.post(
+    "/categories/{category_id}/ai-generate", response_model=ApiResponse[BulkOperationResponse]
+)
 @limiter.limit("10/hour")
 async def ai_generate(
     request: Request,
@@ -128,10 +137,12 @@ async def ai_generate(
         body.question_type,
         current_user["_id"],
     )
-    return success_response("AI questions generated", result)
+    return success_response(SuccessMessages.QUESTIONS_GENERATED, result)
 
 
-@router.post("/categories/{category_id}/excel-import", response_model=ApiResponse)
+@router.post(
+    "/categories/{category_id}/excel-import", response_model=ApiResponse[BulkOperationResponse]
+)
 @limiter.limit("20/hour")
 async def excel_import(
     request: Request,
@@ -149,10 +160,10 @@ async def excel_import(
     result = await question_service.process_excel_import(
         db, category_id, file_data, current_user["_id"], col_map
     )
-    return success_response("Excel import completed", result)
+    return success_response(SuccessMessages.QUESTIONS_IMPORTED, result)
 
 
-@router.put("/{question_id}", response_model=ApiResponse)
+@router.put("/{question_id}", response_model=ApiResponse[QuestionResponse])
 async def update_question(
     question_id: str,
     request: UpdateQuestionRequest,
@@ -160,14 +171,14 @@ async def update_question(
     current_user: AdminUser,
 ) -> dict:
     result = await question_service.update_question(db, question_id, request.model_dump())
-    return success_response("Question updated", result)
+    return success_response(SuccessMessages.QUESTION_UPDATED, result)
 
 
-@router.delete("/{question_id}", response_model=ApiResponse)
+@router.delete("/{question_id}")
 async def delete_question(
     question_id: str,
     db: DB,
     current_user: AdminUser,
 ) -> dict:
     await question_service.delete_question(db, question_id)
-    return success_response("Question deleted")
+    return success_response(SuccessMessages.QUESTION_DELETED)

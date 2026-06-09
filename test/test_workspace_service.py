@@ -13,13 +13,13 @@ class TestCreateWorkspace:
         result = await workspace_service.create_workspace(
             db, {"name": "New WS", "description": "Test"}, str(super_admin["_id"])
         )
-        assert result["name"] == "New WS"
+        assert result.name == "New WS"
 
     async def test_creates_without_description(self, db, super_admin):
         result = await workspace_service.create_workspace(
             db, {"name": "No Desc"}, str(super_admin["_id"])
         )
-        assert result["description"] == ""
+        assert result.description == ""
 
 
 class TestGetWorkspaces:
@@ -47,13 +47,13 @@ class TestGetWorkspace:
         result = await workspace_service.get_workspace(
             db, str(workspace["_id"]), UserRole.SUPER_ADMIN, []
         )
-        assert result["name"] == "Test Workspace"
+        assert result.name == "Test Workspace"
 
     async def test_admin_member_access(self, db, workspace, admin_user):
         result = await workspace_service.get_workspace(
             db, str(workspace["_id"]), UserRole.ADMIN, [str(workspace["_id"])]
         )
-        assert result["name"] == "Test Workspace"
+        assert result.name == "Test Workspace"
 
     async def test_admin_non_member_forbidden(self, db, workspace):
         with pytest.raises(ForbiddenException):
@@ -73,7 +73,7 @@ class TestUpdateWorkspace:
             UserRole.SUPER_ADMIN,
             [],
         )
-        assert result["name"] == "Updated WS"
+        assert result.name == "Updated WS"
 
 
 class TestInviteMembers:
@@ -126,7 +126,7 @@ class TestGetMembers:
         result = await workspace_service.get_members(db, str(workspace["_id"]))
         assert isinstance(result, list)
         # admin_user has this workspace in their workspaces array (conftest fixture)
-        emails = [u["email"] for u in result]
+        emails = [u.email for u in result]
         assert admin_user["email"] in emails
 
     async def test_not_found_raises(self, db):
@@ -162,5 +162,5 @@ class TestGetAllAdminUsers:
     async def test_returns_admin_users(self, db, workspace, admin_user):
         result = await workspace_service.get_all_admin_users(db)
         assert isinstance(result, list)
-        emails = [u["email"] for u in result]
+        emails = [u.email for u in result]
         assert "admin@example.com" in emails
