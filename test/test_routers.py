@@ -1,6 +1,7 @@
 """Integration-style tests for key router endpoints using FastAPI TestClient."""
 
 import io
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import openpyxl
 import pytest
@@ -161,8 +162,9 @@ async def seeded_question(mock_db, seeded_category, seeded_admin):
 
 @pytest.fixture
 async def seeded_assessment(mock_db, seeded_workspace, seeded_admin):
-    from app.common.utils import generate_sharelink
+    from app.common.utils import encode_permanent_sharelink
 
+    # Insert without share_link first to get the ID
     doc = {
         "workspace_id": seeded_workspace["_id"],
         "name": "Router Assessment",
@@ -172,13 +174,18 @@ async def seeded_assessment(mock_db, seeded_workspace, seeded_admin):
         ],
         "accessibility": "normal",
         "monitoring_config": None,
-        "share_link": generate_sharelink(str(seeded_workspace["_id"])),
+        "is_active": True,
         "created_by": seeded_admin["_id"],
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
     result = await mock_db.assessments.insert_one(doc)
+    share_link = encode_permanent_sharelink(str(result.inserted_id))
+    await mock_db.assessments.update_one(
+        {"_id": result.inserted_id}, {"$set": {"share_link": share_link}}
+    )
     doc["_id"] = result.inserted_id
+    doc["share_link"] = share_link
     return doc
 
 
@@ -189,16 +196,90 @@ async def seeded_submission(mock_db, seeded_assessment, seeded_candidate):
     doc = {
         "assessment_id": seeded_assessment["_id"],
         "candidate_id": seeded_candidate["_id"],
+        "share_id": None,
+        "monitoring_overrides": None,
         "status": SubmissionStatus.COMPLETED,
         "current_round": 1,
         "rounds_data": [],
         "score": 0,
         "percentage": 80.0,
         "screenshots": [],
-        "is_malpractice": False,
+        "malpractice_count": 0,
+        "malpractice_events": [],
         "reaccess_count": 0,
         "started_at": utcnow(),
         "completed_at": utcnow(),
+        "created_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    result = await mock_db.assessment_submissions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return doc
+
+
+@pytest.fixture
+async def seeded_in_progress_submission(mock_db, seeded_assessment, seeded_candidate):
+    from app.common.constants.app_constants import SubmissionStatus
+
+    doc = {
+        "assessment_id": seeded_assessment["_id"],
+        "candidate_id": seeded_candidate["_id"],
+        "share_id": None,
+        "monitoring_overrides": None,
+        "status": SubmissionStatus.IN_PROGRESS,
+        "current_round": 1,
+        "rounds_data": [
+            {
+                "round_number": 1,
+                "question_count": 1,
+                "max_duration_minutes": 30,
+                "questions": [],
+                "answers": {},
+                "completed": False,
+                "started_at": utcnow(),
+            }
+        ],
+        "score": 0,
+        "percentage": 0.0,
+        "screenshots": [],
+        "malpractice_count": 0,
+        "malpractice_events": [],
+        "reaccess_count": 0,
+        "remaining_seconds": None,
+        "current_question_idx": 0,
+        "started_at": utcnow(),
+        "completed_at": None,
+        "created_at": utcnow(),
+        "updated_at": utcnow(),
+    }
+    result = await mock_db.assessment_submissions.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return doc
+
+
+@pytest.fixture
+async def seeded_on_hold_submission(mock_db, seeded_assessment, seeded_candidate):
+    from app.common.constants.app_constants import SubmissionStatus
+
+    doc = {
+        "assessment_id": seeded_assessment["_id"],
+        "candidate_id": seeded_candidate["_id"],
+        "share_id": None,
+        "monitoring_overrides": None,
+        "status": SubmissionStatus.ON_HOLD,
+        "current_round": 1,
+        "rounds_data": [],
+        "score": 0,
+        "percentage": 0.0,
+        "screenshots": [],
+        "malpractice_count": 0,
+        "malpractice_events": [],
+        "reaccess_count": 0,
+        "remaining_seconds": 600,
+        "current_question_idx": 2,
+        "started_at": utcnow(),
+        "paused_at": utcnow(),
+        "completed_at": None,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
@@ -309,8 +390,6 @@ class TestAuthRoutes:
         assert resp.status_code == 200
 
     def test_google_login(self, client):
-        from unittest.mock import AsyncMock, MagicMock, patch
-
         from app.core.config import settings
 
         mock_response = MagicMock()
@@ -553,8 +632,6 @@ class TestQuestionRoutes:
         assert resp.status_code == 200
 
     def test_ai_generate(self, client, seeded_admin, seeded_category, admin_token):
-        from unittest.mock import MagicMock, patch
-
         mock_openai = MagicMock()
         mock_client = MagicMock()
         mock_openai.OpenAI.return_value = mock_client
@@ -680,6 +757,15 @@ class TestAssessmentRoutes:
         )
         assert resp.status_code == 200
 
+    def test_delete_assessment(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
+    ):
+        resp = client.delete(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}",
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 200
+
     def test_list_submissions(
         self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
     ):
@@ -716,6 +802,10 @@ class TestAssessmentRoutes:
         resp = client.post(
             f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/{seeded_submission['_id']}/reaccess",
             headers=auth_headers(admin_token),
+            json={
+                "reason": "Technical issue during the session",
+                "reason_category": "technical_issue",
+            },
         )
         assert resp.status_code == 200
 
@@ -723,24 +813,103 @@ class TestAssessmentRoutes:
         self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
     ):
         resp = client.get(
-            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/export",
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/export",
             headers=auth_headers(admin_token),
         )
         assert resp.status_code == 200
 
-    def test_get_by_share_link(self, client, seeded_assessment):
-        share_link = seeded_assessment["share_link"]
-        resp = client.get(f"/api/assessments/share/{share_link}")
+    def test_terminate_submission(
+        self,
+        client,
+        seeded_admin,
+        seeded_workspace,
+        seeded_assessment,
+        seeded_in_progress_submission,
+        admin_token,
+    ):
+        with patch("app.components.scoring.scoring_tasks.calculate_and_store_score", AsyncMock()):
+            resp = client.post(
+                f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/{seeded_in_progress_submission['_id']}/terminate",
+                headers=auth_headers(admin_token),
+                json={"reason": "Policy violation"},
+            )
         assert resp.status_code == 200
+
+    def test_force_complete_submission(
+        self,
+        client,
+        seeded_admin,
+        seeded_workspace,
+        seeded_assessment,
+        seeded_in_progress_submission,
+        admin_token,
+    ):
+        with patch("app.components.scoring.scoring_tasks.calculate_and_store_score", AsyncMock()):
+            resp = client.post(
+                f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/{seeded_in_progress_submission['_id']}/complete",
+                headers=auth_headers(admin_token),
+            )
+        assert resp.status_code == 200
+
+    def test_resume_interview(
+        self,
+        client,
+        seeded_admin,
+        seeded_workspace,
+        seeded_assessment,
+        seeded_on_hold_submission,
+        admin_token,
+    ):
+        resp = client.post(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/{seeded_on_hold_submission['_id']}/resume",
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 200
+
+    def test_create_share(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
+    ):
+        resp = client.post(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/shares",
+            headers=auth_headers(admin_token),
+            json={"label": "Test Share Link", "monitoring_overrides": None},
+        )
+        assert resp.status_code == 200
+
+    def test_list_shares(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
+    ):
+        resp = client.get(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/shares",
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 200
+
+    def test_validate_share_link(self, client, seeded_assessment):
+        share_link = seeded_assessment["share_link"]
+        resp = client.get(f"/api/assessments/share/validate?link={share_link}")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "can_allow" in data
+
+    def test_validate_invalid_share_link(self, client):
+        resp = client.get("/api/assessments/share/validate?link=invalid-garbage-link")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["can_allow"] is False
 
 
 # ---------------------------------------------------------------------------
 # Candidate routes
 # ---------------------------------------------------------------------------
 class TestCandidateRoutes:
-    def test_get_assessment_by_share_link(self, client, seeded_assessment):
+    def test_get_assessment_by_share_link(
+        self, client, seeded_assessment, seeded_candidate, candidate_token
+    ):
         share_link = seeded_assessment["share_link"]
-        resp = client.get(f"/api/candidate/assessment/{share_link}")
+        resp = client.get(
+            f"/api/candidate/assessment/{share_link}",
+            headers=auth_headers(candidate_token),
+        )
         assert resp.status_code == 200
 
     def test_start_assessment(self, client, seeded_candidate, seeded_assessment, candidate_token):
@@ -786,10 +955,18 @@ class TestCandidateRoutes:
             headers=auth_headers(candidate_token),
         )
         submission_id = start.json()["data"]["id"]
-        resp = client.post(
-            f"/api/candidate/submission/{submission_id}/finish-round",
-            headers=auth_headers(candidate_token),
-        )
+        # finish_round uses MongoDB array filters not supported by mongomock — mock at service level
+        with (
+            patch(
+                "app.components.candidate.candidate_service.finish_round",
+                AsyncMock(return_value={"completed": True, "finished_round": 1}),
+            ),
+            patch("app.components.scoring.scoring_tasks.calculate_and_store_score", AsyncMock()),
+        ):
+            resp = client.post(
+                f"/api/candidate/submission/{submission_id}/finish-round",
+                headers=auth_headers(candidate_token),
+            )
         assert resp.status_code == 200
 
     def test_save_screenshot(self, client, seeded_candidate, seeded_assessment, candidate_token):
@@ -800,11 +977,14 @@ class TestCandidateRoutes:
         )
         submission_id = start.json()["data"]["id"]
         fake_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
-        resp = client.post(
-            f"/api/candidate/submission/{submission_id}/screenshot",
-            headers=auth_headers(candidate_token),
-            files={"file": ("screenshot.png", io.BytesIO(fake_png), "image/png")},
-        )
+        with patch("app.components.candidate.candidate_service.s3_service") as mock_s3:
+            mock_s3.make_screenshot_key.return_value = "screenshots/fake/key.png"
+            mock_s3.upload = AsyncMock()
+            resp = client.post(
+                f"/api/candidate/submission/{submission_id}/screenshot",
+                headers=auth_headers(candidate_token),
+                files={"file": ("screenshot.png", io.BytesIO(fake_png), "image/png")},
+            )
         assert resp.status_code == 200
 
     def test_save_screenshot_invalid_type(
@@ -850,7 +1030,50 @@ class TestCandidateRoutes:
         resp = client.post(
             f"/api/candidate/submission/{submission_id}/malpractice",
             headers=auth_headers(candidate_token),
-            json={"type": "tab_switch"},
+            data={"type": "tab_switch"},
+        )
+        assert resp.status_code == 200
+
+    def test_flag_malpractice_invalid_type(
+        self, client, seeded_candidate, seeded_assessment, candidate_token
+    ):
+        share_link = seeded_assessment["share_link"]
+        start = client.post(
+            f"/api/candidate/assessment/{share_link}/start",
+            headers=auth_headers(candidate_token),
+        )
+        submission_id = start.json()["data"]["id"]
+        resp = client.post(
+            f"/api/candidate/submission/{submission_id}/malpractice",
+            headers=auth_headers(candidate_token),
+            data={"type": "invalid_type"},
+        )
+        assert resp.status_code == 422
+
+    def test_get_session_state(self, client, seeded_candidate, seeded_assessment, candidate_token):
+        share_link = seeded_assessment["share_link"]
+        start = client.post(
+            f"/api/candidate/assessment/{share_link}/start",
+            headers=auth_headers(candidate_token),
+        )
+        submission_id = start.json()["data"]["id"]
+        resp = client.get(
+            f"/api/candidate/submission/{submission_id}/session-state",
+            headers=auth_headers(candidate_token),
+        )
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert "status" in data
+        assert "current_round" in data
+
+    def test_get_submission_status(
+        self, client, seeded_candidate, seeded_assessment, candidate_token
+    ):
+        share_link = seeded_assessment["share_link"]
+        # No submission yet — should return null data
+        resp = client.get(
+            f"/api/candidate/submission/status?share_link={share_link}",
+            headers=auth_headers(candidate_token),
         )
         assert resp.status_code == 200
 

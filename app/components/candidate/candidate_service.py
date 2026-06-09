@@ -378,7 +378,7 @@ async def get_current_round(
         # Persisted session state for seamless resume after network loss
         "remaining_seconds": sub.get("remaining_seconds"),
         "current_question_idx": sub.get("current_question_idx", 0),
-        "session_status": str(sub_status) if sub_status else "in_progress",
+        "session_status": sub_status.value if sub_status else "in_progress",
     }
 
 

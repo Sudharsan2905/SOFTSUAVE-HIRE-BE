@@ -76,46 +76,6 @@ class TestGetAssessments:
         assert result["pagination"]["total"] == 0
 
 
-class TestGrantReaccess:
-    async def test_increments_reaccess_count(self, db, workspace, assessment, candidate_user):
-        from app.common.constants.app_constants import SubmissionStatus
-        from app.common.utils import utcnow
-
-        sub = {
-            "assessment_id": ObjectId(assessment["id"]),
-            "candidate_id": candidate_user["_id"],
-            "status": SubmissionStatus.COMPLETED,
-            "reaccess_count": 0,
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
-        res = await db.assessment_submissions.insert_one(sub)
-        await assessment_service.grant_reaccess(db, str(res.inserted_id))
-        updated = await db.assessment_submissions.find_one({"_id": res.inserted_id})
-        assert updated["reaccess_count"] == 1
-        assert updated["status"] == "pending"
-
-    async def test_max_reaccess_raises(self, db, workspace, assessment, candidate_user):
-        from app.common.constants.app_constants import SubmissionStatus
-        from app.common.utils import utcnow
-
-        sub = {
-            "assessment_id": ObjectId(assessment["id"]),
-            "candidate_id": candidate_user["_id"],
-            "status": SubmissionStatus.COMPLETED,
-            "reaccess_count": 3,
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
-        res = await db.assessment_submissions.insert_one(sub)
-        with pytest.raises(ForbiddenException, match="limit"):
-            await assessment_service.grant_reaccess(db, str(res.inserted_id))
-
-    async def test_nonexistent_submission_raises(self, db):
-        with pytest.raises(NotFoundException):
-            await assessment_service.grant_reaccess(db, str(ObjectId()))
-
-
 class TestGetAssessment:
     async def test_success(self, db, workspace, assessment):
         result = await assessment_service.get_assessment(
@@ -179,18 +139,159 @@ class TestUpdateAssessment:
             )
 
 
-class TestGetAssessmentByShareLink:
-    async def test_success(self, db, assessment):
-        share_link = assessment["share_link"]
-        result = await assessment_service.get_assessment_by_share_link(db, share_link)
-        assert result["name"] == "Python Assessment"
-        # question_ids should be stripped from rounds
-        for r in result.get("rounds", []):
-            assert "question_ids" not in r
+class TestDeleteAssessment:
+    async def test_soft_deletes(self, db, workspace, assessment):
+        await assessment_service.delete_assessment(db, str(workspace["_id"]), assessment["id"])
+        doc = await db.assessments.find_one({"_id": ObjectId(assessment["id"])})
+        assert doc["is_active"] is False
+
+    async def test_not_found_raises(self, db, workspace):
+        with pytest.raises(NotFoundException):
+            await assessment_service.delete_assessment(db, str(workspace["_id"]), str(ObjectId()))
+
+    async def test_deleted_assessment_not_in_list(self, db, workspace, assessment):
+        await assessment_service.delete_assessment(db, str(workspace["_id"]), assessment["id"])
+        result = await assessment_service.get_assessments(
+            db, str(workspace["_id"]), None, "created_at", "desc", 1, 20
+        )
+        assert result["pagination"]["total"] == 0
+
+
+class TestGrantReaccess:
+    async def test_increments_reaccess_count(
+        self, db, workspace, assessment, candidate_user, super_admin
+    ):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        sub = {
+            "assessment_id": ObjectId(assessment["id"]),
+            "candidate_id": candidate_user["_id"],
+            "status": SubmissionStatus.COMPLETED,
+            "reaccess_count": 0,
+            "malpractice_count": 0,
+            "malpractice_events": [],
+            "rounds_data": [],
+            "score": 0,
+            "percentage": 0.0,
+            "screenshots": [],
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+        }
+        res = await db.assessment_submissions.insert_one(sub)
+        await assessment_service.grant_reaccess(
+            db,
+            str(res.inserted_id),
+            str(super_admin["_id"]),
+            "Technical issue during assessment",
+            "technical_issue",
+        )
+        updated = await db.assessment_submissions.find_one({"_id": res.inserted_id})
+        assert updated["reaccess_count"] == 1
+        assert updated["status"] == "pending"
+
+    async def test_max_reaccess_raises(self, db, workspace, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        sub = {
+            "assessment_id": ObjectId(assessment["id"]),
+            "candidate_id": candidate_user["_id"],
+            "status": SubmissionStatus.COMPLETED,
+            "reaccess_count": 3,
+            "rounds_data": [],
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+        }
+        res = await db.assessment_submissions.insert_one(sub)
+        with pytest.raises(ForbiddenException, match="Maximum"):
+            await assessment_service.grant_reaccess(db, str(res.inserted_id))
+
+    async def test_nonexistent_submission_raises(self, db):
+        with pytest.raises(NotFoundException):
+            await assessment_service.grant_reaccess(db, str(ObjectId()))
+
+    async def test_non_terminal_status_raises(self, db, workspace, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        sub = {
+            "assessment_id": ObjectId(assessment["id"]),
+            "candidate_id": candidate_user["_id"],
+            "status": SubmissionStatus.IN_PROGRESS,
+            "reaccess_count": 0,
+            "rounds_data": [],
+            "created_at": utcnow(),
+            "updated_at": utcnow(),
+        }
+        res = await db.assessment_submissions.insert_one(sub)
+        with pytest.raises(ForbiddenException):
+            await assessment_service.grant_reaccess(db, str(res.inserted_id))
+
+
+class TestAdminResumeInterview:
+    async def test_resumes_on_hold_submission(self, db, assessment, candidate_user, super_admin):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        res = await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.ON_HOLD,
+                "rounds_data": [],
+                "current_round": 1,
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        await assessment_service.admin_resume_interview(
+            db, str(res.inserted_id), str(super_admin["_id"])
+        )
+        updated = await db.assessment_submissions.find_one({"_id": res.inserted_id})
+        assert updated["status"] == SubmissionStatus.IN_PROGRESS
+
+    async def test_not_on_hold_raises(self, db, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        res = await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.IN_PROGRESS,
+                "rounds_data": [],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        with pytest.raises(ForbiddenException):
+            await assessment_service.admin_resume_interview(db, str(res.inserted_id), "admin_id")
 
     async def test_not_found_raises(self, db):
         with pytest.raises(NotFoundException):
-            await assessment_service.get_assessment_by_share_link(db, "nonexistent-link")
+            await assessment_service.admin_resume_interview(db, str(ObjectId()), "admin_id")
+
+
+class TestValidateSharelink:
+    async def test_invalid_link_returns_not_valid(self, db):
+        result = await assessment_service.validate_sharelink(db, "not-a-valid-link")
+        assert result["can_allow"] is False
+
+    async def test_valid_permanent_link_allowed(self, db, assessment):
+        share_link = assessment["share_link"]
+        result = await assessment_service.validate_sharelink(db, share_link)
+        assert result["can_allow"] is True
+        assert result["is_expired"] is False
+        assert result["is_expirable"] is False
+
+    async def test_nonexistent_assessment_link_returns_expired(self, db):
+        # A syntactically valid signed link for a non-existent assessment
+        from app.common.utils import encode_permanent_sharelink
+
+        fake_link = encode_permanent_sharelink(str(ObjectId()))
+        result = await assessment_service.validate_sharelink(db, fake_link)
+        assert result["can_allow"] is False
 
 
 class TestGetSubmissions:
@@ -240,6 +341,35 @@ class TestGetSubmissions:
         )
         assert result["pagination"]["total"] >= 0
 
+    async def test_with_date_filters(self, db, workspace, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.COMPLETED,
+                "reaccess_count": 0,
+                "percentage": 50.0,
+                "started_at": utcnow(),
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        result = await assessment_service.get_submissions(
+            db,
+            assessment["id"],
+            None,
+            "created_at",
+            "desc",
+            1,
+            20,
+            from_date="2020-01-01",
+            to_date="2099-12-31",
+        )
+        assert result["pagination"]["total"] >= 0
+
 
 class TestGetSubmissionDetail:
     async def test_success(self, db, assessment, candidate_user):
@@ -283,6 +413,46 @@ class TestExportSubmissions:
             }
         )
         result = await assessment_service.export_submissions(db, assessment["id"])
+        assert isinstance(result, list)
+
+    async def test_status_filter(self, db, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.COMPLETED,
+                "percentage": 90.0,
+                "rounds_data": [],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        result = await assessment_service.export_submissions(
+            db, assessment["id"], status=SubmissionStatus.COMPLETED
+        )
+        assert isinstance(result, list)
+
+    async def test_percentage_filter(self, db, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.COMPLETED,
+                "percentage": 90.0,
+                "rounds_data": [],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        result = await assessment_service.export_submissions(
+            db, assessment["id"], min_percentage=80.0, max_percentage=100.0
+        )
         assert isinstance(result, list)
 
 
