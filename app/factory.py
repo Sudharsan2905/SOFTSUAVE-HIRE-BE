@@ -30,6 +30,7 @@ def create_application() -> FastAPI:
         title=settings.APP_NAME,
         description=settings.APP_DESCRIPTION,
         version=settings.APP_VERSION,
+        openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
         lifespan=lifespan,
