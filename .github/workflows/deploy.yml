@@ -21,6 +21,8 @@ jobs:
 
             cd /var/www/SOFTSUAVE-HIRE-BE
 
+            git checkout main
+
             echo "Pulling latest code..."
             git pull origin main
 
