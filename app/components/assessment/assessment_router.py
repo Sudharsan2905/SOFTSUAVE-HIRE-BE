@@ -2,7 +2,6 @@ from typing import Annotated
 
 from bson import ObjectId
 from fastapi import BackgroundTasks, Query, Request
-from fastapi.responses import Response
 
 from app.common.constants.messages import ErrorMessages, SuccessMessages
 from app.common.response_models.assessment_responses import (
@@ -216,33 +215,6 @@ async def resume_interview(
     """Resume an ON_HOLD candidate session. Pushes a live WebSocket event if connected."""
     await assessment_service.admin_resume_interview(db, submission_id, current_user["_id"])
     return success_response(SuccessMessages.INTERVIEW_RESUMED)
-
-
-@router.get("/{assessment_id}/submissions/{submission_id}/pdf", response_model=None)
-async def download_submission_pdf(
-    workspace_id: str,
-    assessment_id: str,
-    submission_id: str,
-    db: DB,
-    current_user: AdminUser,
-) -> Response:
-    """Generate and return an A4 PDF report for a single submission."""
-    from app.components.assessment import assessment_service
-    from app.components.export import pdf_service
-
-    detail = await assessment_service.get_submission_detail(db, submission_id)
-    candidate = detail.get("candidate", {})
-    assessment = await db.assessments.find_one(
-        {"_id": __import__("bson").ObjectId(assessment_id), "is_active": True}
-    )
-    assessment_name = assessment.get("name", "Assessment") if assessment else "Assessment"
-    pdf_bytes = pdf_service.generate_submission_pdf(detail, candidate, assessment_name)
-    filename = f"submission_{submission_id}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 @router.get(
