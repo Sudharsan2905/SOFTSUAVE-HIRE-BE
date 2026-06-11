@@ -393,6 +393,20 @@ def _enrich_question_from_map(q: dict, answers: dict, original_map: dict) -> Non
         q["correct_option_ids"] = []
         q["is_correct"] = None
 
+    if original and not q.get("options"):
+        q["options"] = [
+            {
+                "id": str(o.get("id", "")),
+                "text": o.get("text", ""),
+                "is_correct": o.get("is_correct", False),
+            }
+            for o in original.get("options", [])
+        ]
+    if original and not q.get("question_text"):
+        q["question_text"] = original.get("question_text", "")
+    if original and not q.get("question_type"):
+        q["question_type"] = original.get("question_type", "")
+
     q["candidate_answer"] = candidate_answer
 
 

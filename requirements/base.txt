@@ -17,4 +17,3 @@ aiosmtplib==3.0.2
 slowapi==0.1.9
 aioboto3==15.5.0
 livekit-api==1.1.0
-reportlab==4.4.1

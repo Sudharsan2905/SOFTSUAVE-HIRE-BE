@@ -61,6 +61,7 @@ tmp/
 *.suo
 *.sw?
 *.swp
+.claude/
 
 # OS
 .DS_Store
