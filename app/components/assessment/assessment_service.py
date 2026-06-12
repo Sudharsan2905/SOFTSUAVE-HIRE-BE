@@ -588,7 +588,16 @@ async def export_submissions(
                 "percentage": 1,
                 "status": 1,
                 "completed_at": 1,
-                "rounds_count": {"$size": "$rounds_data"},
+                "rounds": {
+                    "$map": {
+                        "input": "$rounds_data",
+                        "as": "rd",
+                        "in": {
+                            "round_number": "$$rd.round_number",
+                            "percentage": {"$ifNull": ["$$rd.percentage", 0]},
+                        },
+                    }
+                },
             }
         }
     )
