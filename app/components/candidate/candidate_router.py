@@ -78,6 +78,16 @@ async def submit_answer(
     return success_response(SuccessMessages.ANSWER_SUBMITTED, result)
 
 
+@router.post("/submission/{submission_id}/start")
+async def start_interview(
+    submission_id: str,
+    db: DB,
+    current_user: CurrentUser,
+) -> dict:
+    await candidate_service.start_interview(db, submission_id, current_user["_id"])
+    return success_response(SuccessMessages.INTERVIEW_STARTED)
+
+
 @router.post("/submission/{submission_id}/finish-round")
 async def finish_round(
     submission_id: str,

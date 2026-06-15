@@ -235,10 +235,6 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     monitoring_overrides: dict | None = share_doc.get("monitoring_overrides") if share_doc else None
 
     now = utcnow()
-    for rd in rounds_data:
-        if rd.get("round_number") == 1:
-            rd["started_at"] = now
-            break
 
     submission = {
         "assessment_id": assessment["_id"],
@@ -254,7 +250,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "malpractice_count": 0,
         "malpractice_events": [],
         "reaccess_count": 0,
-        "started_at": now,
+        "started_at": None,
         "completed_at": None,
         "created_at": now,
         "updated_at": now,
@@ -266,6 +262,41 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         f"submission_id={result.inserted_id}"
     )
     return serialize_doc(submission)
+
+
+async def start_interview(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> None:
+    """Record the actual interview start time for the current active round.
+
+    Called from the interview screen after monitoring requirements are satisfied.
+    Sets started_at on the submission (first round only) and on the current round.
+
+    Raises:
+        NotFoundException: If no active in-progress submission exists.
+    """
+    sub = await db.assessment_submissions.find_one(
+        {
+            "_id": ObjectId(submission_id),
+            "candidate_id": ObjectId(candidate_id),
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+        }
+    )
+    if not sub:
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
+
+    current = sub.get("current_round", 1)
+    now = utcnow()
+    set_fields: dict = {
+        "rounds_data.$[rd].started_at": now,
+        "updated_at": now,
+    }
+    if not sub.get("started_at"):
+        set_fields["started_at"] = now
+
+    await db.assessment_submissions.update_one(
+        {"_id": sub["_id"]},
+        {"$set": set_fields},
+        array_filters=[{"rd.round_number": current}],
+    )
 
 
 async def get_submission_status(
@@ -474,13 +505,6 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         {"$set": set_fields},
         array_filters=[{"rd.round_number": current}],
     )
-
-    if not is_last_round:
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {"$set": {"rounds_data.$[nxt].started_at": now}},
-            array_filters=[{"nxt.round_number": current + 1}],
-        )
 
     if is_last_round:
         logger.info(

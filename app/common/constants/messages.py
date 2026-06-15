@@ -76,6 +76,7 @@ class SuccessMessages:
     SESSION_STATE_RETRIEVED = "Session state retrieved"
     VERSIONS_RETRIEVED = "Versions retrieved"
     ASSESSMENT_STARTED = "Assessment started"
+    INTERVIEW_STARTED = "Interview started"
     ASSESSMENT_PAGE_RETRIEVED = "Assessment retrieved"
     ROUND_RETRIEVED = "Round retrieved"
     LIVE_INTERVIEWS_RETRIEVED = "Live interviews retrieved"

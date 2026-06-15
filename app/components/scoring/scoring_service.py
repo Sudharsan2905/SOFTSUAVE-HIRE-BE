@@ -14,13 +14,14 @@ _MCQ_TYPES = ("mcq_single", "mcq_multiple", "mcq_multi")
 
 def _score_mcq(original: dict, given_answer: Any) -> tuple[int, bool]:
     """Return (score, is_correct) for MCQ answer."""
-    correct_ids = {
-        str(o["_id"]) if "_id" in o else o.get("id", "")
-        for o in original.get("options", [])
-        if o.get("is_correct")
-    }
+    correct_options = [o for o in original.get("options", []) if o.get("is_correct")]
+    correct_ids = {str(o["_id"]) if "_id" in o else o.get("id", "") for o in correct_options}
+    correct_texts = {o.get("text", "").strip() for o in correct_options}
+
     given = [given_answer] if isinstance(given_answer, str) else (given_answer or [])
-    is_correct = bool(given) and {str(g) for g in given} == correct_ids
+    given_set = {str(g).strip() for g in given}
+
+    is_correct = bool(given) and (given_set == correct_ids or given_set == correct_texts)
     return (1 if is_correct else 0), is_correct
 
 
