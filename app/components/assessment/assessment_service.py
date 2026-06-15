@@ -26,6 +26,12 @@ _LOOKUP = "$lookup"
 _UNWIND = "$unwind"
 _REGEX = "$regex"
 _OPTIONS = "$options"
+_CANDIDATE_FIRST_NAME = "candidate.first_name"
+_CANDIDATE_EMAIL = "candidate.email"
+_CANDIDATE_SORT_MAP = {
+    "first_name": _CANDIDATE_FIRST_NAME,
+    "email": _CANDIDATE_EMAIL,
+}
 
 
 def _build_rounds(rounds_data: list) -> list:
@@ -313,11 +319,7 @@ async def get_submissions(
     """
     skip, limit = paginate_query(page, page_size)
     sort_dir = 1 if sort_order == "asc" else -1
-    sort_field = (
-        sort_by
-        if sort_by in ["percentage", "created_at", "updated_at", "completed_at"]
-        else "created_at"
-    )
+    sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
 
     pipeline: list[Any] = [
         {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
@@ -338,9 +340,9 @@ async def get_submissions(
             {
                 _MATCH: {
                     "$or": [
-                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {_CANDIDATE_FIRST_NAME: {_REGEX: escaped, _OPTIONS: "i"}},
                         {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
-                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {_CANDIDATE_EMAIL: {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
@@ -528,23 +530,38 @@ async def export_submissions(
     assessment_id: str,
     status: str | None = None,
     search: str | None = None,
-    min_percentage: float | None = None,
-    max_percentage: float | None = None,
+    sort_by: str = "started_at",
+    sort_order: str = "desc",
+    from_date: str | None = None,
+    to_date: str | None = None,
 ) -> list:
     """Return filtered submissions for an assessment in a flat format suitable for Excel export.
 
-    Filters: status, search (name/email), min_percentage, max_percentage.
+    Filters: status, search (name/email), from_date, to_date. Sorted by sort_by/sort_order.
     """
+    from datetime import datetime as _dt
+
+    sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
+    sort_dir = 1 if sort_order == "asc" else -1
+
     match_query: dict = {"assessment_id": ObjectId(assessment_id)}
     if status:
         match_query["status"] = status
-    if min_percentage is not None or max_percentage is not None:
-        pct_filter: dict = {}
-        if min_percentage is not None:
-            pct_filter["$gte"] = min_percentage
-        if max_percentage is not None:
-            pct_filter["$lte"] = max_percentage
-        match_query["percentage"] = pct_filter
+
+    date_match: dict = {}
+    if from_date:
+        try:
+            date_match["$gte"] = _dt.fromisoformat(from_date)
+        except ValueError:
+            pass
+    if to_date:
+        try:
+            end_dt = _dt.fromisoformat(to_date).replace(hour=23, minute=59, second=59)
+            date_match["$lte"] = end_dt
+        except ValueError:
+            pass
+    if date_match:
+        match_query["started_at"] = date_match
 
     pipeline: list[Any] = [
         {_MATCH: match_query},
@@ -565,9 +582,9 @@ async def export_submissions(
             {
                 _MATCH: {
                     "$or": [
-                        {"candidate.first_name": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {_CANDIDATE_FIRST_NAME: {_REGEX: escaped, _OPTIONS: "i"}},
                         {"candidate.last_name": {_REGEX: escaped, _OPTIONS: "i"}},
-                        {"candidate.email": {_REGEX: escaped, _OPTIONS: "i"}},
+                        {_CANDIDATE_EMAIL: {_REGEX: escaped, _OPTIONS: "i"}},
                     ]
                 }
             }
@@ -587,6 +604,7 @@ async def export_submissions(
                 "phone": "$candidate.phone",
                 "percentage": 1,
                 "status": 1,
+                "started_at": 1,
                 "completed_at": 1,
                 "rounds": {
                     "$map": {
@@ -601,6 +619,7 @@ async def export_submissions(
             }
         }
     )
+    pipeline.append({"$sort": {sort_field: sort_dir}})
 
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
     return serialize_docs(docs)

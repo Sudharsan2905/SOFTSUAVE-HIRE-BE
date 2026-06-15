@@ -127,11 +127,20 @@ async def export_submission_list(
     current_user: AdminUser,
     status: Annotated[str | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
-    min_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
-    max_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+    sort_by: Annotated[str, Query()] = "started_at",
+    sort_order: Annotated[str, Query()] = "desc",
+    from_date: Annotated[str | None, Query()] = None,
+    to_date: Annotated[str | None, Query()] = None,
 ) -> dict:
     result = await assessment_service.export_submissions(
-        db, assessment_id, status, search, min_percentage, max_percentage
+        db,
+        assessment_id,
+        status,
+        search,
+        sort_by,
+        sort_order=sort_order,
+        from_date=from_date,
+        to_date=to_date,
     )
     return success_response(SuccessMessages.EXPORT_READY, result)
 
