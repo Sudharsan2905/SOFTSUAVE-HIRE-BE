@@ -56,6 +56,7 @@ class CandidateRegisterRequest(BaseModel):
 class CandidateLoginRequest(BaseModel):
     email: EmailStr
     password: str
+    share_link: str | None = None
 
 
 class GoogleAuthRequest(BaseModel):

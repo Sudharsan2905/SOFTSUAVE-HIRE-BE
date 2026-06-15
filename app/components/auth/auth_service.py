@@ -20,6 +20,7 @@ from app.common.response_models.auth_responses import (
     UserInTokenResponse,
 )
 from app.common.utils import generate_secure_token, hash_token, serialize_doc, utcnow
+from app.components.candidate.candidate_service import _check_candidate_access_restriction
 from app.core.config import settings
 from app.core.logging import logger
 
@@ -96,11 +97,17 @@ async def admin_login(db: AsyncIOMotorDatabase, email: str, password: str) -> Au
     return await _issue_tokens(db, user)
 
 
-async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -> AuthTokenResponse:
+async def candidate_login(
+    db: AsyncIOMotorDatabase,
+    email: str,
+    password: str,
+    share_link: str | None = None,
+) -> AuthTokenResponse:
     """Authenticate a candidate and issue JWT tokens.
 
     Raises:
         UnauthorizedException: On invalid credentials or deactivated account.
+        ForbiddenException: If the share link's candidate restriction blocks this candidate.
     """
     user = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
     if not user or not verify_password(password, user.get("password_hash", "")):
@@ -109,6 +116,12 @@ async def candidate_login(db: AsyncIOMotorDatabase, email: str, password: str) -
     if not user.get("is_active", True):
         logger.warning(f"Deactivated candidate attempted login: {email}")
         raise UnauthorizedException("Your account has been deactivated.")
+    if share_link:
+        share_doc = await db.assessment_shares.find_one(
+            {"share_link": share_link, "is_active": True}
+        )
+        if share_doc:
+            await _check_candidate_access_restriction(db, share_doc, str(user["_id"]))
     logger.info(f"Candidate logged in: {email}")
     return await _issue_tokens(db, user)
 

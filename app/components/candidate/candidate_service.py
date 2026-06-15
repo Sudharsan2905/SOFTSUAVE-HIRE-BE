@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.core.logging import logger
 
 _DEFAULT_CONTENT_TYPE = "image/jpeg"
+_ERR_ACCESS_RESTRICTED = "You are not authorized to access this assessment link."
 
 
 # MongoDB pipeline operator constants
@@ -182,6 +183,31 @@ async def _build_round_data(
     }
 
 
+async def _check_candidate_access_restriction(
+    db: AsyncIOMotorDatabase,
+    share_doc: dict,
+    candidate_id: str,
+) -> None:
+    """Raise ForbiddenException if the share link's candidate restriction blocks this candidate.
+
+    Does nothing when restriction is disabled or share_doc has no restriction config.
+    """
+    if not share_doc.get("restrict_candidate_access"):
+        return
+
+    restriction_mode = share_doc.get("restriction_mode")
+    restricted_emails: list[str] = share_doc.get("restricted_emails") or []
+
+    candidate_doc = await db.users.find_one({"_id": ObjectId(candidate_id)})
+    candidate_email = ((candidate_doc.get("email") or "") if candidate_doc else "").strip().lower()
+
+    blocked = (restriction_mode == "INCLUDE" and candidate_email not in restricted_emails) or (
+        restriction_mode == "EXCLUDE" and candidate_email in restricted_emails
+    )
+    if blocked:
+        raise ForbiddenException(_ERR_ACCESS_RESTRICTED)
+
+
 async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_id: str) -> dict:
     """Start or resume a candidate's assessment submission.
 
@@ -219,6 +245,10 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     if not assessment:
         raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
+    # ── Candidate access restriction check ─────────────────────────────────
+    if share_doc:
+        await _check_candidate_access_restriction(db, share_doc, candidate_id)
+
     existing = await db.assessment_submissions.find_one(
         {
             "assessment_id": assessment["_id"],
@@ -235,6 +265,10 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     monitoring_overrides: dict | None = share_doc.get("monitoring_overrides") if share_doc else None
 
     now = utcnow()
+    for rd in rounds_data:
+        if rd.get("round_number") == 1:
+            rd["started_at"] = now
+            break
 
     submission = {
         "assessment_id": assessment["_id"],
@@ -250,7 +284,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "malpractice_count": 0,
         "malpractice_events": [],
         "reaccess_count": 0,
-        "started_at": None,
+        "started_at": now,
         "completed_at": None,
         "created_at": now,
         "updated_at": now,
@@ -289,7 +323,7 @@ async def start_interview(db: AsyncIOMotorDatabase, submission_id: str, candidat
         "rounds_data.$[rd].started_at": now,
         "updated_at": now,
     }
-    if not sub.get("started_at"):
+    if current == 1:
         set_fields["started_at"] = now
 
     await db.assessment_submissions.update_one(
@@ -505,6 +539,13 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         {"$set": set_fields},
         array_filters=[{"rd.round_number": current}],
     )
+
+    if not is_last_round:
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"]},
+            {"$set": {"rounds_data.$[nxt].started_at": now}},
+            array_filters=[{"nxt.round_number": current + 1}],
+        )
 
     if is_last_round:
         logger.info(

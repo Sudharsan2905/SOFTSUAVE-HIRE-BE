@@ -1,6 +1,10 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.common.constants.app_constants import AssessmentAccessibility, ReaccessReasonCategory
+from app.common.constants.app_constants import (
+    AssessmentAccessibility,
+    ReaccessReasonCategory,
+    RestrictionMode,
+)
 
 
 class MonitoringConfig(BaseModel):
@@ -87,9 +91,25 @@ class CreateShareRequest(BaseModel):
     monitoring_overrides: CandidateMonitoringOverrides | None = None
     start_time: str | None = None  # ISO 8601 — optional; triggers time-bounded link
     end_time: str | None = None  # ISO 8601 — required when start_time is provided
+    restrict_candidate_access: bool = False
+    restriction_mode: RestrictionMode | None = None
+    restricted_emails: list[str] = Field(default_factory=list)
+
+    @field_validator("restricted_emails", mode="before")
+    @classmethod
+    def normalise_emails(cls, v: list[str]) -> list[str]:
+        """Lowercase, strip whitespace, remove empty values, and deduplicate."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for raw in v:
+            email = raw.strip().lower()
+            if email and email not in seen:
+                seen.add(email)
+                result.append(email)
+        return result
 
     @model_validator(mode="after")
-    def validate_time_fields(self) -> "CreateShareRequest":
+    def validate_fields(self) -> "CreateShareRequest":
         from datetime import UTC
         from datetime import datetime as _dt
 
@@ -105,4 +125,15 @@ class CreateShareRequest(BaseModel):
                 ) from err
             if e <= s:
                 raise ValueError("end_time must be after start_time")
+
+        if self.restrict_candidate_access:
+            if self.restriction_mode is None:
+                raise ValueError(
+                    "restriction_mode is required when restrict_candidate_access is true"
+                )
+            if not self.restricted_emails:
+                raise ValueError(
+                    "restricted_emails cannot be empty when restrict_candidate_access is true"
+                )
+
         return self

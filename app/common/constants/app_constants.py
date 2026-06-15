@@ -61,6 +61,7 @@ class MalpracticeType(str, Enum):
     KEYBOARD_SHORTCUT = "keyboard_shortcut"
     EYE_DIRECTION = "eye_direction"
     SPEAKING = "speaking"
+    NOTIFICATION_RECEIVED = "notification_received"
 
 
 class ReaccessReasonCategory(str, Enum):
@@ -68,3 +69,8 @@ class ReaccessReasonCategory(str, Enum):
     CANDIDATE_REQUEST = "candidate_request"
     TECHNICAL_ISSUE = "technical_issue"
     OTHER = "other"
+
+
+class RestrictionMode(str, Enum):
+    INCLUDE = "INCLUDE"
+    EXCLUDE = "EXCLUDE"

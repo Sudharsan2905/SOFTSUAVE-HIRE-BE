@@ -42,7 +42,7 @@ async def admin_login(request: Request, body: AdminLoginRequest, db: DB) -> dict
 @router.post("/login", response_model=ApiResponse[AuthTokenResponse])
 @limiter.limit("10/minute")
 async def candidate_login(request: Request, body: CandidateLoginRequest, db: DB) -> dict:
-    result = await auth_service.candidate_login(db, body.email, body.password)
+    result = await auth_service.candidate_login(db, body.email, body.password, body.share_link)
     return success_response(SuccessMessages.LOGIN_SUCCESS, result)
 
 
