@@ -8,6 +8,7 @@ from app.common.response_models.assessment_responses import (
     AssessmentDetailResponse,
     AssessmentStatsResponse,
     ShareLinkResponse,
+    SubmissionStatsResponse,
 )
 from app.common.responses import ApiResponse, success_response
 from app.common.router import DefaultResponseRouter
@@ -155,6 +156,20 @@ async def export_submission_list(
         to_date=to_date,
     )
     return success_response(SuccessMessages.EXPORT_READY, result)
+
+
+@router.get(
+    "/{assessment_id}/submissions/stats",
+    response_model=ApiResponse[SubmissionStatsResponse],
+)
+async def get_submission_stats(
+    workspace_id: str,
+    assessment_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await assessment_service.get_submission_stats(db, assessment_id)
+    return success_response(SuccessMessages.SUBMISSION_STATS_RETRIEVED, result)
 
 
 @router.get("/{assessment_id}/submissions/{submission_id}")

@@ -130,6 +130,38 @@ async def get_assessment_stats(db: AsyncIOMotorDatabase, workspace_id: str) -> d
     }
 
 
+async def get_submission_stats(db: AsyncIOMotorDatabase, assessment_id: str) -> dict:
+    """Return aggregated submission counts and average percentage for one assessment."""
+    assessment_oid = ObjectId(assessment_id)
+
+    result = {"total": 0, "completed": 0, "on_hold": 0, "malpractice": 0, "avg_percentage": 0.0}
+
+    async for doc in db.assessment_submissions.aggregate(
+        [
+            {"$match": {"assessment_id": assessment_oid}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total": {"$sum": 1},
+                    "completed": {"$sum": {"$cond": [{"$eq": ["$status", "completed"]}, 1, 0]}},
+                    "on_hold": {"$sum": {"$cond": [{"$eq": ["$status", "on_hold"]}, 1, 0]}},
+                    "malpractice": {"$sum": {"$cond": [{"$eq": ["$status", "malpractice"]}, 1, 0]}},
+                    "avg_percentage": {"$avg": "$percentage"},
+                }
+            },
+        ]
+    ):
+        result = {
+            "total": doc["total"],
+            "completed": doc["completed"],
+            "on_hold": doc["on_hold"],
+            "malpractice": doc["malpractice"],
+            "avg_percentage": round(doc.get("avg_percentage") or 0.0, 1),
+        }
+
+    return result
+
+
 async def get_assessments(
     db: AsyncIOMotorDatabase,
     workspace_id: str,

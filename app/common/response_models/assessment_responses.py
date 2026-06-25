@@ -30,6 +30,14 @@ class AssessmentStatsResponse(BaseModel):
     avg_completion: int
 
 
+class SubmissionStatsResponse(BaseModel):
+    total: int
+    completed: int
+    on_hold: int
+    malpractice: int
+    avg_percentage: float
+
+
 class AssessmentListItemResponse(BaseModel):
     id: str
     name: str

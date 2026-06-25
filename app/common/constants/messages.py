@@ -63,6 +63,7 @@ class SuccessMessages:
 
     # Submissions (list)
     SUBMISSIONS_RETRIEVED = "Submissions retrieved"
+    SUBMISSION_STATS_RETRIEVED = "Submission stats retrieved"
 
     # Candidate submission flow
     ANSWER_SUBMITTED = "Answer submitted"
