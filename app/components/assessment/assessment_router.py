@@ -6,6 +6,7 @@ from fastapi import BackgroundTasks, Query, Request
 from app.common.constants.messages import ErrorMessages, SuccessMessages
 from app.common.response_models.assessment_responses import (
     AssessmentDetailResponse,
+    AssessmentStatsResponse,
     ShareLinkResponse,
 )
 from app.common.responses import ApiResponse, success_response
@@ -25,6 +26,16 @@ from app.core.limiter import limiter
 router = DefaultResponseRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
+@router.get("/stats", response_model=ApiResponse[AssessmentStatsResponse])
+async def get_assessment_stats(
+    workspace_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await assessment_service.get_assessment_stats(db, workspace_id)
+    return success_response(SuccessMessages.ASSESSMENT_STATS_RETRIEVED, result)
+
+
 @router.get("")
 async def list_assessments(
     workspace_id: str,
@@ -35,9 +46,10 @@ async def list_assessments(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    accessibility: Annotated[str | None, Query()] = None,
 ) -> dict:
     result = await assessment_service.get_assessments(
-        db, workspace_id, search, sort_by, sort_order, page, page_size
+        db, workspace_id, search, sort_by, sort_order, page, page_size, accessibility
     )
     return success_response(SuccessMessages.ASSESSMENTS_RETRIEVED, result)
 

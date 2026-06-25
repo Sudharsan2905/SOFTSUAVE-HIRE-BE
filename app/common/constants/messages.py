@@ -37,6 +37,7 @@ class SuccessMessages:
     ASSESSMENT_DELETED = "Assessment deleted successfully"
     ASSESSMENTS_RETRIEVED = "Assessments retrieved"
     ASSESSMENT_RETRIEVED = "Assessment retrieved"
+    ASSESSMENT_STATS_RETRIEVED = "Assessment stats retrieved"
     SHARE_LINK_CREATED = "Share link created"
     SHARE_LINK_VALIDATED = "Share link validated"
     SHARES_RETRIEVED = "Shares retrieved"

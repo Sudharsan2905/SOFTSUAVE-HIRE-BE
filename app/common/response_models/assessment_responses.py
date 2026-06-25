@@ -22,6 +22,14 @@ class RoundConfigResponse(BaseModel):
     max_duration_minutes: int
 
 
+class AssessmentStatsResponse(BaseModel):
+    total: int
+    monitoring: int
+    standard: int
+    submissions_30d: int
+    avg_completion: int
+
+
 class AssessmentListItemResponse(BaseModel):
     id: str
     name: str
@@ -29,6 +37,7 @@ class AssessmentListItemResponse(BaseModel):
     accessibility: AssessmentAccessibility
     rounds_count: int
     submission_count: int = 0
+    expected_candidates: int | None = None
     share_link: str
     created_at: datetime
 

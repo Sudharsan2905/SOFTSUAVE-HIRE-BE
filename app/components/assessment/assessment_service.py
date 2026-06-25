@@ -1,4 +1,4 @@
-from datetime import UTC
+from datetime import UTC, timedelta
 from typing import Any
 
 from bson import ObjectId
@@ -66,6 +66,7 @@ async def create_assessment(
         "rounds": _build_rounds(data.get("rounds", [])),
         "accessibility": data["accessibility"],
         "monitoring_config": monitoring,
+        "expected_candidates": data.get("expected_candidates"),
         "created_by": ObjectId(user_id),
         "is_active": True,
         "created_at": now,
@@ -83,6 +84,52 @@ async def create_assessment(
     return serialize_doc(doc)
 
 
+async def get_assessment_stats(db: AsyncIOMotorDatabase, workspace_id: str) -> dict:
+    """Return dashboard summary stats for assessments in a workspace."""
+    workspace_oid = ObjectId(workspace_id)
+
+    # Count assessments grouped by accessibility mode
+    counts: dict[str, int] = {}
+    async for doc in db.assessments.aggregate(
+        [
+            {"$match": {"workspace_id": workspace_oid, "is_active": True}},
+            {"$group": {"_id": "$accessibility", "count": {"$sum": 1}}},
+        ]
+    ):
+        counts[doc["_id"]] = doc["count"]
+
+    total = sum(counts.values())
+    monitoring = counts.get("monitoring", 0)
+    standard = counts.get("normal", 0)
+
+    # Submissions created in the last 30 days across all workspace assessments
+    assessment_ids = await db.assessments.distinct(
+        "_id", {"workspace_id": workspace_oid, "is_active": True}
+    )
+    cutoff = utcnow() - timedelta(days=30)
+    submissions_30d = await db.assessment_submissions.count_documents(
+        {"assessment_id": {"$in": assessment_ids}, "created_at": {"$gte": cutoff}}
+    )
+
+    # Average completion % across all completed submissions
+    avg_completion = 0
+    async for doc in db.assessment_submissions.aggregate(
+        [
+            {"$match": {"assessment_id": {"$in": assessment_ids}, "status": "completed"}},
+            {"$group": {"_id": None, "avg_pct": {"$avg": "$percentage"}}},
+        ]
+    ):
+        avg_completion = round(doc.get("avg_pct") or 0)
+
+    return {
+        "total": total,
+        "monitoring": monitoring,
+        "standard": standard,
+        "submissions_30d": submissions_30d,
+        "avg_completion": avg_completion,
+    }
+
+
 async def get_assessments(
     db: AsyncIOMotorDatabase,
     workspace_id: str,
@@ -91,12 +138,15 @@ async def get_assessments(
     sort_order: str,
     page: int,
     page_size: int,
+    accessibility: str | None = None,
 ) -> dict:
     """Return a paginated list of assessments in a workspace, with submission counts."""
     skip, limit = paginate_query(page, page_size)
     query: dict = {"workspace_id": ObjectId(workspace_id), "is_active": True}
     if search:
         query["name"] = {_REGEX: safe_regex(search), _OPTIONS: "i"}
+    if accessibility:
+        query["accessibility"] = accessibility
 
     sort_dir = 1 if sort_order == "asc" else -1
     total, docs = await list_paginated(
@@ -159,6 +209,8 @@ async def update_assessment(
     if data.get("monitoring_config"):
         mc = data["monitoring_config"]
         update["monitoring_config"] = mc.model_dump() if hasattr(mc, "model_dump") else mc
+    if data.get("expected_candidates") is not None:
+        update["expected_candidates"] = data["expected_candidates"]
 
     await db.assessments.update_one({"_id": ObjectId(assessment_id)}, {"$set": update})
     return serialize_doc(

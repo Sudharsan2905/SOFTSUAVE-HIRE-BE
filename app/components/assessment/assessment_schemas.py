@@ -55,6 +55,7 @@ class CreateAssessmentRequest(BaseModel):
     rounds: list[RoundConfig] = Field(..., min_length=1)
     accessibility: AssessmentAccessibility = AssessmentAccessibility.NORMAL
     monitoring_config: MonitoringConfig | None = None
+    expected_candidates: int | None = Field(None, ge=1)
 
 
 class UpdateAssessmentRequest(BaseModel):
@@ -63,6 +64,7 @@ class UpdateAssessmentRequest(BaseModel):
     rounds: list[RoundConfig] | None = None
     accessibility: AssessmentAccessibility | None = None
     monitoring_config: MonitoringConfig | None = None
+    expected_candidates: int | None = Field(None, ge=1)
 
 
 class GenerateExpirableLinkRequest(BaseModel):
