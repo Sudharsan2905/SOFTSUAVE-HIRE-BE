@@ -173,8 +173,37 @@ def _build_question_answer(q: dict, original: dict, candidate_answer: Any) -> di
     }
 
 
+def _build_question_answer_from_embedded(
+    q: dict, original: dict, candidate_answer: Any, q_result: dict
+) -> dict:
+    """Build a question_answer dict using embedded rounds_data for question text/type/options
+    and the DB original for per-option is_correct. Question-level is_correct comes from
+    question_results rather than being re-computed from options.
+    """
+    correctness: dict = {
+        opt.get("id"): opt.get("is_correct", False) for opt in original.get("options", ())
+    }
+    options = [
+        {
+            "id": (oid := opt.get("id")),
+            "text": opt.get("text"),
+            "is_correct": correctness.get(oid, False),
+        }
+        for opt in q.get("options", ())
+    ]
+    return {
+        "question_id": _extract_q_id(q),
+        "question_text": q.get("text", ""),
+        "question_type": q.get("type") or q.get("question_type"),
+        "options": options,
+        "candidate_answer": candidate_answer,
+        "is_correct": q_result.get("is_correct") if q_result else None,
+    }
+
+
 def _build_round_entry(rd: dict, question_answers: list) -> dict:
     """Assemble a single round dict from a rounds_data entry and its resolved question_answers."""
+    question_results = rd.get("question_results", {})
     return {
         "round_number": rd.get("round_number"),
         "score": rd.get("score", 0),
@@ -182,6 +211,7 @@ def _build_round_entry(rd: dict, question_answers: list) -> dict:
         "started_at": _iso(rd.get("started_at")),
         "completed_at": _iso(rd.get("completed_at")),
         "question_answers": question_answers,
+        "is_validated": len(question_results) > 1,
     }
 
 
@@ -234,9 +264,28 @@ async def build_round_snapshot(rounds_data: list, db: AsyncIOMotorDatabase) -> l
 
 
 async def _build_live_rounds(rounds_data: list, db: AsyncIOMotorDatabase) -> list:
-    """Build question_answers for a live submission's rounds_data via batch question fetch."""
+    """Build question_answers for a live submission.
+
+    Batches all question lookups into a single DB query for option is_correct.
+    Uses embedded question text/type from rounds_data and question_results for
+    the question-level is_correct instead of re-computing it from options.
+    """
     originals = await _fetch_originals(db, _collect_question_ids(rounds_data))
-    return _build_rounds_from_originals(rounds_data, originals)
+    result = []
+    for rd in rounds_data:
+        answers: dict = rd.get("answers", {})
+        question_results: dict = rd.get("question_results", {})
+        question_answers = [
+            _build_question_answer_from_embedded(
+                q,
+                originals.get(_extract_q_id(q), {}),
+                answers.get(_extract_q_id(q), []),
+                question_results.get(_extract_q_id(q), {}),
+            )
+            for q in rd.get("questions", [])
+        ]
+        result.append(_build_round_entry(rd, question_answers))
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -334,7 +383,9 @@ async def get_candidate_submission(
             "completed_at": _iso(hist.get("completed_at")),
             "current_version": current_version,
             "available_versions": available_versions,
-            "rounds": hist.get("rounds", []),
+            "rounds": [
+                {**r, "is_validated": r.get("is_validated", False)} for r in hist.get("rounds", [])
+            ],
             "malpractice_events": malpractice_events,
             "screenshots": screenshots,
         }
@@ -347,7 +398,6 @@ async def get_candidate_submission(
     )
     candidate_data = _build_candidate_dict(candidate_doc)
 
-    # Build rounds with question_answers via batch fetch
     rounds = await _build_live_rounds(sub.get("rounds_data", []), db)
 
     # Resolve S3 URLs in malpractice events

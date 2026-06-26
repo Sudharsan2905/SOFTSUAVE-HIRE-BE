@@ -11,7 +11,6 @@ from app.common.utils import (
     build_pagination_meta,
     decode_sharelink,
     encode_permanent_sharelink,
-    generate_sharelink,  # noqa: F401 — kept for backward compatibility
     list_paginated,
     paginate_query,
     safe_regex,
