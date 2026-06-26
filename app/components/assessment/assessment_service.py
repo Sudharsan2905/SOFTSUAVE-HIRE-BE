@@ -415,7 +415,14 @@ async def get_submissions(
             }
         },
         {_UNWIND: {"path": "$candidate", "preserveNullAndEmptyArrays": True}},
-        {"$project": {"candidate.password_hash": 0, "rounds_data.questions": 0}},
+        {
+            "$project": {
+                "candidate.password_hash": 0,
+                "rounds_data.questions": 0,
+                "rounds_data.answers": 0,
+                "rounds_data.question_results": 0,
+            }
+        },
     ]
     if search:
         escaped = safe_regex(search)
