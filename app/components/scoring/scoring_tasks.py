@@ -46,7 +46,7 @@ async def calculate_and_store_score(
         cumulative_pct = round(
             (sum(rd.get("percentage", 0.0) for rd in already_scored) + result["percentage"])
             / total_rounds,
-            2,
+            1,
         )
         cumulative_score = sum(rd.get("score", 0) for rd in already_scored) + result["score"]
 

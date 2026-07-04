@@ -39,9 +39,11 @@ class SuccessMessages:
     ASSESSMENT_RETRIEVED = "Assessment retrieved"
     ASSESSMENT_STATS_RETRIEVED = "Assessment stats retrieved"
     SHARE_LINK_CREATED = "Share link created"
+    PERMANENT_RESTRICTION_UPDATED = "Permanent link restriction updated"
     SHARE_LINK_VALIDATED = "Share link validated"
     SHARES_RETRIEVED = "Shares retrieved"
     SHARE_REVOKED = "Share revoked"
+    SHARE_UPDATED = "Share link updated"
     REACCESS_GRANTED = "Re-access granted successfully"
     SESSION_TERMINATED = "Session terminated"
     SESSION_COMPLETED = "Session completed"
@@ -59,11 +61,13 @@ class SuccessMessages:
     CATEGORY_DELETED = "Category and its questions deleted"
     BULK_QUESTIONS_CREATED = "Questions created in bulk"
     QUESTIONS_GENERATED = "Questions generated successfully"
-    QUESTIONS_IMPORTED = "Questions imported from Excel"
+    QUESTIONS_IMPORTED = "Questions imported successfully"
+    IMPORT_TEMPLATE_READY = "Import template ready"
 
     # Submissions (list)
     SUBMISSIONS_RETRIEVED = "Submissions retrieved"
     SUBMISSION_STATS_RETRIEVED = "Submission stats retrieved"
+    SUBMISSION_DELETED = "Submission deleted successfully"
 
     # Candidate submission flow
     ANSWER_SUBMITTED = "Answer submitted"

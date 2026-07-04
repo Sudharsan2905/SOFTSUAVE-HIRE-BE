@@ -6,6 +6,13 @@ from app.common.constants.app_constants import (
     RestrictionMode,
 )
 
+_ERR_RESTRICTION_MODE_REQUIRED = (
+    "restriction_mode is required when restrict_candidate_access is true"
+)
+_ERR_RESTRICTED_EMAILS_REQUIRED = (
+    "restricted_emails cannot be empty when restrict_candidate_access is true"
+)
+
 
 class MonitoringConfig(BaseModel):
     tab_monitoring: bool = True
@@ -130,12 +137,82 @@ class CreateShareRequest(BaseModel):
 
         if self.restrict_candidate_access:
             if self.restriction_mode is None:
-                raise ValueError(
-                    "restriction_mode is required when restrict_candidate_access is true"
-                )
+                raise ValueError(_ERR_RESTRICTION_MODE_REQUIRED)
             if not self.restricted_emails:
-                raise ValueError(
-                    "restricted_emails cannot be empty when restrict_candidate_access is true"
-                )
+                raise ValueError(_ERR_RESTRICTED_EMAILS_REQUIRED)
 
+        return self
+
+
+class UpdateShareRequest(BaseModel):
+    label: str | None = Field(None, min_length=1, max_length=100)
+    start_time: str | None = None  # ISO 8601
+    end_time: str | None = None  # ISO 8601
+    restrict_candidate_access: bool | None = None
+    restriction_mode: RestrictionMode | None = None
+    restricted_emails: list[str] | None = None
+
+    @field_validator("restricted_emails", mode="before")
+    @classmethod
+    def normalise_emails(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        seen: set[str] = set()
+        result: list[str] = []
+        for raw in v:
+            email = raw.strip().lower()
+            if email and email not in seen:
+                seen.add(email)
+                result.append(email)
+        return result
+
+    @model_validator(mode="after")
+    def validate_fields(self) -> "UpdateShareRequest":
+        from datetime import UTC
+        from datetime import datetime as _dt
+
+        if self.start_time and self.end_time:
+            try:
+                s = _dt.fromisoformat(self.start_time).replace(tzinfo=UTC)
+                e = _dt.fromisoformat(self.end_time).replace(tzinfo=UTC)
+            except ValueError as err:
+                raise ValueError(
+                    "start_time and end_time must be valid ISO 8601 timestamps"
+                ) from err
+            if e <= s:
+                raise ValueError("end_time must be after start_time")
+
+        if self.restrict_candidate_access:
+            if self.restriction_mode is None:
+                raise ValueError(_ERR_RESTRICTION_MODE_REQUIRED)
+            if not self.restricted_emails:
+                raise ValueError(_ERR_RESTRICTED_EMAILS_REQUIRED)
+
+        return self
+
+
+class UpdatePermanentLinkRestrictionRequest(BaseModel):
+    restrict_candidate_access: bool = False
+    restriction_mode: RestrictionMode | None = None
+    restricted_emails: list[str] = Field(default_factory=list)
+
+    @field_validator("restricted_emails", mode="before")
+    @classmethod
+    def normalise_emails(cls, v: list[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for raw in v:
+            email = raw.strip().lower()
+            if email and email not in seen:
+                seen.add(email)
+                result.append(email)
+        return result
+
+    @model_validator(mode="after")
+    def validate_restriction(self) -> "UpdatePermanentLinkRestrictionRequest":
+        if self.restrict_candidate_access:
+            if self.restriction_mode is None:
+                raise ValueError(_ERR_RESTRICTION_MODE_REQUIRED)
+            if not self.restricted_emails:
+                raise ValueError(_ERR_RESTRICTED_EMAILS_REQUIRED)
         return self

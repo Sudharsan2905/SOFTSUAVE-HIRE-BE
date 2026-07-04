@@ -137,7 +137,7 @@ async def get_submission_stats(db: AsyncIOMotorDatabase, assessment_id: str) -> 
 
     async for doc in db.assessment_submissions.aggregate(
         [
-            {"$match": {"assessment_id": assessment_oid}},
+            {"$match": {"assessment_id": assessment_oid, "is_active": {"$ne": False}}},
             {
                 "$group": {
                     "_id": None,
@@ -405,7 +405,7 @@ async def get_submissions(
     sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
 
     pipeline: list[Any] = [
-        {_MATCH: {"assessment_id": ObjectId(assessment_id)}},
+        {_MATCH: {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}},
         {
             _LOOKUP: {
                 "from": "users",
@@ -634,7 +634,7 @@ async def export_submissions(
     sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
     sort_dir = 1 if sort_order == "asc" else -1
 
-    match_query: dict = {"assessment_id": ObjectId(assessment_id)}
+    match_query: dict = {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}
     if status:
         match_query["status"] = status
 
@@ -713,3 +713,54 @@ async def export_submissions(
 
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
     return serialize_docs(docs)
+
+
+async def delete_submission(
+    db: AsyncIOMotorDatabase,
+    assessment_id: str,
+    submission_id: str,
+) -> None:
+    """Soft-delete a submission by setting is_active=False.
+
+    Raises:
+        NotFoundException: If the submission does not exist or belongs to a different assessment.
+    """
+    result = await db.assessment_submissions.update_one(
+        {
+            "_id": ObjectId(submission_id),
+            "assessment_id": ObjectId(assessment_id),
+            "is_active": {"$ne": False},
+        },
+        {"$set": {"is_active": False, "updated_at": utcnow()}},
+    )
+    if result.matched_count == 0:
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
+
+
+async def update_permanent_link_restriction(
+    db: AsyncIOMotorDatabase,
+    workspace_id: str,
+    assessment_id: str,
+    data: dict,
+) -> None:
+    """Store candidate access restriction settings on the assessment document.
+
+    These fields are checked by ``start_assessment`` when the link is a permanent
+    (non-custom) share link that has no matching ``assessment_shares`` document.
+
+    Raises:
+        NotFoundException: If the assessment does not exist in this workspace.
+    """
+    result = await db.assessments.update_one(
+        {"_id": ObjectId(assessment_id), "workspace_id": workspace_id, "is_active": True},
+        {
+            "$set": {
+                "restrict_candidate_access": data.get("restrict_candidate_access", False),
+                "restriction_mode": data.get("restriction_mode"),
+                "restricted_emails": data.get("restricted_emails", []),
+                "updated_at": utcnow(),
+            }
+        },
+    )
+    if result.matched_count == 0:
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)

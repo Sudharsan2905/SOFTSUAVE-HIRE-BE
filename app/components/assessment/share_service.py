@@ -160,6 +160,69 @@ async def delete_share(
         raise NotFoundException(_ERR_SHARE_NOT_FOUND)
 
 
+async def update_share(
+    db: AsyncIOMotorDatabase,
+    share_id: str,
+    workspace_id: str,
+    data: dict,
+) -> dict:
+    """Update mutable fields of a custom share link without changing the URL.
+
+    Only fields present in ``data`` with non-None values are applied.
+    The share link (URL) is never touched.
+
+    Args:
+        db:           Motor database instance.
+        share_id:     The _id of the share to update.
+        workspace_id: Workspace guard — prevents cross-workspace edits.
+        data:         Dict of fields to update (label, start_time, end_time,
+                      restrict_candidate_access, restriction_mode, restricted_emails).
+
+    Returns:
+        Updated serialised assessment_shares document.
+
+    Raises:
+        NotFoundException:   If no active share with that ID exists in the workspace.
+        ValidationException: If time validation fails.
+    """
+    updatable = {
+        "label",
+        "start_time",
+        "end_time",
+        "restrict_candidate_access",
+        "restriction_mode",
+        "restricted_emails",
+    }
+    patch: dict = {k: v for k, v in data.items() if k in updatable and v is not None}
+
+    if "start_time" in patch and "end_time" in patch:
+        from datetime import UTC
+        from datetime import datetime as _dt
+
+        try:
+            s = _dt.fromisoformat(patch["start_time"]).replace(tzinfo=UTC)
+            e = _dt.fromisoformat(patch["end_time"]).replace(tzinfo=UTC)
+        except ValueError as err:
+            raise ValidationException("Invalid date format. Use ISO 8601.") from err
+        if e <= s:
+            raise ValidationException("end_time must be after start_time")
+
+    patch["updated_at"] = utcnow()
+
+    result = await db.assessment_shares.find_one_and_update(
+        {
+            "_id": ObjectId(share_id),
+            "workspace_id": ObjectId(workspace_id),
+            "is_active": True,
+        },
+        {"$set": patch},
+        return_document=True,
+    )
+    if not result:
+        raise NotFoundException(_ERR_SHARE_NOT_FOUND)
+    return serialize_doc(result)
+
+
 async def get_share_by_link(
     db: AsyncIOMotorDatabase,
     share_link: str,

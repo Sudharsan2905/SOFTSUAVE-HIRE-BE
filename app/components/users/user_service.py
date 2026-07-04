@@ -1,3 +1,5 @@
+from typing import Any
+
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -251,6 +253,53 @@ async def get_candidate(db: AsyncIOMotorDatabase, user_id: str) -> CandidateProf
     if not doc:
         raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
     return CandidateProfileResponse.model_validate(serialize_doc(doc))
+
+
+async def delete_candidate(db: AsyncIOMotorDatabase, user_id: str) -> None:
+    """Soft-delete a candidate by setting is_active=False.
+
+    Raises:
+        NotFoundException: If the candidate does not exist.
+    """
+    result = await db.users.update_one(
+        {"_id": ObjectId(user_id), "role": UserRole.CANDIDATE},
+        {"$set": {"is_active": False, "updated_at": utcnow()}},
+    )
+    if result.matched_count == 0:
+        raise NotFoundException(ErrorMessages.USER_NOT_FOUND)
+
+
+async def get_candidate_submission_history(db: AsyncIOMotorDatabase, user_id: str) -> list:
+    """Return all active submissions for a candidate, joined with assessment name."""
+    pipeline: list[dict[str, Any]] = [
+        {
+            "$match": {
+                "candidate_id": ObjectId(user_id),
+                "is_active": {"$ne": False},
+            }
+        },
+        {
+            "$lookup": {
+                "from": "assessments",
+                "localField": "assessment_id",
+                "foreignField": "_id",
+                "as": "assessment",
+            }
+        },
+        {"$unwind": {"path": "$assessment", "preserveNullAndEmpty": True}},
+        {
+            "$project": {
+                "assessment_name": "$assessment.name",
+                "status": 1,
+                "percentage": 1,
+                "started_at": 1,
+                "completed_at": 1,
+            }
+        },
+        {"$sort": {"started_at": -1}},
+    ]
+    docs = await db.assessment_submissions.aggregate(pipeline).to_list(200)
+    return serialize_docs(docs)
 
 
 async def update_candidate(

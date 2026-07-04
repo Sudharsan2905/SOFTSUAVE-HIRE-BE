@@ -138,7 +138,7 @@ async def score_round(db: AsyncIOMotorDatabase, rd: dict) -> dict:
                 correct_essay += 1
 
     total_correct = correct_mcq + correct_essay
-    pct = round((total_correct / total_questions * 100) if total_questions > 0 else 0.0, 2)
+    pct = round((total_correct / total_questions * 100) if total_questions > 0 else 0.0, 1)
 
     return {
         "score": total_correct,

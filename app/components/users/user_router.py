@@ -89,6 +89,26 @@ async def get_candidate(
     return success_response(SuccessMessages.CANDIDATE_RETRIEVED, result)
 
 
+@router.delete("/candidates/{user_id}")
+async def delete_candidate(
+    user_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    await user_service.delete_candidate(db, user_id)
+    return success_response(SuccessMessages.CANDIDATE_DELETED)
+
+
+@router.get("/candidates/{user_id}/submissions")
+async def get_candidate_submissions(
+    user_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await user_service.get_candidate_submission_history(db, user_id)
+    return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, result)
+
+
 @router.put("/candidates/{user_id}", response_model=ApiResponse[CandidateProfileResponse])
 async def update_candidate(
     user_id: str,

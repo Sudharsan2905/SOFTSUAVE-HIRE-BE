@@ -248,6 +248,8 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     # ── Candidate access restriction check ─────────────────────────────────
     if share_doc:
         await _check_candidate_access_restriction(db, share_doc, candidate_id)
+    else:
+        await _check_candidate_access_restriction(db, assessment, candidate_id)
 
     existing = await db.assessment_submissions.find_one(
         {
@@ -284,6 +286,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "malpractice_count": 0,
         "malpractice_events": [],
         "reaccess_count": 0,
+        "is_active": True,
         "started_at": now,
         "completed_at": None,
         "created_at": now,

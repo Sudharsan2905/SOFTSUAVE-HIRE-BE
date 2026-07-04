@@ -140,6 +140,16 @@ async def ai_generate(
     return success_response(SuccessMessages.QUESTIONS_GENERATED, result)
 
 
+@router.get("/categories/{category_id}/import-template")
+async def get_import_template(
+    category_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    template_b64 = question_service.get_import_template()
+    return success_response(SuccessMessages.IMPORT_TEMPLATE_READY, {"template": template_b64})
+
+
 @router.post(
     "/categories/{category_id}/excel-import", response_model=ApiResponse[BulkOperationResponse]
 )
@@ -157,9 +167,15 @@ async def excel_import(
         col_map = json.loads(column_map)
     except Exception:
         col_map = {}
-    result = await question_service.process_excel_import(
-        db, category_id, file_data, current_user["_id"], col_map
-    )
+    filename = (file.filename or "").lower()
+    if filename.endswith(".csv"):
+        result = await question_service.process_csv_import(
+            db, category_id, file_data, current_user["_id"], col_map
+        )
+    else:
+        result = await question_service.process_excel_import(
+            db, category_id, file_data, current_user["_id"], col_map
+        )
     return success_response(SuccessMessages.QUESTIONS_IMPORTED, result)
 
 

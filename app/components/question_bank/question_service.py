@@ -495,3 +495,57 @@ async def process_excel_import(
             questions.append(parsed)
 
     return await bulk_create_questions(db, category_id, questions, user_id)
+
+
+async def process_csv_import(
+    db: AsyncIOMotorDatabase,
+    category_id: str,
+    file_data: bytes,
+    user_id: str,
+    column_map: dict | None = None,
+) -> BulkOperationResponse:
+    """Parse a CSV file and bulk-import questions into a category.
+
+    Accepts UTF-8 with or without BOM. Delegates row parsing to the shared
+    ``_parse_question_row`` helper used by the Excel importer.
+    """
+    import csv
+    import io
+
+    text = file_data.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    raw_headers: list[str] = list(reader.fieldnames or [])
+
+    col_map = column_map or {}
+    cols = {
+        "question": col_map.get("question") or _find_column(raw_headers, "question"),
+        "options": col_map.get("options") or _find_column(raw_headers, "options"),
+        "answer": col_map.get("answer") or _find_column(raw_headers, "answer"),
+        "complexity": col_map.get("complexity") or _find_column(raw_headers, "complexity"),
+    }
+
+    if not cols["question"]:
+        return BulkOperationResponse(created=0, error="Missing 'Question' column")
+
+    questions = []
+    for row in reader:
+        parsed = _parse_question_row(dict(row), cols)
+        if parsed:
+            questions.append(parsed)
+
+    return await bulk_create_questions(db, category_id, questions, user_id)
+
+
+def get_import_template() -> str:
+    """Return a base64-encoded xlsx with the import column headers and one example row."""
+    import base64
+    import io
+
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["Question", "Options", "Answer", "Complexity"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return base64.b64encode(buf.getvalue()).decode()

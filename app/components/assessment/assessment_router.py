@@ -19,6 +19,8 @@ from app.components.assessment.assessment_schemas import (
     ReaccessRequest,
     TerminateSubmissionRequest,
     UpdateAssessmentRequest,
+    UpdatePermanentLinkRestrictionRequest,
+    UpdateShareRequest,
 )
 from app.components.auth.auth_dependencies import AdminUser
 from app.core.dependencies import DB
@@ -199,6 +201,18 @@ async def grant_reaccess(
     return success_response(SuccessMessages.REACCESS_GRANTED)
 
 
+@router.delete("/{assessment_id}/submissions/{submission_id}")
+async def delete_submission(
+    workspace_id: str,
+    assessment_id: str,
+    submission_id: str,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    await assessment_service.delete_submission(db, assessment_id, submission_id)
+    return success_response(SuccessMessages.SUBMISSION_DELETED)
+
+
 @router.post("/{assessment_id}/submissions/{submission_id}/terminate")
 async def terminate_submission(
     workspace_id: str,
@@ -298,6 +312,20 @@ async def get_candidate_versions(
     return success_response(SuccessMessages.VERSIONS_RETRIEVED, {"versions": versions})
 
 
+@router.put("/{assessment_id}/permanent-restriction")
+async def update_permanent_restriction(
+    workspace_id: str,
+    assessment_id: str,
+    request: UpdatePermanentLinkRestrictionRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    await assessment_service.update_permanent_link_restriction(
+        db, workspace_id, assessment_id, request.model_dump()
+    )
+    return success_response(SuccessMessages.PERMANENT_RESTRICTION_UPDATED)
+
+
 @router.post("/{assessment_id}/shares", response_model=ApiResponse[ShareLinkResponse])
 async def create_share(
     workspace_id: str,
@@ -325,6 +353,21 @@ async def list_shares(
 
     result = await share_service.get_shares(db, assessment_id, workspace_id)
     return success_response(SuccessMessages.SHARES_RETRIEVED, result)
+
+
+@router.put("/{assessment_id}/shares/{share_id}", response_model=ApiResponse[ShareLinkResponse])
+async def update_share(
+    workspace_id: str,
+    assessment_id: str,
+    share_id: str,
+    request: UpdateShareRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    from app.components.assessment import share_service
+
+    result = await share_service.update_share(db, share_id, workspace_id, request.model_dump())
+    return success_response(SuccessMessages.SHARE_UPDATED, result)
 
 
 @router.delete("/{assessment_id}/shares/{share_id}")
