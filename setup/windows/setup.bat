@@ -1,6 +1,6 @@
 @echo off
 echo ============================================
-echo  Softsuave Hire BE - Windows Setup
+echo  Talentia BE - Windows Setup
 echo ============================================
 
 :: Move to project root (two levels up from setup\windows\)

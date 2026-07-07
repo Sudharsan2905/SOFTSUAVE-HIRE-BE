@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo " Softsuave Hire BE - Linux Setup"
+echo " Talentia BE - Linux Setup"
 echo "============================================"
 
 # Move to project root (two levels up from setup/linux/)

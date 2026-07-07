@@ -1,6 +1,6 @@
-# SOFTSUAVE-HIRE-BE
+# TALENTIA-BE
 
-FastAPI + Python backend for the SoftSuave Hire interview platform.
+FastAPI + Python backend for the Talentia interview platform.
 
 ---
 
@@ -192,9 +192,9 @@ All settings are loaded by `app/core/config.py` via pydantic-settings. Copy `.en
 
 ```env
 # App
-APP_NAME=Softsuave Hire
+APP_NAME=Talentia
 APP_VERSION=1.0.0
-APP_DESCRIPTION=Softsuave Hire is a platform to manage the hiring process.
+APP_DESCRIPTION=Talentia is a platform to manage the hiring process.
 
 # MongoDB (required)
 MONGODB_URL=mongodb://localhost:27017

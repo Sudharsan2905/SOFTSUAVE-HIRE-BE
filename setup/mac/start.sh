@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo " Softsuave Hire BE - Starting (macOS)"
+echo " Talentia BE - Starting (macOS)"
 echo "============================================"
 
 cd "$(dirname "$0")/../.."

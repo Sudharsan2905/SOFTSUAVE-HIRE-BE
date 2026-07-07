@@ -1,7 +1,7 @@
 [project]
-name = "softsuave-hire-be"
+name = "talentia-be"
 version = "1.0.0"
-description = "Softsuave Hire — Backend API"
+description = "Talentia — Backend API"
 requires-python = ">=3.12"
 
 [tool.ruff]

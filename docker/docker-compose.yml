@@ -3,7 +3,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: softsuave-hire-api
+    container_name: talentia-api
     ports:
       - "8000:8000"
     env_file:
@@ -23,7 +23,7 @@ services:
 
   mongo:
     image: mongo:7.0
-    container_name: softsuave-hire-mongo
+    container_name: talentia-mongo
     ports:
       - "27017:27017"
     volumes:

@@ -213,8 +213,9 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
 
     - Returns existing submission if already IN_PROGRESS or ON_HOLD.
     - Transitions PENDING → IN_PROGRESS without re-sampling questions.
-    - Creates a new submission on first call, pulling monitoring_overrides from the
-      assessment_shares document that matches the share link.
+    - Creates a new submission on first call, resolving monitoring_details from the
+      assessment's monitoring_config merged with the assessment_shares document's
+      monitoring_overrides and start/end window.
 
     Raises:
         NotFoundException: If the assessment share link is invalid.
@@ -264,7 +265,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         await _build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", [])
     ]
 
-    monitoring_overrides: dict | None = share_doc.get("monitoring_overrides") if share_doc else None
+    monitoring_details = _build_monitoring_details(assessment, share_doc)
 
     now = utcnow()
     for rd in rounds_data:
@@ -276,7 +277,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "assessment_id": assessment["_id"],
         "candidate_id": ObjectId(candidate_id),
         "share_id": ObjectId(share_doc["_id"]) if share_doc else None,
-        "monitoring_overrides": monitoring_overrides,
+        "monitoring_details": monitoring_details,
         "status": SubmissionStatus.IN_PROGRESS,
         "rounds_data": rounds_data,
         "current_round": 1,
@@ -299,6 +300,34 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         f"submission_id={result.inserted_id}"
     )
     return serialize_doc(submission)
+
+
+def _build_monitoring_details(assessment: dict | None, share_doc: dict | None) -> dict:
+    """Merge assessment-level monitoring defaults with the share's candidate overrides,
+    plus the share link's validity window, into a single snapshot to persist on the
+    submission at creation time.
+
+    Deliberately excludes restrict_candidate_access (and other share access-control
+    fields) — those govern link access, not the monitoring/proctoring config.
+    """
+    base_monitoring: dict = (assessment.get("monitoring_config") or {}) if assessment else {}
+    candidate_overrides: dict = (share_doc.get("monitoring_overrides") or {}) if share_doc else {}
+    effective: dict = {
+        **base_monitoring,
+        **{k: v for k, v in candidate_overrides.items() if v is not None},
+    }
+
+    return {
+        "tab_monitoring": effective.get("tab_monitoring", False),
+        "audio_monitoring": effective.get("audio_monitoring", False),
+        "video_monitoring": effective.get("video_monitoring", False),
+        "screenshot_enabled": effective.get("screenshot_enabled", False),
+        "screenshot_mode": effective.get("screenshot_mode", "time_interval"),
+        "screenshot_interval_seconds": effective.get("screenshot_interval_seconds"),
+        "screenshot_count": effective.get("screenshot_count"),
+        "start_time": share_doc.get("start_time") if share_doc else None,
+        "end_time": share_doc.get("end_time") if share_doc else None,
+    }
 
 
 async def start_interview(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> None:
@@ -411,7 +440,6 @@ async def get_current_round(
         # ON_HOLD overlay via WebSocket rather than blocking entirely.
         pass
 
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
     current = sub.get("current_round", 1)
     idx = current - 1
     rounds_data = sub.get("rounds_data", [])
@@ -421,17 +449,9 @@ async def get_current_round(
 
     rd = rounds_data[idx]
 
-    # Start from assessment-level monitoring defaults
-    base_monitoring: dict = {}
-    if assessment:
-        base_monitoring = assessment.get("monitoring_config") or {}
-
-    # Apply per-candidate overrides stored on the submission (from schedule)
-    candidate_overrides: dict = sub.get("monitoring_overrides") or {}
-    effective: dict = {
-        **base_monitoring,
-        **{k: v for k, v in candidate_overrides.items() if v is not None},
-    }
+    # Monitoring config was fully resolved (assessment defaults + share overrides) at
+    # start_assessment time and persisted on the submission.
+    effective: dict = sub.get("monitoring_details") or {}
 
     return {
         "round": {
@@ -736,13 +756,9 @@ async def flag_malpractice(
         raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
     # ── Resolve effective monitoring config ────────────────────────────────
+    # Already fully resolved (assessment defaults + share overrides) at start_assessment time.
+    effective_monitoring: dict = sub.get("monitoring_details") or {}
     assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
-    base_monitoring: dict = (assessment.get("monitoring_config") or {}) if assessment else {}
-    candidate_overrides: dict = sub.get("monitoring_overrides") or {}
-    effective_monitoring: dict = {
-        **base_monitoring,
-        **{k: v for k, v in candidate_overrides.items() if v is not None},
-    }
     workspace_id = str(assessment["workspace_id"]) if assessment else ""
 
     # ── Guard: silently skip if monitoring is disabled for this event type ──

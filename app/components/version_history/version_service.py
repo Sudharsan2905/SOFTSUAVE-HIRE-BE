@@ -388,6 +388,7 @@ async def get_candidate_submission(
             ],
             "malpractice_events": malpractice_events,
             "screenshots": screenshots,
+            "monitoring_details": hist.get("monitoring_details"),
         }
 
     # ---------- CURRENT (LIVE) VERSION ----------
@@ -421,6 +422,7 @@ async def get_candidate_submission(
         "rounds": rounds,
         "malpractice_events": malpractice_events,
         "screenshots": screenshots,
+        "monitoring_details": sub.get("monitoring_details"),
     }
 
 
@@ -536,6 +538,7 @@ async def archive_submission(
         "archived_by": ObjectId(admin_id),
         "started_at": sub.get("started_at"),
         "completed_at": sub.get("completed_at"),
+        "monitoring_details": sub.get("monitoring_details"),
         "archived_at": now,
         # Carry forward reaccess_count at time of archiving for reference
         "reaccess_count": sub.get("reaccess_count", 0),

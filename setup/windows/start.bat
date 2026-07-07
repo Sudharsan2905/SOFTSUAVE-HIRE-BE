@@ -1,6 +1,6 @@
 @echo off
 echo ============================================
-echo  Softsuave Hire BE - Starting (Windows)
+echo  Talentia BE - Starting (Windows)
 echo ============================================
 
 cd /d "%~dp0..\.."

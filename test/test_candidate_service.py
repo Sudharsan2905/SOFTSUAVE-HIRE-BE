@@ -45,7 +45,7 @@ async def active_submission(db, assessment_doc, candidate_user):
         "assessment_id": assessment_doc["_id"],
         "candidate_id": candidate_user["_id"],
         "share_id": None,
-        "monitoring_overrides": None,
+        "monitoring_details": None,
         "status": SubmissionStatus.IN_PROGRESS,
         "current_round": 1,
         "rounds_data": [

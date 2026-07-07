@@ -286,7 +286,7 @@ async def get_candidate_submission_history(db: AsyncIOMotorDatabase, user_id: st
                 "as": "assessment",
             }
         },
-        {"$unwind": {"path": "$assessment", "preserveNullAndEmpty": True}},
+        {"$unwind": {"path": "$assessment", "preserveNullAndEmptyArrays": True}},
         {
             "$project": {
                 "assessment_name": "$assessment.name",

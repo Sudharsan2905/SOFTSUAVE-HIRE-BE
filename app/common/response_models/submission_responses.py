@@ -57,6 +57,18 @@ class VersionSummaryResponse(BaseModel):
     reaccess_reason: str | None = None
 
 
+class MonitoringDetailsResponse(BaseModel):
+    tab_monitoring: bool = False
+    audio_monitoring: bool = False
+    video_monitoring: bool = False
+    screenshot_enabled: bool = False
+    screenshot_mode: str = "time_interval"
+    screenshot_interval_seconds: int | None = None
+    screenshot_count: int | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+
+
 class CandidateSubmissionResponse(BaseModel):
     candidate: CandidateProfileResponse
     submission_id: str
@@ -72,3 +84,4 @@ class CandidateSubmissionResponse(BaseModel):
     rounds: list[RoundDataResponse]
     malpractice_events: list[MalpracticeEventResponse]
     screenshots: list[ScreenshotResponse]
+    monitoring_details: MonitoringDetailsResponse | None = None

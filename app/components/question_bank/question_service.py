@@ -334,8 +334,8 @@ Return ONLY a valid JSON array. Each object must have:
 No extra explanation outside the JSON array. Return only the JSON array."""
 
         message = client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=4096,
+            model="gpt-5.5",
+            max_completion_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         content = message.choices[0].message.content

@@ -2,7 +2,7 @@
 set -e
 
 echo "============================================"
-echo " Softsuave Hire BE - Starting (Linux)"
+echo " Talentia BE - Starting (Linux)"
 echo "============================================"
 
 cd "$(dirname "$0")/../.."
