@@ -752,7 +752,7 @@ async def update_permanent_link_restriction(
         NotFoundException: If the assessment does not exist in this workspace.
     """
     result = await db.assessments.update_one(
-        {"_id": ObjectId(assessment_id), "workspace_id": workspace_id, "is_active": True},
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True},
         {
             "$set": {
                 "restrict_candidate_access": data.get("restrict_candidate_access", False),
