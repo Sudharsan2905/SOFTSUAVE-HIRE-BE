@@ -53,6 +53,9 @@ class AssessmentListItemResponse(BaseModel):
 class AssessmentDetailResponse(AssessmentListItemResponse):
     rounds: list[RoundConfigResponse] = []
     monitoring_config: MonitoringConfigResponse | None = None
+    restrict_candidate_access: bool | None = False
+    restriction_mode: str | None = None
+    restricted_emails: list[str] | None = None
 
     @model_validator(mode="before")
     @classmethod
