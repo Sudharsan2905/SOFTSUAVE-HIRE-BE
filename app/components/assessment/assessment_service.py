@@ -5,6 +5,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
+from app.components.storage import s3_service
 from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
@@ -392,6 +393,7 @@ async def get_submissions(
     sort_order: str,
     page: int,
     page_size: int,
+    status: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> dict:
@@ -404,8 +406,12 @@ async def get_submissions(
     sort_dir = 1 if sort_order == "asc" else -1
     sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
 
+    match_query: dict = {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}
+    if status:
+        match_query["status"] = status
+
     pipeline: list[Any] = [
-        {_MATCH: {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}},
+        {_MATCH: match_query},
         {
             _LOOKUP: {
                 "from": "users",
@@ -491,15 +497,34 @@ def _enrich_question_from_map(q: dict, answers: dict, original_map: dict) -> Non
                 "id": str(o.get("id", "")),
                 "text": o.get("text", ""),
                 "is_correct": o.get("is_correct", False),
+                "image_key": o.get("image_key"),
             }
             for o in original.get("options", [])
         ]
     if original and not q.get("question_text"):
         q["question_text"] = original.get("question_text", "")
+        q["image_key"] = original.get("image_key")
     if original and not q.get("question_type"):
         q["question_type"] = original.get("question_type", "")
 
     q["candidate_answer"] = candidate_answer
+
+
+async def _resolve_image_url(image_key: str | None) -> str | None:
+    """Return a presigned URL for an S3 image key, or None if absent/on error."""
+    if not image_key:
+        return None
+    try:
+        return await s3_service.get_presigned_url(image_key)
+    except Exception:
+        return None
+
+
+async def _resolve_question_images(q: dict) -> None:
+    """Replace image_key with a presigned image_url in-place for a question and its options."""
+    q["image_url"] = await _resolve_image_url(q.pop("image_key", None))
+    for opt in q.get("options", []):
+        opt["image_url"] = await _resolve_image_url(opt.pop("image_key", None))
 
 
 async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) -> dict:
@@ -540,6 +565,7 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
         answers = rd.get("answers", {})
         for q in rd.get("questions", []):
             _enrich_question_from_map(q, answers, original_map)
+            await _resolve_question_images(q)
 
     return result
 

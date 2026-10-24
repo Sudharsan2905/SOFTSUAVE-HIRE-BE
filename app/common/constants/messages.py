@@ -63,6 +63,7 @@ class SuccessMessages:
     QUESTIONS_GENERATED = "Questions generated successfully"
     QUESTIONS_IMPORTED = "Questions imported successfully"
     IMPORT_TEMPLATE_READY = "Import template ready"
+    QUESTION_IMAGE_UPLOADED = "Image uploaded successfully"
 
     # Submissions (list)
     SUBMISSIONS_RETRIEVED = "Submissions retrieved"

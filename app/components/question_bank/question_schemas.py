@@ -15,8 +15,15 @@ class UpdateCategoryRequest(BaseModel):
 
 class QuestionOption(BaseModel):
     id: str = Field(..., min_length=1)
-    text: str = Field(..., min_length=1)
+    text: str = ""
     is_correct: bool = False
+    image_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "QuestionOption":
+        if not self.text.strip() and not self.image_key:
+            raise ValueError("Each option must have text, an image, or both")
+        return self
 
 
 def _validate_mcq_options(question_type: QuestionType, options: list[QuestionOption]) -> None:
@@ -34,14 +41,17 @@ def _validate_mcq_options(question_type: QuestionType, options: list[QuestionOpt
 
 
 class CreateQuestionRequest(BaseModel):
-    question_text: str = Field(..., min_length=5)
+    question_text: str = ""
     question_type: QuestionType
     complexity: Complexity
+    image_key: str | None = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
     @model_validator(mode="after")
     def validate_options(self) -> "CreateQuestionRequest":
+        if len(self.question_text.strip()) < 5 and not self.image_key:
+            raise ValueError("Question must have text (min 5 characters), an image, or both")
         _validate_mcq_options(self.question_type, self.options or [])
         return self
 
@@ -50,11 +60,13 @@ class UpdateQuestionRequest(BaseModel):
     question_text: str | None = None
     question_type: QuestionType | None = None
     complexity: Complexity | None = None
+    image_key: str | None = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
     @model_validator(mode="after")
     def validate_options(self) -> "UpdateQuestionRequest":
+        # Text-or-image invariant is checked in question_service.update_question() instead.
         if self.question_type is not None and self.options is not None:
             _validate_mcq_options(self.question_type, self.options)
         return self
@@ -64,6 +76,7 @@ class BulkQuestionItem(BaseModel):
     question_text: str
     question_type: QuestionType
     complexity: Complexity
+    image_key: str | None = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 

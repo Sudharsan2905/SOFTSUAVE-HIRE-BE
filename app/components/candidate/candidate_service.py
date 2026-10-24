@@ -143,8 +143,36 @@ def _sanitize_question(q: dict) -> dict:
         "type": "mcq_multiple" if q_type == QuestionType.MCQ_MULTI else q_type,
         "text": sq.get("question_text", ""),
         "complexity": sq.get("complexity"),
+        "image_key": sq.get("image_key"),
         "options": options,
     }
+
+
+async def _resolve_question_image_url(image_key: str | None) -> str | None:
+    """Return a presigned URL for an S3 image key, or None if absent/on error."""
+    if not image_key:
+        return None
+    try:
+        return await s3_service.get_presigned_url(image_key)
+    except Exception:
+        return None
+
+
+async def _resolve_questions_images(questions: list[dict]) -> list[dict]:
+    """Return a copy of candidate-facing questions with image_key replaced by a presigned
+    image_url on the question and each option."""
+    resolved = []
+    for q in questions:
+        qd = dict(q)
+        qd["image_url"] = await _resolve_question_image_url(qd.pop("image_key", None))
+        new_options = []
+        for opt in qd.get("options") or []:
+            od = dict(opt)
+            od["image_url"] = await _resolve_question_image_url(od.pop("image_key", None))
+            new_options.append(od)
+        qd["options"] = new_options
+        resolved.append(qd)
+    return resolved
 
 
 async def _build_round_data(
@@ -456,7 +484,7 @@ async def get_current_round(
     return {
         "round": {
             "round_number": current,
-            "questions": rd.get("questions", []),
+            "questions": await _resolve_questions_images(rd.get("questions", [])),
             "max_duration_minutes": rd.get("max_duration_minutes", 30),
         },
         "tab_monitoring": effective.get("tab_monitoring", False),

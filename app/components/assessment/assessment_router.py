@@ -117,6 +117,7 @@ async def list_submissions(
     sort_order: Annotated[str, Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    status: Annotated[str | None, Query()] = None,
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
 ) -> dict:
@@ -128,6 +129,7 @@ async def list_submissions(
         sort_order,
         page,
         page_size,
+        status=status,
         from_date=from_date,
         to_date=to_date,
     )
