@@ -185,6 +185,44 @@ class TestGetCurrentRound:
         )
         assert result["session_status"] == SubmissionStatus.ON_HOLD
 
+    async def test_resolves_question_and_option_image_urls(
+        self, db, active_submission, candidate_user
+    ):
+        await db.assessment_submissions.update_one(
+            {"_id": active_submission["_id"]},
+            {
+                "$set": {
+                    "rounds_data.0.questions": [
+                        {
+                            "id": "q1",
+                            "type": "mcq_single",
+                            "text": "Pick the diagram",
+                            "complexity": "low",
+                            "image_key": "question-images/cat1/q.jpg",
+                            "options": [
+                                {
+                                    "id": "a",
+                                    "text": "",
+                                    "image_key": "question-images/cat1/a.jpg",
+                                },
+                                {"id": "b", "text": "Option B"},
+                            ],
+                        }
+                    ]
+                }
+            },
+        )
+        with patch("app.components.candidate.candidate_service.s3_service") as mock_s3:
+            mock_s3.get_presigned_url = AsyncMock(return_value="https://signed.example/x")
+            result = await candidate_service.get_current_round(
+                db, str(active_submission["_id"]), str(candidate_user["_id"])
+            )
+        question = result["round"]["questions"][0]
+        assert question["image_url"] == "https://signed.example/x"
+        assert "image_key" not in question
+        assert question["options"][0]["image_url"] == "https://signed.example/x"
+        assert question["options"][1]["image_url"] is None
+
 
 class TestGetCurrentRoundEdgeCases:
     async def test_round_not_found(self, db, candidate_user, active_submission):
@@ -400,6 +438,38 @@ class TestStartAssessmentWithQuestions:
         )
         assert result["status"] == SubmissionStatus.IN_PROGRESS
         assert len(result["rounds_data"]) == 1
+
+
+class TestSanitizeQuestion:
+    def test_carries_image_key_for_question_and_options(self):
+        q = {
+            "_id": "q1",
+            "question_text": "Pick the diagram",
+            "question_type": "mcq_single",
+            "complexity": "low",
+            "image_key": "question-images/cat1/q.jpg",
+            "options": [
+                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {"id": "b", "text": "Option B", "is_correct": False},
+            ],
+        }
+        sanitized = candidate_service._sanitize_question(q)
+        assert sanitized["image_key"] == "question-images/cat1/q.jpg"
+        option_by_id = {o["id"]: o for o in sanitized["options"]}
+        assert option_by_id["a"]["image_key"] == "question-images/cat1/a.jpg"
+        assert "is_correct" not in option_by_id["a"]
+
+    def test_essay_question_has_no_options(self):
+        q = {
+            "_id": "q1",
+            "question_text": "Explain OOP",
+            "question_type": "essay",
+            "complexity": "low",
+            "image_key": None,
+        }
+        sanitized = candidate_service._sanitize_question(q)
+        assert sanitized["image_key"] is None
+        assert sanitized["options"] == []
 
 
 class TestSaveScreenshot:

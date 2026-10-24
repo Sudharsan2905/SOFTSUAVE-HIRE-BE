@@ -179,6 +179,19 @@ async def excel_import(
     return success_response(SuccessMessages.QUESTIONS_IMPORTED, result)
 
 
+@router.post("/categories/{category_id}/images")
+@limiter.limit("30/hour")
+async def upload_question_image(
+    request: Request,
+    category_id: str,
+    db: DB,
+    current_user: AdminUser,
+    file: Annotated[UploadFile, File()],
+) -> dict:
+    result = await question_service.upload_question_image(db, category_id, file)
+    return success_response(SuccessMessages.QUESTION_IMAGE_UPLOADED, result)
+
+
 @router.put("/{question_id}", response_model=ApiResponse[QuestionResponse])
 async def update_question(
     question_id: str,

@@ -21,6 +21,8 @@ class QuestionOptionResponse(BaseModel):
     id: str
     text: str
     is_correct: bool = False
+    image_key: str | None = None
+    image_url: str | None = None
 
 
 class QuestionResponse(BaseModel):
@@ -29,6 +31,8 @@ class QuestionResponse(BaseModel):
     question_text: str
     question_type: QuestionType
     complexity: str
+    image_key: str | None = None
+    image_url: str | None = None
     options: list[QuestionOptionResponse] = []
     correct_answer: str | None = None
     created_by: str

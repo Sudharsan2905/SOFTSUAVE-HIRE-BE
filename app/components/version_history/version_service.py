@@ -159,7 +159,12 @@ def _build_question_answer(q: dict, original: dict, candidate_answer: Any) -> di
     """Build a single question_answer dict from the live question and its bank original."""
     raw_options = original.get("options", [])
     options = [
-        {"id": opt.get("id"), "text": opt.get("text"), "is_correct": opt.get("is_correct", False)}
+        {
+            "id": opt.get("id"),
+            "text": opt.get("text"),
+            "is_correct": opt.get("is_correct", False),
+            "image_key": opt.get("image_key"),
+        }
         for opt in raw_options
     ]
     question_type = original.get("question_type") or q.get("type") or q.get("question_type")
@@ -167,6 +172,7 @@ def _build_question_answer(q: dict, original: dict, candidate_answer: Any) -> di
         "question_id": _extract_q_id(q),
         "question_text": original.get("question_text", q.get("text", "")),
         "question_type": question_type,
+        "image_key": original.get("image_key") or q.get("image_key"),
         "options": options,
         "candidate_answer": candidate_answer,
         "is_correct": _compute_is_correct(question_type, raw_options, candidate_answer),
@@ -183,11 +189,15 @@ def _build_question_answer_from_embedded(
     correctness: dict = {
         opt.get("id"): opt.get("is_correct", False) for opt in original.get("options", ())
     }
+    original_image_keys: dict = {
+        opt.get("id"): opt.get("image_key") for opt in original.get("options", ())
+    }
     options = [
         {
             "id": (oid := opt.get("id")),
             "text": opt.get("text"),
             "is_correct": correctness.get(oid, False),
+            "image_key": opt.get("image_key") or original_image_keys.get(oid),
         }
         for opt in q.get("options", ())
     ]
@@ -195,6 +205,7 @@ def _build_question_answer_from_embedded(
         "question_id": _extract_q_id(q),
         "question_text": q.get("text", ""),
         "question_type": q.get("type") or q.get("question_type"),
+        "image_key": q.get("image_key") or original.get("image_key"),
         "options": options,
         "candidate_answer": candidate_answer,
         "is_correct": q_result.get("is_correct") if q_result else None,
@@ -383,9 +394,12 @@ async def get_candidate_submission(
             "completed_at": _iso(hist.get("completed_at")),
             "current_version": current_version,
             "available_versions": available_versions,
-            "rounds": [
-                {**r, "is_validated": r.get("is_validated", False)} for r in hist.get("rounds", [])
-            ],
+            "rounds": await _resolve_round_question_images(
+                [
+                    {**r, "is_validated": r.get("is_validated", False)}
+                    for r in hist.get("rounds", [])
+                ]
+            ),
             "malpractice_events": malpractice_events,
             "screenshots": screenshots,
             "monitoring_details": hist.get("monitoring_details"),
@@ -399,7 +413,9 @@ async def get_candidate_submission(
     )
     candidate_data = _build_candidate_dict(candidate_doc)
 
-    rounds = await _build_live_rounds(sub.get("rounds_data", []), db)
+    rounds = await _resolve_round_question_images(
+        await _build_live_rounds(sub.get("rounds_data", []), db)
+    )
 
     # Resolve S3 URLs in malpractice events
     malpractice_events = await _resolve_malpractice_events(sub.get("malpractice_events", []))
@@ -479,6 +495,27 @@ async def _resolve_screenshots(screenshots: list) -> list:
             }
         )
     return resolved
+
+
+async def _resolve_round_question_images(rounds: list) -> list:
+    """Replace image_key fields on each round's question_answers with presigned image_url."""
+    resolved_rounds = []
+    for rd in rounds:
+        round_copy = dict(rd)
+        question_answers = []
+        for qa in round_copy.get("question_answers", []):
+            qa_copy = dict(qa)
+            qa_copy["image_url"] = await _resolve_s3_url(qa_copy.pop("image_key", None))
+            new_options = []
+            for opt in qa_copy.get("options", []):
+                opt_copy = dict(opt)
+                opt_copy["image_url"] = await _resolve_s3_url(opt_copy.pop("image_key", None))
+                new_options.append(opt_copy)
+            qa_copy["options"] = new_options
+            question_answers.append(qa_copy)
+        round_copy["question_answers"] = question_answers
+        resolved_rounds.append(round_copy)
+    return resolved_rounds
 
 
 # ---------------------------------------------------------------------------

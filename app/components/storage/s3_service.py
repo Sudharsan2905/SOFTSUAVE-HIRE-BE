@@ -24,6 +24,7 @@ _session = aioboto3.Session(
 # ---------------------------------------------------------------------------
 S3_PREFIX_SCREENSHOTS = "screenshots"
 S3_PREFIX_EVIDENCE = "evidence"
+S3_PREFIX_QUESTION_IMAGES = "question-images"
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,24 @@ def make_evidence_key(
         f"{S3_PREFIX_EVIDENCE}/{submission_id}/round_{round_n}"
         f"/{malpractice_type}/{media_type}_{ts}{ext}"
     )
+
+
+def make_question_image_key(category_id: str, ext: str = ".jpg") -> str:
+    """
+    Build an S3 key for a question/option image uploaded from the question bank.
+
+    Pattern: question-images/<category_id>/<uuid4><ext>
+
+    Args:
+        category_id: Question category this image belongs to.
+        ext:         File extension including the leading dot (default ".jpg").
+
+    Returns:
+        A slash-delimited S3 object key string.
+    """
+    import uuid
+
+    return f"{S3_PREFIX_QUESTION_IMAGES}/{category_id}/{uuid.uuid4()}{ext}"
 
 
 # ---------------------------------------------------------------------------

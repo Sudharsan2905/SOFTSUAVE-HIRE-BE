@@ -1,9 +1,36 @@
 """Unit tests for app/components/question_bank/question_service.py"""
 
+import io
+from unittest.mock import AsyncMock
+
 import pytest
 
 from app.common.exceptions import ConflictException, NotFoundException, ValidationException
 from app.components.question_bank import question_service
+
+
+@pytest.fixture(autouse=True)
+def _patch_s3(monkeypatch):
+    """Make S3 deterministic: upload echoes the key, presign returns a fixed URL."""
+    monkeypatch.setattr(
+        question_service.s3_service, "upload", AsyncMock(side_effect=lambda b, k, *a, **kw: k)
+    )
+    monkeypatch.setattr(
+        question_service.s3_service,
+        "get_presigned_url",
+        AsyncMock(return_value="https://signed.example/x"),
+    )
+
+
+class _FakeUploadFile:
+    """Minimal stand-in for FastAPI's UploadFile in service-level tests."""
+
+    def __init__(self, content: bytes, content_type: str) -> None:
+        self._stream = io.BytesIO(content)
+        self.content_type = content_type
+
+    async def read(self) -> bytes:
+        return self._stream.read()
 
 
 class TestCreateCategory:
@@ -105,6 +132,117 @@ class TestCreateQuestion:
                 db, str(ObjectId()), data, str(super_admin["_id"])
             )
 
+    async def test_with_image_resolves_url(self, db, category, super_admin):
+        data = {
+            "question_text": "Identify the diagram below",
+            "question_type": "mcq_single",
+            "complexity": "medium",
+            "image_key": "question-images/cat1/q.jpg",
+            "options": [
+                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {"id": "b", "text": "Option B", "is_correct": False},
+            ],
+        }
+        result = await question_service.create_question(
+            db, str(category["_id"]), data, str(super_admin["_id"])
+        )
+        assert result.image_key == "question-images/cat1/q.jpg"
+        assert result.image_url == "https://signed.example/x"
+        assert result.options[0].image_url == "https://signed.example/x"
+        assert result.options[1].image_url is None
+
+    def test_option_without_text_or_image_raises(self):
+        from pydantic import ValidationError
+
+        from app.components.question_bank.question_schemas import QuestionOption
+
+        with pytest.raises(ValidationError, match="text, an image, or both"):
+            QuestionOption(id="a", text="", is_correct=True)
+
+    def test_question_without_text_or_image_raises(self):
+        from pydantic import ValidationError
+
+        from app.components.question_bank.question_schemas import CreateQuestionRequest
+
+        with pytest.raises(ValidationError, match="min 5 characters"):
+            CreateQuestionRequest(question_text="hi", question_type="essay", complexity="low")
+
+    def test_question_with_image_and_short_text_succeeds(self):
+        from app.components.question_bank.question_schemas import CreateQuestionRequest
+
+        req = CreateQuestionRequest(
+            question_text="",
+            question_type="essay",
+            complexity="low",
+            image_key="question-images/cat1/q.jpg",
+        )
+        assert req.image_key == "question-images/cat1/q.jpg"
+
+    def test_update_clearing_both_text_and_image_passes_schema(self):
+        """The schema itself no longer enforces this — it can't see the stored
+        document, so the authoritative check lives in
+        question_service.update_question() instead (see
+        TestUpdateQuestion.test_clearing_text_after_image_already_cleared_raises)."""
+        from app.components.question_bank.question_schemas import UpdateQuestionRequest
+
+        req = UpdateQuestionRequest(question_text="", image_key="")
+        assert req.question_text == ""
+        assert req.image_key == ""
+
+    def test_update_clearing_image_only_succeeds(self):
+        from app.components.question_bank.question_schemas import UpdateQuestionRequest
+
+        req = UpdateQuestionRequest(image_key="")
+        assert req.image_key == ""
+        assert req.question_text is None
+
+    def test_update_changing_text_only_succeeds(self):
+        from app.components.question_bank.question_schemas import UpdateQuestionRequest
+
+        req = UpdateQuestionRequest(question_text="Updated question text")
+        assert req.question_text == "Updated question text"
+        assert req.image_key is None
+
+    async def test_image_only_option_succeeds(self, db, category, super_admin):
+        data = {
+            "question_text": "Pick the correct diagram",
+            "question_type": "mcq_single",
+            "complexity": "low",
+            "options": [
+                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {"id": "b", "text": "Option B", "is_correct": False},
+            ],
+        }
+        result = await question_service.create_question(
+            db, str(category["_id"]), data, str(super_admin["_id"])
+        )
+        assert result.options[0].image_key == "question-images/cat1/a.jpg"
+
+
+class TestUploadQuestionImage:
+    async def test_success(self, db, category):
+        file = _FakeUploadFile(b"fake-bytes", "image/png")
+        result = await question_service.upload_question_image(db, str(category["_id"]), file)
+        assert result["image_key"].startswith(f"question-images/{category['_id']}/")
+        assert result["image_url"] == "https://signed.example/x"
+
+    async def test_rejects_unsupported_type(self, db, category):
+        file = _FakeUploadFile(b"fake-bytes", "application/pdf")
+        with pytest.raises(ValidationException, match="JPEG, PNG, WEBP, or GIF"):
+            await question_service.upload_question_image(db, str(category["_id"]), file)
+
+    async def test_rejects_oversized_file(self, db, category):
+        file = _FakeUploadFile(b"x" * (5 * 1024 * 1024 + 1), "image/jpeg")
+        with pytest.raises(ValidationException, match="smaller than 5MB"):
+            await question_service.upload_question_image(db, str(category["_id"]), file)
+
+    async def test_nonexistent_category_raises(self, db):
+        from bson import ObjectId
+
+        file = _FakeUploadFile(b"fake-bytes", "image/jpeg")
+        with pytest.raises(NotFoundException):
+            await question_service.upload_question_image(db, str(ObjectId()), file)
+
 
 class TestDeleteCategory:
     async def test_cascades_questions(self, db, category, mcq_question):
@@ -204,6 +342,21 @@ class TestGetQuestions:
         )
         assert result["pagination"]["total"] == 1
 
+    async def test_resolves_image_url(self, db, category, super_admin):
+        data = {
+            "question_text": "Question with image",
+            "question_type": "essay",
+            "complexity": "low",
+            "image_key": "question-images/cat1/q.jpg",
+            "options": [],
+            "correct_answer": "Answer",
+        }
+        await question_service.create_question(db, str(category["_id"]), data, str(super_admin["_id"]))
+        result = await question_service.get_questions(
+            db, str(category["_id"]), None, None, None, "created_at", "desc", 1, 20
+        )
+        assert result["questions"][0]["image_url"] == "https://signed.example/x"
+
 
 class TestUpdateQuestion:
     async def test_success(self, db, mcq_question):
@@ -226,6 +379,50 @@ class TestUpdateQuestion:
 
         with pytest.raises(NotFoundException):
             await question_service.update_question(db, str(ObjectId()), {"question_text": "X"})
+
+    async def test_sets_image_and_resolves_url(self, db, mcq_question):
+        result = await question_service.update_question(
+            db,
+            str(mcq_question["_id"]),
+            {"image_key": "question-images/cat1/new.jpg"},
+        )
+        assert result.image_key == "question-images/cat1/new.jpg"
+        assert result.image_url == "https://signed.example/x"
+
+    async def test_clears_image_with_empty_string(self, db, mcq_question):
+        await question_service.update_question(
+            db, str(mcq_question["_id"]), {"image_key": "question-images/cat1/new.jpg"}
+        )
+        result = await question_service.update_question(
+            db, str(mcq_question["_id"]), {"image_key": ""}
+        )
+        assert result.image_key == ""
+        assert result.image_url is None
+
+    async def test_clearing_both_in_one_request_raises(self, db, mcq_question):
+        with pytest.raises(ValidationException, match="text.*image"):
+            await question_service.update_question(
+                db, str(mcq_question["_id"]), {"question_text": "", "image_key": ""}
+            )
+
+    async def test_clearing_text_after_image_already_cleared_raises(self, db, mcq_question):
+        """Two separate updates that each look fine alone must not combine to leave
+        the question with neither text nor an image (sequential-update gap)."""
+        await question_service.update_question(db, str(mcq_question["_id"]), {"image_key": ""})
+        with pytest.raises(ValidationException, match="text.*image"):
+            await question_service.update_question(
+                db, str(mcq_question["_id"]), {"question_text": ""}
+            )
+
+    async def test_clearing_text_with_existing_image_succeeds(self, db, mcq_question):
+        await question_service.update_question(
+            db, str(mcq_question["_id"]), {"image_key": "question-images/cat1/new.jpg"}
+        )
+        result = await question_service.update_question(
+            db, str(mcq_question["_id"]), {"question_text": ""}
+        )
+        assert result.question_text == ""
+        assert result.image_key == "question-images/cat1/new.jpg"
 
 
 class TestDeleteQuestion:
