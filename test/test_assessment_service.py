@@ -370,6 +370,45 @@ class TestGetSubmissions:
         )
         assert result["pagination"]["total"] >= 0
 
+    async def test_with_status_filter(self, db, workspace, assessment, candidate_user):
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        await db.assessment_submissions.insert_many(
+            [
+                {
+                    "assessment_id": ObjectId(assessment["id"]),
+                    "candidate_id": candidate_user["_id"],
+                    "status": SubmissionStatus.COMPLETED,
+                    "reaccess_count": 0,
+                    "percentage": 90.0,
+                    "created_at": utcnow(),
+                    "updated_at": utcnow(),
+                },
+                {
+                    "assessment_id": ObjectId(assessment["id"]),
+                    "candidate_id": candidate_user["_id"],
+                    "status": SubmissionStatus.MALPRACTICE,
+                    "reaccess_count": 0,
+                    "percentage": 0.0,
+                    "created_at": utcnow(),
+                    "updated_at": utcnow(),
+                },
+            ]
+        )
+        result = await assessment_service.get_submissions(
+            db,
+            assessment["id"],
+            None,
+            "created_at",
+            "desc",
+            1,
+            20,
+            status=SubmissionStatus.COMPLETED,
+        )
+        assert result["pagination"]["total"] == 1
+        assert result["submissions"][0]["status"] == SubmissionStatus.COMPLETED
+
 
 class TestGetSubmissionDetail:
     async def test_success(self, db, assessment, candidate_user):
@@ -394,6 +433,89 @@ class TestGetSubmissionDetail:
     async def test_not_found_raises(self, db):
         with pytest.raises(NotFoundException):
             await assessment_service.get_submission_detail(db, str(ObjectId()))
+
+    async def test_resolves_question_and_option_image_urls(
+        self, db, assessment, candidate_user, super_admin
+    ):
+        from unittest.mock import AsyncMock, patch
+
+        from app.common.constants.app_constants import SubmissionStatus
+        from app.common.utils import utcnow
+
+        category_res = await db.question_categories.insert_one(
+            {
+                "name": "Diagrams",
+                "description": "",
+                "created_by": super_admin["_id"],
+                "question_count": 1,
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        q_res = await db.questions.insert_one(
+            {
+                "category_id": category_res.inserted_id,
+                "question_text": "Pick the diagram",
+                "question_type": "mcq_single",
+                "complexity": "low",
+                "image_key": "question-images/cat1/q.jpg",
+                "options": [
+                    {
+                        "id": "a",
+                        "text": "",
+                        "is_correct": True,
+                        "image_key": "question-images/cat1/a.jpg",
+                    },
+                    {"id": "b", "text": "Option B", "is_correct": False},
+                ],
+                "correct_answer": None,
+                "created_by": super_admin["_id"],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        res = await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment["id"]),
+                "candidate_id": candidate_user["_id"],
+                "status": SubmissionStatus.IN_PROGRESS,
+                "reaccess_count": 0,
+                "percentage": 0.0,
+                "rounds_data": [
+                    {
+                        "round_number": 1,
+                        "questions": [
+                            {
+                                "id": str(q_res.inserted_id),
+                                "text": "Pick the diagram",
+                                "image_key": "question-images/cat1/q.jpg",
+                                "options": [
+                                    {
+                                        "id": "a",
+                                        "text": "",
+                                        "image_key": "question-images/cat1/a.jpg",
+                                    },
+                                    {"id": "b", "text": "Option B"},
+                                ],
+                            }
+                        ],
+                        "answers": {},
+                    }
+                ],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+        with patch("app.components.assessment.assessment_service.s3_service") as mock_s3:
+            mock_s3.get_presigned_url = AsyncMock(return_value="https://signed.example/x")
+            result = await assessment_service.get_submission_detail(db, str(res.inserted_id))
+
+        question = result["rounds_data"][0]["questions"][0]
+        assert question["image_url"] == "https://signed.example/x"
+        assert "image_key" not in question
+        option_by_id = {o["id"]: o for o in question["options"]}
+        assert option_by_id["a"]["image_url"] == "https://signed.example/x"
+        assert option_by_id["b"]["image_url"] is None
 
 
 class TestExportSubmissions:

@@ -20,10 +20,19 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.components.storage import s3_service
 from app.core.logging import logger
 
 _REGEX = "$regex"
 _OPTIONS = "$options"
+
+_ALLOWED_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+_MAX_IMAGE_SIZE = 5 * 1024 * 1024
 
 
 def _validate_question_options(data: dict) -> None:
@@ -42,6 +51,27 @@ def _validate_question_options(data: dict) -> None:
 
     if q_type == QuestionType.ESSAY and options:
         raise ValidationException("Essay questions must not have options")
+
+
+async def _resolve_image_url(image_key: str | None) -> str | None:
+    """Return a presigned URL for an S3 image key, or None if absent/on error."""
+    if not image_key:
+        return None
+    try:
+        return await s3_service.get_presigned_url(image_key)
+    except Exception:
+        return None
+
+
+async def _attach_image_urls(doc: dict) -> dict:
+    """Return a copy of a question dict with image_url resolved on it and each option."""
+    out = dict(doc)
+    out["image_url"] = await _resolve_image_url(out.get("image_key"))
+    out["options"] = [
+        {**opt, "image_url": await _resolve_image_url(opt.get("image_key"))}
+        for opt in out.get("options") or []
+    ]
+    return out
 
 
 async def create_category(db: AsyncIOMotorDatabase, data: dict, user_id: str) -> CategoryResponse:
@@ -159,8 +189,9 @@ async def get_questions(
         limit,
         ["created_at", "updated_at", "complexity"],
     )
+    questions = [await _attach_image_urls(d) for d in serialize_docs(docs)]
     return {
-        "questions": serialize_docs(docs),
+        "questions": questions,
         "pagination": build_pagination_meta(total, page, page_size),
     }
 
@@ -188,6 +219,7 @@ async def create_question(
         "question_text": data["question_text"],
         "question_type": data["question_type"],
         "complexity": data["complexity"],
+        "image_key": data.get("image_key"),
         "options": options,
         "correct_answer": data.get("correct_answer"),
         "created_by": ObjectId(user_id),
@@ -199,7 +231,7 @@ async def create_question(
     await db.question_categories.update_one(
         {"_id": ObjectId(category_id)}, {"$inc": {"question_count": 1}}
     )
-    return QuestionResponse.model_validate(serialize_doc(doc))
+    return QuestionResponse.model_validate(await _attach_image_urls(serialize_doc(doc)))
 
 
 async def bulk_create_questions(
@@ -228,6 +260,7 @@ async def bulk_create_questions(
                 "question_text": q["question_text"],
                 "question_type": q["question_type"],
                 "complexity": q["complexity"],
+                "image_key": q.get("image_key"),
                 "options": options,
                 "correct_answer": q.get("correct_answer"),
                 "created_by": ObjectId(user_id),
@@ -252,12 +285,21 @@ async def update_question(
 
     Raises:
         NotFoundException: If the question does not exist.
-        ValidationException: If updated options violate MCQ/essay rules.
+        ValidationException: If updated options violate MCQ/essay rules, or if the
+            resulting question would have neither text nor an image.
     """
-    if not await db.questions.find_one({"_id": ObjectId(question_id)}):
+    existing = await db.questions.find_one({"_id": ObjectId(question_id)})
+    if not existing:
         raise NotFoundException("Question not found")
     _validate_question_options(data)
     update = {k: v for k, v in data.items() if v is not None}
+
+    # Validate the merged post-update state, so a sequential partial update can't leave it empty.
+    final_text = update.get("question_text", existing.get("question_text", ""))
+    final_image_key = update.get("image_key", existing.get("image_key"))
+    if len(final_text.strip()) < 5 and not final_image_key:
+        raise ValidationException("Question must have text (min 5 characters), an image, or both")
+
     if "options" in update and isinstance(update["options"], list):
         update["options"] = [
             o.model_dump() if hasattr(o, "model_dump") else o for o in update["options"]
@@ -265,7 +307,30 @@ async def update_question(
     update["updated_at"] = utcnow()
     await db.questions.update_one({"_id": ObjectId(question_id)}, {"$set": update})
     updated = await db.questions.find_one({"_id": ObjectId(question_id)})
-    return QuestionResponse.model_validate(serialize_doc(updated))
+    return QuestionResponse.model_validate(await _attach_image_urls(serialize_doc(updated)))
+
+
+async def upload_question_image(db: AsyncIOMotorDatabase, category_id: str, file: Any) -> dict:
+    """Upload an image for a question or option to S3 and return its key + presigned URL.
+
+    Raises:
+        NotFoundException: If the category does not exist.
+        ValidationException: If the file type is unsupported or it exceeds the size limit.
+    """
+    if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
+        raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
+
+    ext = _ALLOWED_IMAGE_TYPES.get(file.content_type or "")
+    if not ext:
+        raise ValidationException("Only JPEG, PNG, WEBP, or GIF images are allowed")
+
+    file_bytes = await file.read()
+    if len(file_bytes) > _MAX_IMAGE_SIZE:
+        raise ValidationException("Image must be smaller than 5MB")
+
+    image_key = s3_service.make_question_image_key(category_id, ext)
+    await s3_service.upload(file_bytes, image_key, file.content_type)
+    return {"image_key": image_key, "image_url": await _resolve_image_url(image_key)}
 
 
 async def delete_question(db: AsyncIOMotorDatabase, question_id: str) -> None:

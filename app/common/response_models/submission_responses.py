@@ -10,12 +10,14 @@ class QuestionOptionResponse(BaseModel):
     id: str
     text: str
     is_correct: bool | None = None
+    image_url: str | None = None
 
 
 class QuestionAnswerResponse(BaseModel):
     question_id: str
     question_text: str
     question_type: str
+    image_url: str | None = None
     options: list[QuestionOptionResponse] = []
     candidate_answer: list[str] = []
     is_correct: bool | None = None
