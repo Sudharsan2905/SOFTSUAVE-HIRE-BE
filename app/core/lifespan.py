@@ -34,9 +34,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.client = client
     await _create_indexes(db)
     logger.info("Database indexes verified")
+    await _recover_pipelines(db)
     yield
     client.close()
     logger.info(f"{settings.APP_NAME} API shut down")
+
+
+async def _recover_pipelines(db: AsyncIOMotorDatabase) -> None:
+    """Fail AI pipeline runs that were in flight when the server last stopped."""
+    from app.components.ai_pipeline.pipeline_service import recover_interrupted
+
+    try:
+        count = await recover_interrupted(db)
+        if count:
+            logger.warning(f"Marked {count} interrupted AI pipeline run(s) as failed")
+    except Exception as exc:
+        logger.error(f"AI pipeline recovery failed: {type(exc).__name__}: {exc}")
 
 
 async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
@@ -89,3 +102,8 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
 
     await db.notifications.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
     await db.notifications.create_index([("user_id", ASCENDING), ("is_read", ASCENDING)])
+
+    await db.pipelines.create_index([("workspace_id", ASCENDING), ("created_at", DESCENDING)])
+    await db.pipelines.create_index([("assessment_id", ASCENDING)], sparse=True)
+    await db.pipeline_candidates.create_index([("pipeline_id", ASCENDING), ("index", ASCENDING)])
+    await db.pipeline_candidates.create_index([("user_id", ASCENDING)], sparse=True)

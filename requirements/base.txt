@@ -17,3 +17,5 @@ aiosmtplib==3.0.2
 slowapi==0.1.9
 aioboto3==15.5.0
 livekit-api==1.1.0
+pypdf==5.4.0
+python-docx==1.1.2

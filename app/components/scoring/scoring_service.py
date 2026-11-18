@@ -1,6 +1,7 @@
 """MCQ and LLM essay scoring logic."""
 
 import json
+import re
 from typing import Any, cast
 
 from bson import ObjectId
@@ -10,6 +11,9 @@ from app.core.config import settings
 from app.core.logging import logger
 
 _MCQ_TYPES = ("mcq_single", "mcq_multiple", "mcq_multi")
+_ESSAY_ATTEMPTS = 3
+_SCORING_ERROR = {"is_correct": None, "feedback": "Scoring error"}
+Essay = tuple[str, str, str, str]
 
 
 def _score_mcq(original: dict, given_answer: Any) -> tuple[int, bool]:
@@ -55,19 +59,22 @@ def _collect_round(
     return correct_mcq, total, mcq_results
 
 
-async def _score_essays_batch(
-    essays: list[tuple[str, str, str, str]],
-) -> dict[str, dict]:
-    """Score all essay questions in a single LLM call.
+def _parse_essay_results(text: str) -> list:
+    """Parse the model reply: tolerate ```json fences and a {"results": [...]} wrapper."""
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.IGNORECASE)
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+        if not match:
+            raise
+        data = json.loads(match.group())
+    if isinstance(data, dict):
+        data = data.get("results") or next((v for v in data.values() if isinstance(v, list)), [])
+    return cast(list, data)
 
-    essays: list of (qid, question_text, expected_answer, candidate_answer)
-    Returns dict mapping qid → {is_correct, feedback}
-    """
-    if not essays:
-        return {}
-    if not settings.OPENAI_API_KEY:
-        return {qid: {"is_correct": None, "feedback": "Scoring unavailable"} for qid, *_ in essays}
 
+def _build_essay_prompt(essays: list[Essay]) -> str:
     numbered = "\n\n".join(
         f"[{i + 1}] Question ID: {qid}\n"
         f"Question: {q_text}\n"
@@ -75,35 +82,67 @@ async def _score_essays_batch(
         f"Candidate Answer: {candidate_ans}"
         for i, (qid, q_text, expected, candidate_ans) in enumerate(essays)
     )
-    prompt = (
+    return (
         f"Score the following {len(essays)} essay answer(s).\n"
-        "For each, evaluate keyword and content similarity. Mark correct if similarity > 80%.\n\n"
+        "For each, evaluate keyword and content similarity. Mark correct if similarity > 80%. "
+        "Nonsensical or empty answers are incorrect. Return one result for EVERY question.\n\n"
         f"{numbered}\n\n"
         "Return ONLY a valid JSON array (one object per question):\n"
         '[{"question_id": "<id>", "is_correct": true/false, "feedback": "<string>"}, ...]'
     )
 
-    try:
-        from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=800,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = (response.choices[0].message.content or "").strip()
-        results: list[dict] = cast(list, json.loads(text))
-        return {
-            r["question_id"]: {
-                "is_correct": r.get("is_correct"),
-                "feedback": r.get("feedback", ""),
-            }
-            for r in results
+def _result(r: dict) -> dict:
+    return {"is_correct": r.get("is_correct"), "feedback": r.get("feedback", "")}
+
+
+def _match_results(results: list, expected_ids: list[str]) -> dict[str, dict]:
+    """Match results by question id; fall back to position when the model altered the ids."""
+    valid = [r for r in results if isinstance(r, dict) and r.get("is_correct") is not None]
+    by_id = {str(r.get("question_id")): _result(r) for r in valid}
+    if len(results) == len(expected_ids) and not set(by_id) >= set(expected_ids):
+        by_id = {
+            qid: _result(r)
+            for qid, r in zip(expected_ids, results, strict=True)
+            if isinstance(r, dict) and r.get("is_correct") is not None
         }
-    except Exception as exc:
-        logger.warning("Batch essay scoring failed: %s", exc)
-        return {qid: {"is_correct": None, "feedback": "Scoring error"} for qid, *_ in essays}
+    return {qid: by_id[qid] for qid in expected_ids if qid in by_id}
+
+
+async def _call_essay_llm(essays: list[Essay]) -> dict[str, dict]:
+    """One LLM call for ``essays``; returns qid -> result for the essays it answered."""
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=60, max_retries=2)
+    response = await client.chat.completions.create(
+        model=settings.OPENAI_ANALYSIS_MODEL,
+        max_tokens=250 * len(essays) + 300,
+        messages=[{"role": "user", "content": _build_essay_prompt(essays)}],
+    )
+    results = _parse_essay_results((response.choices[0].message.content or "").strip())
+    return _match_results(results, [qid for qid, *_ in essays])
+
+
+async def _score_essays_batch(essays: list[Essay]) -> dict[str, dict]:
+    """Score all essays with one batched call, re-asking (up to 3 attempts) for any it skipped."""
+    if not essays:
+        return {}
+    if not settings.OPENAI_API_KEY:
+        return {qid: {"is_correct": None, "feedback": "Scoring unavailable"} for qid, *_ in essays}
+    scored: dict[str, dict] = {}
+    pending = list(essays)
+    for attempt in range(1, _ESSAY_ATTEMPTS + 1):
+        try:
+            scored.update(await _call_essay_llm(pending))
+        except Exception as exc:
+            logger.warning(f"Essay scoring attempt {attempt} failed: {type(exc).__name__}: {exc}")
+        pending = [e for e in essays if e[0] not in scored]
+        if not pending:
+            break
+        logger.warning(f"Essay scoring attempt {attempt}: {len(pending)} essay(s) still unevaluated")
+    if pending:
+        logger.error(f"Essay scoring incomplete: {len(pending)} of {len(essays)} unevaluated")
+    return {qid: scored.get(qid, dict(_SCORING_ERROR)) for qid, *_ in essays}
 
 
 async def score_round(db: AsyncIOMotorDatabase, rd: dict) -> dict:

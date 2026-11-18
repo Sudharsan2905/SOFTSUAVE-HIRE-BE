@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_FROM_NAME: str = ""
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "us-east-1"
@@ -32,6 +34,14 @@ class Settings(BaseSettings):
     LIVEKIT_API_KEY: str = ""
     LIVEKIT_API_SECRET: str = ""
     LIVEKIT_HOST: str = ""
+    FRONTEND_URL: str = "http://localhost:5173"
+    OPENAI_QUESTION_MODEL: str = "gpt-4o"
+    OPENAI_ANALYSIS_MODEL: str = "gpt-4o-mini"
+    PIPELINE_CONCURRENCY: int = 4
+    PIPELINE_MAX_FILE_MB: int = 5
+    PIPELINE_MAX_CANDIDATES: int = 50
+    PIPELINE_EXAM_MINUTES: int = 60
+    PIPELINE_STORAGE_PATH: str = "./uploads/pipelines"
     CORS_ORIGINS: list[str] = []
     CORS_ORIGIN_REGEX: str = ""
 

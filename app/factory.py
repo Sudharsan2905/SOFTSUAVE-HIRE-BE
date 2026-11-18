@@ -6,6 +6,7 @@ from slowapi.errors import RateLimitExceeded
 from app.common.exception_handlers import register_exception_handlers
 from app.common.middleware.logging_middleware import RequestLoggingMiddleware
 from app.common.responses import ApiResponse, error_response, success_response
+from app.components.ai_pipeline.pipeline_router import router as pipeline_router
 from app.components.assessment.assessment_router import public_router as assessment_public_router
 from app.components.assessment.assessment_router import router as assessment_router
 from app.components.auth.auth_router import router as auth_router
@@ -60,6 +61,7 @@ def create_application() -> FastAPI:
     app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
     app.include_router(notification_router, prefix="/api/notifications", tags=["Notifications"])
     app.include_router(ws_router, prefix="/api", tags=["WebSocket"])
+    app.include_router(pipeline_router, prefix="/api/pipelines", tags=["AI Pipeline"])
     app.include_router(livekit_router, prefix="/api", tags=["LiveKit"])
 
     @app.get("/api/health", response_model=ApiResponse, tags=["Health"])
