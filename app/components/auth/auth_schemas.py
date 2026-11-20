@@ -27,7 +27,7 @@ class CandidateRegisterRequest(BaseModel):
     first_name: str = Field(..., min_length=2, max_length=50)
     last_name: str | None = Field(None, max_length=50)
     email: EmailStr
-    phone: str = Field(..., min_length=10, max_length=15)
+    phone: str = Field(..., min_length=10, max_length=20)
     password: str | None = Field(None, min_length=8)
     gender: str = Field(..., pattern="^(male|female|other)$")
     candidate_type: CandidateType = CandidateType.STUDENT
@@ -48,8 +48,8 @@ class CandidateRegisterRequest(BaseModel):
     @classmethod
     def validate_phone(cls, v: str) -> str:
         cleaned = re.sub(r"[\s\-\+\(\)]", "", v)
-        if not cleaned.isdigit():
-            raise ValueError("Phone number must contain only digits")
+        if not (cleaned.isascii() and cleaned.isdigit() and len(cleaned) == 10):
+            raise ValueError("Phone number must be exactly 10 digits")
         return cleaned
 
 

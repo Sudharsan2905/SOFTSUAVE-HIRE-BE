@@ -62,6 +62,7 @@ class MalpracticeType(str, Enum):
     EYE_DIRECTION = "eye_direction"
     SPEAKING = "speaking"
     NOTIFICATION_RECEIVED = "notification_received"
+    MULTIPLE_MONITORS = "multiple_monitors"
 
 
 class ReaccessReasonCategory(str, Enum):
