@@ -5,5 +5,5 @@ from slowapi.util import get_remote_address
 
 limiter = Limiter(
     key_func=get_remote_address,
-    enabled=os.getenv("RATELIMIT_ENABLED", "1") != "0",
+    enabled=os.getenv("RATELIMIT_ENABLED", "0") != "0",
 )
