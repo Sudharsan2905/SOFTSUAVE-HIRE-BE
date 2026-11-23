@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.app_constants import Complexity, QuestionType
+from app.common.validators import ImageKey
 
 
 class CreateCategoryRequest(BaseModel):
@@ -17,7 +18,7 @@ class QuestionOption(BaseModel):
     id: str = Field(..., min_length=1)
     text: str = ""
     is_correct: bool = False
-    image_key: str | None = None
+    image_key: ImageKey = None
 
     @model_validator(mode="after")
     def validate_content(self) -> "QuestionOption":
@@ -44,7 +45,7 @@ class CreateQuestionRequest(BaseModel):
     question_text: str = ""
     question_type: QuestionType
     complexity: Complexity
-    image_key: str | None = None
+    image_key: ImageKey = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
@@ -60,7 +61,7 @@ class UpdateQuestionRequest(BaseModel):
     question_text: str | None = None
     question_type: QuestionType | None = None
     complexity: Complexity | None = None
-    image_key: str | None = None
+    image_key: ImageKey = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 
@@ -76,7 +77,7 @@ class BulkQuestionItem(BaseModel):
     question_text: str
     question_type: QuestionType
     complexity: Complexity
-    image_key: str | None = None
+    image_key: ImageKey = None
     options: list[QuestionOption] | None = None
     correct_answer: str | None = None
 

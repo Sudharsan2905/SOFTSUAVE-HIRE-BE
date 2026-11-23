@@ -3,6 +3,7 @@ from typing import Any, cast
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.common import uploads
 from app.common.constants.app_constants import QuestionType
 from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ConflictException, NotFoundException, ValidationException
@@ -20,6 +21,7 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.common.validators import is_valid_question_image_key
 from app.components.storage import s3_service
 from app.core.logging import logger
 
@@ -33,6 +35,13 @@ _ALLOWED_IMAGE_TYPES = {
     "image/gif": ".gif",
 }
 _MAX_IMAGE_SIZE = 5 * 1024 * 1024
+_MAX_IMPORT_BYTES = 10 * 1024 * 1024
+_SNIFFED_IMAGE_EXT = {
+    uploads.MIME_JPEG: ".jpg",
+    uploads.MIME_PNG: ".png",
+    uploads.MIME_WEBP: ".webp",
+    uploads.MIME_GIF: ".gif",
+}
 
 
 def _validate_question_options(data: dict) -> None:
@@ -55,7 +64,7 @@ def _validate_question_options(data: dict) -> None:
 
 async def _resolve_image_url(image_key: str | None) -> str | None:
     """Return a presigned URL for an S3 image key, or None if absent/on error."""
-    if not image_key:
+    if not image_key or not is_valid_question_image_key(image_key):
         return None
     try:
         return await s3_service.get_presigned_url(image_key)
@@ -320,16 +329,14 @@ async def upload_question_image(db: AsyncIOMotorDatabase, category_id: str, file
     if not await db.question_categories.find_one({"_id": ObjectId(category_id)}):
         raise NotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)
 
-    ext = _ALLOWED_IMAGE_TYPES.get(file.content_type or "")
+    file_bytes = await uploads.read_capped(file, _MAX_IMAGE_SIZE, "Image")
+    mime = uploads.sniff_mime(file_bytes)
+    ext = _SNIFFED_IMAGE_EXT.get(mime or "")
     if not ext:
         raise ValidationException("Only JPEG, PNG, WEBP, or GIF images are allowed")
 
-    file_bytes = await file.read()
-    if len(file_bytes) > _MAX_IMAGE_SIZE:
-        raise ValidationException("Image must be smaller than 5MB")
-
     image_key = s3_service.make_question_image_key(category_id, ext)
-    await s3_service.upload(file_bytes, image_key, file.content_type)
+    await s3_service.upload(file_bytes, image_key, mime or "image/jpeg")
     return {"image_key": image_key, "image_url": await _resolve_image_url(image_key)}
 
 
@@ -536,7 +543,8 @@ async def process_excel_import(
 
     import openpyxl
 
-    wb = openpyxl.load_workbook(io.BytesIO(file_data))
+    uploads.check_xlsx_archive(file_data)  # zip-bomb / corrupt-archive guard
+    wb = openpyxl.load_workbook(io.BytesIO(file_data), read_only=False)
     ws = wb.active
     raw_headers = [cell.value for cell in ws[1]]
 

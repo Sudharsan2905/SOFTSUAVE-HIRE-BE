@@ -24,6 +24,8 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Copy application source
 COPY app/ ./app/
+COPY docker/entrypoint.sh ./docker/entrypoint.sh
+RUN chmod +x ./docker/entrypoint.sh
 
 # Create uploads directory and assign ownership before switching user
 RUN mkdir -p uploads/screenshots && chown -R appuser:appgroup uploads/
@@ -32,4 +34,8 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# UVICORN_WORKERS defaults to 1: with a single worker WebSocket state lives in process
+# memory and no Redis is needed. Set REDIS_URL to run UVICORN_WORKERS > 1 (the entrypoint
+# refuses to start multiple workers without it). See README "Scaling".
+ENV UVICORN_WORKERS=1
+ENTRYPOINT ["/app/docker/entrypoint.sh"]

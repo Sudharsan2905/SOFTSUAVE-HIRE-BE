@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 
 import bcrypt
@@ -19,14 +20,26 @@ from app.common.response_models.auth_responses import (
     TokenRefreshResponse,
     UserInTokenResponse,
 )
-from app.common.utils import generate_secure_token, hash_token, serialize_doc, utcnow
+from app.common.utils import (
+    email_query,
+    generate_secure_token,
+    hash_token,
+    normalize_email,
+    serialize_doc,
+    utcnow,
+)
 from app.components.candidate.candidate_service import _check_candidate_access_restriction
 from app.core.config import settings
 from app.core.logging import logger
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return bool(bcrypt.checkpw(plain.encode(), hashed.encode()))
+def verify_password(plain: str, hashed: str | None) -> bool:
+    if not hashed:  # password-less (e.g. Google-only) account
+        return False
+    try:
+        return bool(bcrypt.checkpw(plain.encode(), hashed.encode()))
+    except ValueError:  # malformed hash
+        return False
 
 
 def hash_password(password: str) -> str:
@@ -86,8 +99,10 @@ async def admin_login(db: AsyncIOMotorDatabase, email: str, password: str) -> Au
     Raises:
         UnauthorizedException: On invalid credentials or deactivated account.
     """
-    user = await db.users.find_one({"email": email, "role": {"$in": ADMIN_ROLES}})
-    if not user or not verify_password(password, user.get("password_hash", "")):
+    user = await db.users.find_one({"email": email_query(email), "role": {"$in": ADMIN_ROLES}})
+    if not user or not await asyncio.to_thread(
+        verify_password, password, user.get("password_hash", "")
+    ):
         logger.warning(f"Failed admin login attempt for email: {email}")
         raise UnauthorizedException(ErrorMessages.INVALID_CREDENTIALS)
     if not user.get("is_active", True):
@@ -109,8 +124,10 @@ async def candidate_login(
         UnauthorizedException: On invalid credentials or deactivated account.
         ForbiddenException: If the share link's candidate restriction blocks this candidate.
     """
-    user = await db.users.find_one({"email": email, "role": UserRole.CANDIDATE})
-    if not user or not verify_password(password, user.get("password_hash", "")):
+    user = await db.users.find_one({"email": email_query(email), "role": UserRole.CANDIDATE})
+    if not user or not await asyncio.to_thread(
+        verify_password, password, user.get("password_hash", "")
+    ):
         logger.warning(f"Failed candidate login attempt for email: {email}")
         raise UnauthorizedException(ErrorMessages.INVALID_CREDENTIALS)
     if not user.get("is_active", True):
@@ -137,20 +154,29 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> AuthTokenR
     Raises:
         ConflictException: If the email is already registered.
     """
-    if await db.users.find_one({"email": data["email"]}):
+    data["email"] = normalize_email(data["email"])
+    if await db.users.find_one({"email": email_query(data["email"])}):
         raise ConflictException(ErrorMessages.EMAIL_TAKEN)
     logger.info(f"Registering new candidate: {data['email']}")
 
     raw_password = data.pop("password", None)
-    google_id = data.pop("google_id", None)
+    claimed_google_id = data.pop("google_id", None)
     data.pop("assessment_uuid", None)
+
+    # The client may NOT assert a Google identity: ``google_id`` must be the short-lived,
+    # server-signed registration token issued by google_auth() after it verified the
+    # Google ID token. Anything else (a bare id) is rejected, which prevents pre-hijacking
+    # a victim's address with an attacker-chosen password and a forged google_id.
+    google_id: str | None = None
+    if claimed_google_id:
+        google_id = _verify_google_registration_token(claimed_google_id, data["email"])
 
     if not google_id and not raw_password:
         from app.common.exceptions import ValidationException
 
         raise ValidationException("Password is required for email registration")
 
-    password_hash = hash_password(raw_password) if raw_password else None
+    password_hash = await asyncio.to_thread(hash_password, raw_password) if raw_password else None
     now = utcnow()
 
     user_doc = {
@@ -179,34 +205,112 @@ async def register_candidate(db: AsyncIOMotorDatabase, data: dict) -> AuthTokenR
     return await _issue_tokens(db, user_doc)
 
 
+_GOOGLE_REG_TOKEN_TYPE = "google_registration"  # noqa: S105  # nosec B105
+_GOOGLE_REG_TOKEN_TTL_MINUTES = 15
+
+
+def _create_google_registration_token(email: str, google_sub: str) -> str:
+    return str(
+        jwt.encode(
+            {
+                "type": _GOOGLE_REG_TOKEN_TYPE,
+                "email": email,
+                "gid": google_sub,
+                "exp": utcnow() + timedelta(minutes=_GOOGLE_REG_TOKEN_TTL_MINUTES),
+            },
+            settings.JWT_SECRET_KEY,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+    )
+
+
+def _verify_google_registration_token(token: str, email: str) -> str:
+    """Return the verified Google subject id, or raise if the token is bad / for another email."""
+    from app.common.exceptions import ValidationException
+
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError as exc:
+        raise ValidationException("Google sign-up session is invalid or has expired") from exc
+    if payload.get("type") != _GOOGLE_REG_TOKEN_TYPE or payload.get("email") != email:
+        raise ValidationException("Google sign-up session does not match this email")
+    gid = payload.get("gid")
+    if not gid:
+        raise ValidationException("Google sign-up session is invalid")
+    return str(gid)
+
+
+async def revoke_user_tokens(db: AsyncIOMotorDatabase, user_id: str | object) -> int:
+    """Delete every refresh token of a user (password/role change, deactivation, deletion)."""
+    from bson import ObjectId
+
+    uid = user_id if isinstance(user_id, ObjectId) else ObjectId(str(user_id))
+    result = await db.refresh_tokens.delete_many({"user_id": uid})
+    return int(result.deleted_count)
+
+
 async def refresh_access_token(
     db: AsyncIOMotorDatabase, refresh_token: str
 ) -> TokenRefreshResponse:
-    token_hash = hash_token(refresh_token)
-    token_doc = await db.refresh_tokens.find_one({"token_hash": token_hash})
+    """Exchange a refresh token for a new access token **and a new refresh token**.
 
-    expires_at = token_doc["expires_at"] if token_doc else None
-    if expires_at is not None and expires_at.tzinfo is None:
+    Refresh tokens are single-use: the presented one is atomically deleted, so a stolen
+    token that has already been used (or a replay of it) is rejected.
+    """
+    token_hash = hash_token(refresh_token)
+    # Atomic claim: only one concurrent caller can consume a given token.
+    token_doc = await db.refresh_tokens.find_one_and_delete({"token_hash": token_hash})
+    if not token_doc:
+        raise UnauthorizedException("Refresh token expired or invalid")
+
+    expires_at = token_doc["expires_at"]
+    if expires_at.tzinfo is None:
         from datetime import UTC
 
         expires_at = expires_at.replace(tzinfo=UTC)
-    if not token_doc or expires_at < utcnow():
-        if token_doc:
-            await db.refresh_tokens.delete_one({"_id": token_doc["_id"]})
+    if expires_at < utcnow():
         raise UnauthorizedException("Refresh token expired or invalid")
 
     user = await db.users.find_one({"_id": token_doc["user_id"]})
     if not user:
         raise UnauthorizedException("User not found")
+    if not user.get("is_active", True):
+        await revoke_user_tokens(db, user["_id"])
+        raise UnauthorizedException("Your account has been deactivated.")
 
     access_token = create_access_token(
         {"sub": str(user["_id"]), "role": user["role"], "email": user["email"]}
     )
-    return TokenRefreshResponse(access_token=access_token, token_type="bearer")  # noqa: S106  # nosec B106
+    new_refresh_raw = generate_secure_token()
+    await db.refresh_tokens.insert_one(
+        {
+            "user_id": user["_id"],
+            "token_hash": hash_token(new_refresh_raw),
+            "expires_at": utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            "created_at": utcnow(),
+        }
+    )
+    return TokenRefreshResponse(
+        access_token=access_token,
+        token_type="bearer",  # noqa: S106  # nosec B106
+        refresh_token=new_refresh_raw,
+    )
 
 
-async def logout(db: AsyncIOMotorDatabase, refresh_token: str) -> None:
-    await db.refresh_tokens.delete_one({"token_hash": hash_token(refresh_token)})
+async def logout(
+    db: AsyncIOMotorDatabase, refresh_token: str, caller_id: str | None = None
+) -> None:
+    """Revoke a refresh token.
+
+    The token itself proves ownership; if the caller also presents a valid access token,
+    it must belong to the same user (so one user cannot revoke another's session).
+    """
+    token_hash = hash_token(refresh_token)
+    if caller_id is not None:
+        doc = await db.refresh_tokens.find_one({"token_hash": token_hash}, {"user_id": 1})
+        if doc and str(doc["user_id"]) != str(caller_id):
+            raise ForbiddenException("This refresh token does not belong to you")
+    await db.refresh_tokens.delete_one({"token_hash": token_hash})
 
 
 async def google_auth(
@@ -217,13 +321,14 @@ async def google_auth(
 
     For existing candidates: issues JWT tokens directly.
     For new users: returns { needs_registration: True, google_data: {...} } without
-    creating any account — the caller must complete registration via /auth/register.
+    creating any account — the caller must complete registration via /auth/register,
+    passing ``google_data.google_id`` (a short-lived signed registration token).
 
     Raises:
-        UnauthorizedException: On invalid or mismatched Google token.
+        UnauthorizedException: On invalid/mismatched token or an unverified Google email.
         ForbiddenException: If the account exists but has a non-candidate role.
     """
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.get(
             "https://oauth2.googleapis.com/tokeninfo",
             params={"id_token": credential},
@@ -237,11 +342,15 @@ async def google_auth(
         logger.warning("Google OAuth token audience mismatch")
         raise UnauthorizedException("Google token audience mismatch")
 
-    email = info.get("email")
+    email = normalize_email(info.get("email"))
     if not email:
         raise UnauthorizedException("Email not found in Google token")
+    # Google reports this as the string "true"; never trust an unverified address.
+    if str(info.get("email_verified", "")).lower() != "true":
+        logger.warning("Google OAuth rejected: email not verified")
+        raise UnauthorizedException("Your Google email address is not verified")
 
-    user = await db.users.find_one({"email": email})
+    user = await db.users.find_one({"email": email_query(email)})
 
     if not user:
         logger.info(f"Google OAuth pre-auth (new user): {email}")
@@ -251,37 +360,59 @@ async def google_auth(
                 email=email,
                 first_name=info.get("given_name") or info.get("name", ""),
                 last_name=info.get("family_name", ""),
-                google_id=info.get("sub", ""),
+                # Signed, short-lived registration token (carries the verified Google
+                # subject + email). The client echoes it back as `google_id`.
+                google_id=_create_google_registration_token(email, info.get("sub", "")),
                 picture=info.get("picture", ""),
             ),
         )
 
     if user.get("role") != UserRole.CANDIDATE:
         raise ForbiddenException("This Google account is not registered as a candidate")
+    if not user.get("is_active", True):
+        raise UnauthorizedException("Your account has been deactivated.")
 
     logger.info(f"Google OAuth login (existing candidate): {email}")
     return await _issue_tokens(db, user)
 
 
+_SETUP_MARKER_ID = "super_admin_setup"
+
+
 async def setup_super_admin(db: AsyncIOMotorDatabase, data: dict) -> AuthTokenResponse:
-    if await db.users.find_one({"role": UserRole.SUPER_ADMIN}):
+    """Create the first super admin. Atomic: concurrent calls can never create two.
+
+    A unique-``_id`` marker document is claimed first; only the caller that inserts it
+    proceeds.  (A plain "check then insert" lets two parallel requests both pass the check.)
+    """
+    from pymongo.errors import DuplicateKeyError
+
+    if await db.users.find_one({"role": UserRole.SUPER_ADMIN}, {"_id": 1}):
         raise ForbiddenException("Setup already complete. A super admin already exists.")
 
-    now = utcnow()
+    try:
+        await db.app_meta.insert_one({"_id": _SETUP_MARKER_ID, "claimed_at": utcnow()})
+    except DuplicateKeyError as exc:
+        raise ForbiddenException("Setup already complete. A super admin already exists.") from exc
 
-    user_doc = {
-        "first_name": data["first_name"],
-        "last_name": data.get("last_name") or "",
-        "email": data["email"],
-        "password_hash": hash_password(data["password"]),
-        "role": UserRole.SUPER_ADMIN,
-        "is_active": True,
-        "email_verified": False,
-        "workspace_ids": [],
-        "default_workspace_id": None,
-        "created_at": now,
-        "updated_at": now,
-    }
-    user_result = await db.users.insert_one(user_doc)
+    try:
+        now = utcnow()
+        user_doc = {
+            "first_name": data["first_name"],
+            "last_name": data.get("last_name") or "",
+            "email": normalize_email(data["email"]),
+            "password_hash": await asyncio.to_thread(hash_password, data["password"]),
+            "role": UserRole.SUPER_ADMIN,
+            "is_active": True,
+            "email_verified": False,
+            "workspace_ids": [],
+            "default_workspace_id": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        user_result = await db.users.insert_one(user_doc)
+    except Exception:
+        await db.app_meta.delete_one({"_id": _SETUP_MARKER_ID})  # let setup be retried
+        raise
     user_doc["_id"] = user_result.inserted_id
     return await _issue_tokens(db, user_doc)

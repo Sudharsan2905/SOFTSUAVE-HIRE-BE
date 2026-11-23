@@ -10,7 +10,8 @@ upgrade requests.
 Message protocol — candidate endpoint
 ──────────────────────────────────────
 Client → Server:
-  { "type": "ping", "remaining_seconds": <int>, "current_question_idx": <int> }
+  { "type": "ping", "current_question_idx": <int> }
+  (remaining time is owned by the server; any client-supplied value is ignored)
 
 Server → Client:
   { "type": "connected", "status": "in_progress", "remaining_seconds": <int|null>,
@@ -18,7 +19,8 @@ Server → Client:
   { "type": "on_hold",         "message": "Interview paused. Awaiting admin approval." }
   { "type": "resume_approved", "remaining_seconds": <int|null>, "current_question_idx": <int> }
   { "type": "terminated",      "message": "Session ended by administrator." }
-  { "type": "pong" }
+  { "type": "pong", "remaining_seconds": <int>, "status": <str> }
+  { "type": "time_expired" }   (the server auto-submitted the session)
   { "type": "error",           "message": <str> }
 
 Message protocol — admin endpoint
@@ -32,16 +34,41 @@ Server → Client:
   (broadcast events via AdminConnectionManager.broadcast_event)
 """
 
+import asyncio
+import contextlib
+import time
 from datetime import UTC, datetime
 
 from bson import ObjectId
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 
 from app.common.constants.app_constants import SubmissionStatus
+from app.components.candidate import timing
 from app.components.websocket.connection_manager import admin_manager, manager
+from app.core.config import settings
 from app.core.logging import logger
 
 ws_router = APIRouter()
+
+
+class _PingState:
+    """Per-connection cache so most heartbeats are answered without touching the database.
+
+    The deadline is server-owned and changes only on events that are pushed over this very
+    socket (resume, auto-submit), so the cached document stays correct between periodic
+    resyncs; the DB is touched when the question index changes or every
+    ``WS_PING_SYNC_SECONDS``.
+    """
+
+    __slots__ = ("last_sync", "q_idx", "sub")
+
+    def __init__(self, sub: dict) -> None:
+        self.sub = sub
+        self.q_idx = int(sub.get("current_question_idx", 0) or 0)
+        self.last_sync = time.monotonic()
+
 
 _TERMINAL_STATUSES = {
     SubmissionStatus.COMPLETED,
@@ -95,13 +122,20 @@ async def interview_websocket(websocket: WebSocket, submission_id: str) -> None:
         await websocket.close(code=4003, reason="Session already ended")
         return
 
+    # Stamp liveness first so the stale-session sweep never sees an old heartbeat for a
+    # candidate who is connecting right now.
+    with contextlib.suppress(Exception):
+        await db.assessment_submissions.update_one(
+            {"_id": sub["_id"]}, {"$set": {"last_heartbeat": datetime.now(UTC)}}
+        )
+
     # Accept + register (also cancels any pending ON_HOLD task)
     await manager.connect(submission_id, websocket)
-    logger.info("WS connected: submission_id=%s candidate_id=%s", submission_id, candidate_id)
+    logger.info("WS connected: submission_id={} candidate_id={}", submission_id, candidate_id)
 
     # Send initial state
     if status == SubmissionStatus.ON_HOLD:
-        logger.info("WS on_hold sent on connect: submission_id=%s", submission_id)
+        logger.info("WS on_hold sent on connect: submission_id={}", submission_id)
         await websocket.send_json(
             {
                 "type": "on_hold",
@@ -113,39 +147,99 @@ async def interview_websocket(websocket: WebSocket, submission_id: str) -> None:
             {
                 "type": "connected",
                 "status": str(status),
-                "remaining_seconds": sub.get("remaining_seconds"),
+                "remaining_seconds": timing.remaining_seconds(sub),
                 "current_question_idx": sub.get("current_question_idx", 0),
             }
         )
 
+    state = _PingState(sub)
     try:
         while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type")
-
-            if msg_type == "ping":
-                remaining = data.get("remaining_seconds")
-                q_idx = int(data.get("current_question_idx", 0))
-                if remaining is not None:
-                    await db.assessment_submissions.update_one(
-                        {"_id": ObjectId(submission_id)},
-                        {
-                            "$set": {
-                                "remaining_seconds": int(remaining),
-                                "current_question_idx": q_idx,
-                                "last_heartbeat": datetime.now(UTC),
-                                "updated_at": datetime.now(UTC),
-                            }
-                        },
-                    )
-                await websocket.send_json({"type": "pong"})
-
+            # Idle timeout: clients ping every ~10s, so silence means a dead/half-open socket.
+            data = await asyncio.wait_for(
+                websocket.receive_json(), timeout=settings.WS_IDLE_TIMEOUT_SECONDS
+            )
+            if not isinstance(data, dict):
+                continue
+            if data.get("type") == "ping" and not await _handle_ping(
+                websocket, db, submission_id, data, state
+            ):
+                break
     except WebSocketDisconnect:
-        logger.info("WS disconnect: submission_id=%s", submission_id)
-        await manager.disconnect(submission_id, db)
+        logger.info("WS disconnect: submission_id={}", submission_id)
+    except TimeoutError:
+        logger.info("WS idle timeout: submission_id={}", submission_id)
+        with contextlib.suppress(Exception):
+            await websocket.close(code=4008, reason="Idle timeout")
     except Exception as exc:
-        logger.error("WS error: submission_id=%s error=%s", submission_id, exc)
-        await manager.disconnect(submission_id, db)
+        logger.error("WS error: submission_id={} error={}", submission_id, exc)
+    finally:
+        await manager.disconnect(submission_id, db, websocket)
+
+
+async def _handle_ping(
+    websocket: WebSocket,
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    data: dict,
+    state: _PingState,
+) -> bool:
+    """Reply with the server-computed remaining time; persist position only when needed.
+
+    Returns False when the session is no longer active (the socket is then closed).
+    A transient DB error must not drop the session, so it is swallowed here.
+    """
+    await manager.touch(submission_id)  # refresh cross-worker presence (no-op without Redis)
+    try:
+        q_idx = max(0, int(data.get("current_question_idx", 0)))
+    except (TypeError, ValueError):
+        q_idx = 0
+
+    due = time.monotonic() - state.last_sync >= settings.WS_PING_SYNC_SECONDS
+    if q_idx != state.q_idx or due:
+        try:
+            sub = await db.assessment_submissions.find_one_and_update(
+                {
+                    "_id": ObjectId(submission_id),
+                    "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+                },
+                {"$set": {"current_question_idx": q_idx, "last_heartbeat": datetime.now(UTC)}},
+                projection={
+                    "status": 1,
+                    "paused_at": 1,
+                    "current_round": 1,
+                    "current_question_idx": 1,
+                    "current_deadline_at": 1,
+                    "current_round_seconds": 1,
+                    "round_timer_started": 1,
+                    "rounds_data.round_number": 1,
+                    "rounds_data.max_duration_minutes": 1,
+                    "rounds_data.started_at": 1,
+                },
+                return_document=ReturnDocument.AFTER,
+            )
+        except Exception as exc:
+            logger.warning("WS ping DB error: submission_id={} error={}", submission_id, exc)
+            await websocket.send_json({"type": "pong"})
+            return True
+
+        if sub is None:
+            # Completed / terminated / auto-submitted since the last sync.
+            await websocket.send_json({"type": "terminated", "reason": "session_ended"})
+            await websocket.close(code=4003, reason="Session already ended")
+            return False
+        state.sub = sub
+        state.q_idx = q_idx
+        state.last_sync = time.monotonic()
+
+    await websocket.send_json(
+        {
+            "type": "pong",
+            "remaining_seconds": timing.remaining_seconds(state.sub),
+            "status": str(state.sub.get("status")),
+        }
+    )
+    return True
 
 
 @ws_router.websocket("/ws/admin")
@@ -177,7 +271,7 @@ async def admin_websocket(websocket: WebSocket) -> None:
     # Resolve accessible workspace IDs
     workspace_ids: list[str] = []
     if role == "super_admin":
-        workspace_ids = []  # empty = all workspaces
+        workspace_ids = []  # super admins are tracked separately and see everything
     else:
         user = await db.users.find_one({"_id": ObjectId(admin_id)})
         workspace_ids = user.get("workspace_ids", []) if user else []
@@ -186,20 +280,24 @@ async def admin_websocket(websocket: WebSocket) -> None:
     await websocket.send_json({"type": "connected", "role": role})
 
     # Register in admin connection manager
-    admin_manager.connect(admin_id, websocket, workspace_ids)
+    admin_manager.connect(admin_id, websocket, workspace_ids, role == "super_admin")
+    await admin_manager.ensure_bus()
 
     try:
         while True:
             data = await websocket.receive_json()
-            await _handle_admin_message(websocket, data)
+            if isinstance(data, dict):
+                await _handle_admin_message(websocket, data, admin_id, db)
     except WebSocketDisconnect:
         admin_manager.disconnect(admin_id)
     except Exception as exc:
-        logger.error("Admin WS error: admin_id=%s error=%s", admin_id, exc)
+        logger.error("Admin WS error: admin_id={} error={}", admin_id, exc)
         admin_manager.disconnect(admin_id)
 
 
-async def _handle_admin_message(websocket: WebSocket, data: dict) -> None:
+async def _handle_admin_message(
+    websocket: WebSocket, data: dict, admin_id: str, db: AsyncIOMotorDatabase
+) -> None:
     """Dispatch a single admin WebSocket message."""
     msg_type = data.get("type")
 
@@ -212,6 +310,11 @@ async def _handle_admin_message(websocket: WebSocket, data: dict) -> None:
         message = data.get("message", "").strip()
         if not target_submission_id or not message:
             return
+        if not await _admin_may_access_submission(db, admin_id, target_submission_id):
+            await websocket.send_json(
+                {"type": "warn_ack", "submission_id": target_submission_id, "delivered": False}
+            )
+            return
         delivered = await manager.send_json(
             target_submission_id,
             {"type": "admin_warning", "message": message},
@@ -223,3 +326,24 @@ async def _handle_admin_message(websocket: WebSocket, data: dict) -> None:
                 "delivered": delivered,
             }
         )
+
+
+async def _admin_may_access_submission(
+    db: AsyncIOMotorDatabase, admin_id: str, submission_id: str
+) -> bool:
+    """True if the admin belongs to the workspace that owns the submission."""
+    try:
+        sub = await db.assessment_submissions.find_one(
+            {"_id": ObjectId(submission_id)}, {"workspace_id": 1, "assessment_id": 1}
+        )
+        if not sub:
+            return False
+        workspace_id = sub.get("workspace_id")
+        if not workspace_id:  # legacy submission
+            assessment = await db.assessments.find_one(
+                {"_id": sub["assessment_id"]}, {"workspace_id": 1}
+            )
+            workspace_id = assessment.get("workspace_id") if assessment else None
+        return bool(workspace_id) and admin_manager.can_access(admin_id, str(workspace_id))
+    except Exception:
+        return False

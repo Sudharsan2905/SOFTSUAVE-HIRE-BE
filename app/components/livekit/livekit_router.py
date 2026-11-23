@@ -5,9 +5,11 @@ from typing import Annotated
 from fastapi import Body
 
 from app.common.constants.messages import SuccessMessages
+from app.common.exceptions import NotFoundException
 from app.common.response_models.livekit_responses import LiveKitTokenResponse
 from app.common.responses import ApiResponse, success_response
 from app.common.router import DefaultResponseRouter
+from app.components.assessment.access import can_access_workspace
 from app.components.auth.auth_dependencies import AdminUser
 from app.components.livekit import livekit_service
 from app.core.dependencies import DB
@@ -24,5 +26,7 @@ async def get_admin_livekit_token(
     workspace_id: Annotated[str, Body(embed=True)],
 ) -> dict:
     """Generate a LiveKit token for an admin to watch a workspace's candidates."""
+    if not can_access_workspace(current_user, workspace_id):
+        raise NotFoundException("Workspace not found")
     result = livekit_service.generate_admin_token(current_user["_id"], workspace_id)
     return success_response(SuccessMessages.LIVEKIT_TOKEN_GENERATED, result)

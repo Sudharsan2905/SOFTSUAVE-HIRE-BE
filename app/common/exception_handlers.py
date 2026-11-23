@@ -1,9 +1,11 @@
+from bson.errors import InvalidId
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.common.exceptions import AppException
 from app.common.responses import error_response
+from app.core.logging import logger
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -26,9 +28,19 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=error_response("Validation failed", detail),
         )
 
+    @app.exception_handler(InvalidId)
+    async def invalid_object_id_handler(request: Request, exc: InvalidId) -> JSONResponse:
+        """Any malformed ObjectId that reaches the database layer is the caller's mistake."""
+        return JSONResponse(
+            status_code=422,
+            content=error_response("Validation failed", "Invalid ID format"),
+        )
+
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        # Never echo exception text (driver errors, paths, stack hints) to the client.
+        logger.opt(exception=exc).error("Unhandled error: {} {}", request.method, request.url.path)
         return JSONResponse(
             status_code=500,
-            content=error_response("Internal server error", str(exc)),
+            content=error_response("Internal server error", "Internal server error"),
         )

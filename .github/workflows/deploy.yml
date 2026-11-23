@@ -36,6 +36,15 @@ jobs:
 
             echo "Waiting for service..."
             sleep 5
+            for i in $(seq 1 12); do
+              if curl -fsS http://127.0.0.1:8000/api/health >/dev/null; then
+                echo "Health check passed"; break
+              fi
+              if [ "$i" = "12" ]; then
+                echo "Health check FAILED"; sudo journalctl -u softsuave-api -n 50 --no-pager; exit 1
+              fi
+              sleep 5
+            done
 
             sudo systemctl --no-pager --full status softsuave-api
 

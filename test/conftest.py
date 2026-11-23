@@ -8,10 +8,22 @@ from mongomock_motor import AsyncMongoMockClient
 from app.common.constants.app_constants import UserRole
 from app.common.utils import utcnow
 from app.components.auth.auth_service import hash_password
+from app.core.config import settings as _settings
 from app.core.limiter import limiter as _limiter  # noqa: E402
+
+_settings.USER_CACHE_TTL_SECONDS = 0  # tests mutate users directly
+_settings.REAPER_ENABLED = False  # no background scheduler thread during tests
 
 os.environ["RATELIMIT_ENABLED"] = "0"  # must be set before any app module is imported
 _limiter.limit = lambda *args, **kwargs: (lambda f: f)
+
+
+@pytest.fixture(autouse=True)
+def _clear_answer_ctx():
+    from app.components.candidate import candidate_service
+
+    candidate_service._answer_ctx.clear()
+    yield
 
 
 @pytest.fixture

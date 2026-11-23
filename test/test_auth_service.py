@@ -164,6 +164,7 @@ class TestGoogleAuth:
                 "family_name": "User",
                 "sub": "google123",
                 "aud": settings.GOOGLE_CLIENT_ID,
+                "email_verified": "true",
             },
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
@@ -171,7 +172,13 @@ class TestGoogleAuth:
         assert result.needs_registration is True
         assert result.google_data.email == "google@example.com"
         assert result.google_data.first_name == "Google"
-        assert result.google_data.google_id == "google123"
+        # google_id is now a signed, short-lived registration token carrying the Google sub
+        assert (
+            auth_service._verify_google_registration_token(
+                result.google_data.google_id, "google@example.com"
+            )
+            == "google123"
+        )
 
     async def test_existing_candidate_logs_in(self, db, candidate_user):
         mock_httpx = self._make_mock_httpx(
@@ -182,6 +189,7 @@ class TestGoogleAuth:
                 "family_name": "Candidate",
                 "sub": "google_existing",
                 "aud": settings.GOOGLE_CLIENT_ID,
+                "email_verified": "true",
             },
         )
         with patch("app.components.auth.auth_service.httpx", mock_httpx):
@@ -212,6 +220,7 @@ class TestGoogleAuth:
             {
                 "email": "superadmin@example.com",
                 "aud": settings.GOOGLE_CLIENT_ID,
+                "email_verified": "true",
                 "sub": "abc",
             },
         )

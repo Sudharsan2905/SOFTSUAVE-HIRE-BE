@@ -59,7 +59,9 @@ async def create_candidate(
     current_user: AdminUser,
 ) -> dict:
     """Create a new candidate account from admin (Schedule Wizard onboarding)."""
-    result = await user_service.create_candidate_from_admin(db, body.model_dump())
+    result = await user_service.create_candidate_from_admin(
+        db, body.model_dump(), current_user["_id"]
+    )
     return success_response(SuccessMessages.CANDIDATE_CREATED, result)
 
 
@@ -74,7 +76,7 @@ async def list_candidates(
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
     result = await user_service.list_candidates(
-        db, search, is_active, candidate_type, page, page_size
+        db, search, is_active, candidate_type, page, page_size, current_user
     )
     return success_response(SuccessMessages.CANDIDATES_RETRIEVED, result)
 
@@ -85,7 +87,7 @@ async def get_candidate(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    result = await user_service.get_candidate(db, user_id)
+    result = await user_service.get_candidate(db, user_id, current_user)
     return success_response(SuccessMessages.CANDIDATE_RETRIEVED, result)
 
 
@@ -95,7 +97,7 @@ async def delete_candidate(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    await user_service.delete_candidate(db, user_id)
+    await user_service.delete_candidate(db, user_id, current_user)
     return success_response(SuccessMessages.CANDIDATE_DELETED)
 
 
@@ -105,7 +107,7 @@ async def get_candidate_submissions(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    result = await user_service.get_candidate_submission_history(db, user_id)
+    result = await user_service.get_candidate_submission_history(db, user_id, current_user)
     return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, result)
 
 
@@ -116,7 +118,9 @@ async def update_candidate(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    result = await user_service.update_candidate(db, user_id, request.model_dump(exclude_none=True))
+    result = await user_service.update_candidate(
+        db, user_id, request.model_dump(exclude_none=True), current_user
+    )
     return success_response(SuccessMessages.CANDIDATE_UPDATED, result)
 
 
@@ -127,7 +131,9 @@ async def patch_candidate(
     db: DB,
     current_user: AdminUser,
 ) -> dict:
-    result = await user_service.update_candidate(db, user_id, request.model_dump(exclude_none=True))
+    result = await user_service.update_candidate(
+        db, user_id, request.model_dump(exclude_none=True), current_user
+    )
     return success_response(SuccessMessages.CANDIDATE_UPDATED, result)
 
 

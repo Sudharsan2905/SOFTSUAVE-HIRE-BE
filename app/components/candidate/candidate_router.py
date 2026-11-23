@@ -2,9 +2,10 @@ from typing import Annotated
 
 from fastapi import BackgroundTasks, File, Form, Query, Request, UploadFile
 
+from app.common import uploads
 from app.common.constants.app_constants import MalpracticeType
 from app.common.constants.messages import SuccessMessages
-from app.common.exceptions import ValidationException
+from app.common.exceptions import NotFoundException, ValidationException
 from app.common.response_models.candidate_responses import (
     AnswerSavedResponse,
     MalpracticeRecordResponse,
@@ -14,18 +15,21 @@ from app.common.response_models.candidate_responses import (
 from app.common.response_models.livekit_responses import LiveKitTokenResponse
 from app.common.responses import ApiResponse, success_response
 from app.common.router import DefaultResponseRouter
+from app.components.assessment.access import is_super_admin, member_workspace_ids
 from app.components.auth.auth_dependencies import AdminUser, CurrentUser
 from app.components.candidate import candidate_service
-from app.components.candidate.candidate_schemas import SubmitAnswerRequest
+from app.components.candidate.candidate_schemas import FinishRoundRequest, SubmitAnswerRequest
 from app.core.dependencies import DB
 from app.core.limiter import limiter
 
 router = DefaultResponseRouter()
 
 _JPEG = "image/jpeg"
-_ALLOWED_IMAGE_TYPES = {_JPEG, "image/png"}
-_ALLOWED_VIDEO_TYPES = {"video/webm", "video/mp4"}
-_ALLOWED_AUDIO_TYPES = {"audio/webm", "audio/ogg", "audio/mpeg"}
+# Allowed *actual* file types (sniffed from magic bytes — the client Content-Type is ignored).
+_ALLOWED_IMAGE_TYPES = {uploads.MIME_JPEG, uploads.MIME_PNG}
+_ALLOWED_VIDEO_TYPES = {uploads.MIME_WEBM, uploads.MIME_MP4}
+# Browsers record audio clips as WebM/Ogg; MP3 is accepted too.
+_ALLOWED_AUDIO_TYPES = {uploads.MIME_WEBM, uploads.MIME_OGG, uploads.MIME_MP3}
 _MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024  # 2 MB
 _MAX_VIDEO_BYTES = 50 * 1024 * 1024  # 50 MB
 _MAX_AUDIO_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -84,8 +88,8 @@ async def start_interview(
     db: DB,
     current_user: CurrentUser,
 ) -> dict:
-    await candidate_service.start_interview(db, submission_id, current_user["_id"])
-    return success_response(SuccessMessages.INTERVIEW_STARTED)
+    result = await candidate_service.start_interview(db, submission_id, current_user["_id"])
+    return success_response(SuccessMessages.INTERVIEW_STARTED, result)
 
 
 @router.post("/submission/{submission_id}/finish-round")
@@ -94,14 +98,19 @@ async def finish_round(
     db: DB,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
+    body: FinishRoundRequest | None = None,
 ) -> dict:
     from app.components.scoring import scoring_tasks
 
-    result = await candidate_service.finish_round(db, submission_id, current_user["_id"])
-    finished_round = result.pop("finished_round")
-    background_tasks.add_task(
-        scoring_tasks.calculate_and_store_score, db, submission_id, finished_round
+    result = await candidate_service.finish_round(
+        db, submission_id, current_user["_id"], body.round_number if body else None
     )
+    finished_round = result.pop("finished_round")
+    # A replayed finish on an already-completed session must not trigger scoring again.
+    if not result.pop("already_completed", False):
+        background_tasks.add_task(
+            scoring_tasks.calculate_and_store_score, db, submission_id, finished_round
+        )
     return success_response(SuccessMessages.ROUND_FINISHED, result)
 
 
@@ -114,14 +123,10 @@ async def save_screenshot(
     current_user: CurrentUser,
     file: Annotated[UploadFile, File()],
 ) -> dict:
-    if file.content_type not in _ALLOWED_IMAGE_TYPES:
-        raise ValidationException("Screenshot must be a JPEG or PNG image")
-    content = await file.read()
-    if len(content) > _MAX_SCREENSHOT_BYTES:
-        raise ValidationException("Screenshot must not exceed 2 MB")
-    await candidate_service.save_screenshot(
-        db, submission_id, current_user["_id"], content, file.content_type or _JPEG
+    content, mime = await uploads.read_validated(
+        file, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "Screenshot"
     )
+    await candidate_service.save_screenshot(db, submission_id, current_user["_id"], content, mime)
     return success_response(SuccessMessages.SCREENSHOT_SAVED)
 
 
@@ -153,15 +158,8 @@ async def flag_malpractice(
     ) -> None:
         if upload is None:
             return
-        if upload.content_type not in allowed_types:
-            raise ValidationException(f"{field} has invalid content type")
-        content = await upload.read()
-        if len(content) > max_bytes:
-            raise ValidationException(f"{field} exceeds size limit")
-        file_bytes_map[field] = (
-            content,
-            upload.content_type or "application/octet-stream",
-        )
+        content, mime = await uploads.read_validated(upload, allowed_types, max_bytes, field)
+        file_bytes_map[field] = (content, mime)
 
     await _read_file(screen_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "screen_image")
     await _read_file(face_image, _ALLOWED_IMAGE_TYPES, _MAX_SCREENSHOT_BYTES, "face_image")
@@ -196,27 +194,19 @@ async def upload_malpractice_media(
 ) -> dict:
     """Phase-2 media upload: attaches video/audio clips to an existing malpractice event."""
     video_bytes: bytes | None = None
-    video_ct = "video/webm"
+    video_ct = uploads.MIME_WEBM
     audio_bytes: bytes | None = None
-    audio_ct = "audio/webm"
+    audio_ct = uploads.MIME_WEBM
 
     if video_chunk is not None:
-        video_ct_base = (video_chunk.content_type or "").split(";")[0].strip()
-        if video_ct_base not in _ALLOWED_VIDEO_TYPES:
-            raise ValidationException("video_chunk has invalid content type")
-        video_bytes = await video_chunk.read()
-        if len(video_bytes) > _MAX_VIDEO_BYTES:
-            raise ValidationException("video_chunk exceeds size limit")
-        video_ct = video_ct_base or video_ct
+        video_bytes, video_ct = await uploads.read_validated(
+            video_chunk, _ALLOWED_VIDEO_TYPES, _MAX_VIDEO_BYTES, "video_chunk"
+        )
 
     if audio_clip is not None:
-        audio_ct_base = (audio_clip.content_type or "").split(";")[0].strip()
-        if audio_ct_base not in _ALLOWED_AUDIO_TYPES:
-            raise ValidationException("audio_clip has invalid content type")
-        audio_bytes = await audio_clip.read()
-        if len(audio_bytes) > _MAX_AUDIO_BYTES:
-            raise ValidationException("audio_clip exceeds size limit")
-        audio_ct = audio_ct_base or audio_ct
+        audio_bytes, audio_ct = await uploads.read_validated(
+            audio_clip, _ALLOWED_AUDIO_TYPES, _MAX_AUDIO_BYTES, "audio_clip"
+        )
 
     await candidate_service.upload_malpractice_media(
         db,
@@ -247,10 +237,18 @@ async def get_livekit_token(
             db, submission_id, str(current_user["_id"])
         )
         return success_response(SuccessMessages.LIVEKIT_TOKEN_GENERATED, result)
+    except NotFoundException:
+        raise
     except Exception as exc:
         from app.common.exceptions import AppException
+        from app.core.logging import logger
 
-        raise AppException(status_code=503, message=f"LiveKit unavailable: {exc}") from exc
+        logger.error(
+            "LiveKit token generation failed: submission_id=%s error=%s", submission_id, exc
+        )
+        raise AppException(
+            status_code=503, message="Live monitoring is temporarily unavailable"
+        ) from exc
 
 
 @router.get(
@@ -287,7 +285,8 @@ async def get_live_interviews(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> dict:
+    workspace_ids = None if is_super_admin(current_user) else member_workspace_ids(current_user)
     result = await candidate_service.get_live_interviews(
-        db, search, monitoring_type, sort_by, sort_order, page, page_size
+        db, search, monitoring_type, sort_by, sort_order, page, page_size, workspace_ids
     )
     return success_response(SuccessMessages.LIVE_INTERVIEWS_RETRIEVED, result)

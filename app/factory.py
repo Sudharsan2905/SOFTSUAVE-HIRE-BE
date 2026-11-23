@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
 from app.common.exception_handlers import register_exception_handlers
+from app.common.middleware.body_limit import BodySizeLimitMiddleware
 from app.common.middleware.logging_middleware import RequestLoggingMiddleware
 from app.common.responses import ApiResponse, error_response, success_response
 from app.components.assessment.assessment_router import public_router as assessment_public_router
@@ -40,6 +41,7 @@ def create_application() -> FastAPI:
     app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -51,15 +53,17 @@ def create_application() -> FastAPI:
 
     register_exception_handlers(app)
 
+    # Hot exam-time routes first: Starlette matches routes linearly, so register them
+    # before the (many) admin routes to keep per-request routing cheap.
+    app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
+    app.include_router(ws_router, prefix="/api", tags=["WebSocket"])
     app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
     app.include_router(user_router, prefix="/api/users", tags=["Users"])
     app.include_router(workspace_router, prefix="/api/workspaces", tags=["Workspaces"])
     app.include_router(question_router, prefix="/api/questions", tags=["Question Bank"])
     app.include_router(assessment_router, prefix="/api", tags=["Assessments"])
     app.include_router(assessment_public_router, prefix="/api", tags=["Assessments"])
-    app.include_router(candidate_router, prefix="/api/candidate", tags=["Candidate"])
     app.include_router(notification_router, prefix="/api/notifications", tags=["Notifications"])
-    app.include_router(ws_router, prefix="/api", tags=["WebSocket"])
     app.include_router(livekit_router, prefix="/api", tags=["LiveKit"])
 
     @app.get("/api/health", response_model=ApiResponse, tags=["Health"])

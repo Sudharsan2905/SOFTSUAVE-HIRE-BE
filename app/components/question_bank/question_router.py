@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import File, Form, Query, Request, UploadFile
 
+from app.common import uploads
 from app.common.constants.messages import SuccessMessages
 from app.common.response_models.question_responses import (
     BulkOperationResponse,
@@ -23,6 +24,8 @@ from app.components.question_bank.question_schemas import (
 )
 from app.core.dependencies import DB
 from app.core.limiter import limiter
+
+_MAX_IMPORT_BYTES = 10 * 1024 * 1024
 
 router = DefaultResponseRouter()
 
@@ -162,7 +165,7 @@ async def excel_import(
     file: Annotated[UploadFile, File()],
     column_map: Annotated[str, Form()] = "{}",
 ) -> dict:
-    file_data = await file.read()
+    file_data = await uploads.read_capped(file, _MAX_IMPORT_BYTES, "Import file")
     try:
         col_map = json.loads(column_map)
     except Exception:

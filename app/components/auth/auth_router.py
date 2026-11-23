@@ -1,4 +1,7 @@
-from fastapi import Request
+from typing import Annotated
+
+from fastapi import Depends, Request
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.common.constants.messages import SuccessMessages
 from app.common.response_models.auth_responses import (
@@ -23,6 +26,7 @@ from app.core.dependencies import DB
 from app.core.limiter import limiter
 
 router = DefaultResponseRouter()
+_optional_bearer = HTTPBearer(auto_error=False)
 
 
 @router.post("/setup", response_model=ApiResponse[AuthTokenResponse])
@@ -69,8 +73,19 @@ async def refresh_token(request: Request, body: RefreshTokenRequest, db: DB) -> 
 
 @router.post("/logout")
 @limiter.limit("20/minute")
-async def logout(request: Request, body: RefreshTokenRequest, db: DB) -> dict:
-    await auth_service.logout(db, body.refresh_token)
+async def logout(
+    request: Request,
+    body: RefreshTokenRequest,
+    db: DB,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_optional_bearer)] = None,
+) -> dict:
+    caller_id: str | None = None
+    if credentials is not None:
+        try:
+            caller_id = auth_service.decode_access_token(credentials.credentials).get("sub")
+        except Exception:  # noqa: S110 — an expired access token must not block logout
+            caller_id = None
+    await auth_service.logout(db, body.refresh_token, caller_id)
     return success_response(SuccessMessages.LOGOUT_SUCCESS)
 
 

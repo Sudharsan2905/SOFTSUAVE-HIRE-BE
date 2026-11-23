@@ -11,6 +11,8 @@ FastAPI + Python backend for the Talentia interview platform.
 3. [Getting Started](#getting-started)
 4. [Environment Variables](#environment-variables)
 5. [Docker](#docker)
+   - [Scaling to multiple workers](#scaling-to-multiple-workers--instances)
+   - [Scheduled reaper](#scheduled-reaper)
 6. [Application Factory](#application-factory)
 7. [Database & Indexes](#database--indexes)
 8. [Authentication & RBAC](#authentication--rbac)
@@ -280,6 +282,55 @@ docker compose -f docker/docker-compose.yml down -v
 | `screenshots`| `/app/uploads/screenshots`   | Persists screenshot files       |
 
 ---
+### Scaling to multiple workers / instances
+
+Default is **one process, no Redis**: WebSocket sessions live in memory (fine to ~2000
+concurrent candidates on a modest box).  To scale out, set `REDIS_URL`:
+
+```bash
+REDIS_URL=redis://redis:6379/0 UVICORN_WORKERS=4 docker compose --profile redis up
+```
+
+| Concern | How it works with `REDIS_URL` |
+| --- | --- |
+| Pushes (terminate, time_expired, resume, admin warning) | Sockets stay in the worker that accepted them. Presence key `ws:loc:<submission_id>` (TTL `WS_PRESENCE_TTL_SECONDS`, refreshed on each ping) says which instance owns a candidate; pushes are forwarded over a per-instance pub/sub channel. |
+| Admin monitoring broadcasts | Published on `ws:admin`; every worker delivers to its own admins (workspace access rules applied locally). |
+| Reconnect to another worker | The new worker tells the old owner to close its stale socket (code 4009). |
+| ON_HOLD | No longer depends on in-memory timers: the **reaper job** (every 10 min) marks `IN_PROGRESS` sessions `ON_HOLD` when `last_heartbeat` is older than `max(HOLD_DELAY_SECONDS+HOLD_SWEEP_GRACE_SECONDS, 2.5×WS_PING_SYNC_SECONDS)` **and** no live socket exists anywhere. |
+| Periodic jobs (auto-submit reaper, ON_HOLD sweep, rescore) | APScheduler cron job (every 10 min) on a background thread in every worker — see [Scheduled reaper](#scheduled-reaper). A Mongo lease (`scheduler_leases`) means exactly one worker/instance runs each cycle; all state changes are atomic claims anyway. |
+| Scoring | Durable: `scoring_status` (pending/scored/needs_review/failed) lives on the submission and the reaper retries anything not `scored`, with a per-submission claim so workers never double-score. |
+
+Without `REDIS_URL` the Docker entrypoint **refuses** `UVICORN_WORKERS>1`.  If Redis becomes
+unreachable at runtime the app degrades to local-only delivery (it never blocks an exam).
+
+Per-process caches (authenticated-user cache, answer-context cache, slowapi limiter) are not
+shared: they are short-lived (5 s / 20 s) and every write is guarded by status/round filters,
+so staleness is bounded; use a Redis limiter storage if you enable rate limiting at scale.
+
+### Scheduled reaper
+
+The auto-submit reaper is **one** scheduler: an APScheduler cron job (`*/REAPER_CRON_MINUTES`
+minutes, default **every 10 minutes**) running on a **background thread** inside the API
+(`app/components/scheduler/background.py`).  The job executes on its own event loop with its
+own Mongo client, so the API's main thread / event loop is never blocked by a cycle.
+
+One cycle = auto-submit overdue sessions → put abandoned sessions `ON_HOLD` (stale
+`last_heartbeat` **and** no live socket) → retry scoring (`pending` / `failed` /
+`needs_review`).  It writes one structured line per run (`reaper_run {...}`).
+
+* **Timing:** a session is overdue at `deadline + REAPER_GRACE_SECONDS` (default 60 s) and the
+  job runs every 10 min, so **an abandoned session is auto-submitted within ~10 minutes of its
+  deadline** (a connected browser submits itself on time; this is the safety net). One extra
+  run starts ~30 s after boot (`REAPER_RUN_ON_STARTUP`) to clear any backlog.
+* **Multi-worker safe:** every worker / instance runs the scheduler, but each cycle is
+  guarded by a Mongo lease (`scheduler_leases`), so exactly one executes it; the others log
+  `status: skipped`.  `max_instances=1`, `coalesce=True`, fixed job id, `replace_existing`.
+* **Manual / backfill:** `python -m app.components.scheduler.submission_reaper` runs one
+  leased cycle and exits (0 ok/skipped, 1 a step failed, 2 infrastructure error).
+* **Disable:** `REAPER_ENABLED=false` (e.g. a dedicated API-only pod).
+* Pushes to a connected browser (`time_expired`) are forwarded to the API's main loop; with
+  Redis they also reach a socket held by another worker.
+
 
 ## Application Factory
 
