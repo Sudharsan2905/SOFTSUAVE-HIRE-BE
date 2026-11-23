@@ -204,3 +204,19 @@ async def list_paginated(
         .to_list(limit)
     )
     return total, docs
+
+
+def normalize_email(email: str | None) -> str:
+    """Canonical form used for every stored / compared email: stripped and lower-cased."""
+    return (email or "").strip().lower()
+
+
+def email_query(email: str | None) -> dict:
+    """Mongo condition matching an email in canonical form *or* as originally typed.
+
+    Accounts created before emails were normalised may still be stored with the casing the
+    user typed; matching both keeps them reachable until ``scripts/normalize_emails.py`` has
+    been run, while all new writes are canonical.
+    """
+    raw = (email or "").strip()
+    return {"$in": list({normalize_email(raw), raw})}

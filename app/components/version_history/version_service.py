@@ -9,6 +9,7 @@ from app.common.constants.app_constants import (
 )
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import serialize_doc, utcnow
+from app.common.validators import is_valid_question_image_key
 from app.components.storage import s3_service
 from app.core.config import settings
 from app.core.logging import logger
@@ -34,6 +35,11 @@ async def _resolve_s3_url(key: str | None) -> str | None:
         return await s3_service.get_presigned_url(key)
     except Exception:
         return None
+
+
+async def _resolve_question_image(key: str | None) -> str | None:
+    """Presign a question/option image — only keys under question-images/ are allowed."""
+    return await _resolve_s3_url(key) if is_valid_question_image_key(key) else None
 
 
 def _iso(dt: Any) -> str | None:
@@ -505,11 +511,13 @@ async def _resolve_round_question_images(rounds: list) -> list:
         question_answers = []
         for qa in round_copy.get("question_answers", []):
             qa_copy = dict(qa)
-            qa_copy["image_url"] = await _resolve_s3_url(qa_copy.pop("image_key", None))
+            qa_copy["image_url"] = await _resolve_question_image(qa_copy.pop("image_key", None))
             new_options = []
             for opt in qa_copy.get("options", []):
                 opt_copy = dict(opt)
-                opt_copy["image_url"] = await _resolve_s3_url(opt_copy.pop("image_key", None))
+                opt_copy["image_url"] = await _resolve_question_image(
+                    opt_copy.pop("image_key", None)
+                )
                 new_options.append(opt_copy)
             qa_copy["options"] = new_options
             question_answers.append(qa_copy)

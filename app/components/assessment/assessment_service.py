@@ -5,7 +5,6 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
-from app.components.storage import s3_service
 from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
@@ -19,6 +18,9 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.common.validators import is_valid_question_image_key
+from app.components.candidate import timing
+from app.components.storage import s3_service
 from app.core.logging import logger
 
 _MATCH = "$match"
@@ -512,7 +514,7 @@ def _enrich_question_from_map(q: dict, answers: dict, original_map: dict) -> Non
 
 async def _resolve_image_url(image_key: str | None) -> str | None:
     """Return a presigned URL for an S3 image key, or None if absent/on error."""
-    if not image_key:
+    if not image_key or not is_valid_question_image_key(image_key):
         return None
     try:
         return await s3_service.get_presigned_url(image_key)
@@ -614,16 +616,23 @@ async def admin_resume_interview(
         )
 
     now = utcnow()
+    set_fields: dict = {
+        "status": SubmissionStatus.IN_PROGRESS,
+        "resumed_at": now,
+        "updated_at": now,
+    }
+    # The round clock is frozen while ON_HOLD: push the deadline out by the paused time.
+    paused_at = timing.aware(sub.get("paused_at"))
+    deadline = timing.effective_deadline(sub)
+    if paused_at is not None and deadline is not None:
+        set_fields["current_deadline_at"] = deadline + (now - paused_at)
     await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
-        {
-            "$set": {
-                "status": SubmissionStatus.IN_PROGRESS,
-                "resumed_at": now,
-                "updated_at": now,
-            }
-        },
+        {"_id": sub["_id"], "status": SubmissionStatus.ON_HOLD},
+        {"$set": set_fields, "$unset": {"paused_at": ""}},
     )
+    from app.components.candidate import candidate_service
+
+    candidate_service.invalidate_answer_ctx(submission_id)
     logger.info("Interview resumed: submission_id=%s admin_id=%s", submission_id, admin_id)
 
     try:
@@ -633,7 +642,9 @@ async def admin_resume_interview(
             submission_id,
             {
                 "type": "resume_approved",
-                "remaining_seconds": sub.get("remaining_seconds"),
+                "remaining_seconds": timing.remaining_seconds(
+                    {**sub, **set_fields, "paused_at": None}
+                ),
                 "current_question_idx": sub.get("current_question_idx", 0),
             },
         )

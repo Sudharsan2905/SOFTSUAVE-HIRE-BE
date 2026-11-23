@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.common.constants.app_constants import ADMIN_ROLES, UserRole
 from app.common.exceptions import ForbiddenException, UnauthorizedException
 from app.components.auth.auth_service import decode_access_token
+from app.core import user_cache
 from app.core.dependencies import DB
 from app.core.logging import logger
 
@@ -22,6 +23,10 @@ async def get_current_user(
     if not user_id:
         raise UnauthorizedException("Invalid token payload")
 
+    cached = user_cache.get(user_id)
+    if cached is not None:
+        return cached
+
     user = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user:
         raise UnauthorizedException("User not found")
@@ -32,6 +37,7 @@ async def get_current_user(
 
     user["_id"] = str(user["_id"])
     user.pop("password_hash", None)
+    user_cache.put(user_id, user)
     return user  # type: ignore[no-any-return]
 
 

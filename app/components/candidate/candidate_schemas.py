@@ -11,3 +11,9 @@ class SubmitAnswerRequest(BaseModel):
 class MalpracticeRequest(BaseModel):
     type: MalpracticeType
     description: str | None = None
+
+
+class FinishRoundRequest(BaseModel):
+    """Optional body: which round the client believes it is finishing (idempotency guard)."""
+
+    round_number: int | None = Field(default=None, ge=1)

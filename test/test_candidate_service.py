@@ -238,6 +238,10 @@ class TestGetCurrentRoundEdgeCases:
 
 class TestSubmitAnswer:
     async def test_saves_answer(self, db, active_submission, candidate_user):
+        await db.assessment_submissions.update_one(
+            {"_id": active_submission["_id"]},
+            {"$set": {"rounds_data.0.questions": [{"id": "q_id_001"}]}},
+        )
         result = await candidate_service.submit_answer(
             db,
             str(active_submission["_id"]),
@@ -263,7 +267,10 @@ class TestFinishRound:
         self, db, assessment_doc, candidate_user, active_submission
     ):
         # array_filters in update_one are not supported by mongomock — patch at class level
-        with patch("mongomock.collection.Collection.update_one", new=MagicMock(return_value=None)):
+        with patch(
+            "mongomock.collection.Collection.update_one",
+            new=MagicMock(return_value=MagicMock(matched_count=1)),
+        ):
             result = await candidate_service.finish_round(
                 db, str(active_submission["_id"]), str(candidate_user["_id"])
             )
@@ -274,13 +281,36 @@ class TestFinishRound:
         with pytest.raises(NotFoundException):
             await candidate_service.finish_round(db, str(ObjectId()), str(candidate_user["_id"]))
 
-    async def test_assessment_not_found_raises(self, db, candidate_user, active_submission):
-        """Deleting the assessment after submission starts → NotFoundException."""
-        await db.assessments.delete_one({"share_link": "test-link-001"})
-        with pytest.raises(NotFoundException, match="Assessment not found"):
+    async def test_replayed_finish_on_completed_is_idempotent(
+        self, db, candidate_user, active_submission
+    ):
+        """Finishing an already-completed session reports completed without re-advancing."""
+        await db.assessment_submissions.update_one(
+            {"_id": active_submission["_id"]},
+            {"$set": {"status": SubmissionStatus.COMPLETED}},
+        )
+        result = await candidate_service.finish_round(
+            db, str(active_submission["_id"]), str(candidate_user["_id"])
+        )
+        assert result["completed"] is True
+        assert result["already_completed"] is True
+
+    @pytest.mark.parametrize(
+        "status",
+        [SubmissionStatus.MALPRACTICE, SubmissionStatus.TERMINATED, SubmissionStatus.ON_HOLD],
+    )
+    async def test_terminal_status_cannot_be_revived(
+        self, db, candidate_user, active_submission, status
+    ):
+        await db.assessment_submissions.update_one(
+            {"_id": active_submission["_id"]}, {"$set": {"status": status}}
+        )
+        with pytest.raises(ForbiddenException):
             await candidate_service.finish_round(
                 db, str(active_submission["_id"]), str(candidate_user["_id"])
             )
+        doc = await db.assessment_submissions.find_one({"_id": active_submission["_id"]})
+        assert doc["status"] == status
 
     async def test_multi_round_advance(self, db, workspace, super_admin, candidate_user):
         """When more rounds remain, finish_round returns completed=False and next_round."""
@@ -349,7 +379,10 @@ class TestFinishRound:
         }
         res = await db.assessment_submissions.insert_one(sub)
 
-        with patch("mongomock.collection.Collection.update_one", new=MagicMock(return_value=None)):
+        with patch(
+            "mongomock.collection.Collection.update_one",
+            new=MagicMock(return_value=MagicMock(matched_count=1)),
+        ):
             result = await candidate_service.finish_round(
                 db, str(res.inserted_id), str(candidate_user["_id"])
             )
@@ -449,7 +482,12 @@ class TestSanitizeQuestion:
             "complexity": "low",
             "image_key": "question-images/cat1/q.jpg",
             "options": [
-                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {
+                    "id": "a",
+                    "text": "",
+                    "is_correct": True,
+                    "image_key": "question-images/cat1/a.jpg",
+                },
                 {"id": "b", "text": "Option B", "is_correct": False},
             ],
         }
@@ -864,7 +902,10 @@ class TestFinishRoundEssayAndMissing:
             "updated_at": utcnow(),
         }
         res = await db.assessment_submissions.insert_one(sub)
-        with patch("mongomock.collection.Collection.update_one", new=MagicMock(return_value=None)):
+        with patch(
+            "mongomock.collection.Collection.update_one",
+            new=MagicMock(return_value=MagicMock(matched_count=1)),
+        ):
             result = await candidate_service.finish_round(
                 db, str(res.inserted_id), str(candidate_user["_id"])
             )
@@ -925,7 +966,10 @@ class TestFinishRoundEssayAndMissing:
             "updated_at": utcnow(),
         }
         res = await db.assessment_submissions.insert_one(sub)
-        with patch("mongomock.collection.Collection.update_one", new=MagicMock(return_value=None)):
+        with patch(
+            "mongomock.collection.Collection.update_one",
+            new=MagicMock(return_value=MagicMock(matched_count=1)),
+        ):
             result = await candidate_service.finish_round(
                 db, str(res.inserted_id), str(candidate_user["_id"])
             )
@@ -1008,7 +1052,10 @@ class TestFinishRoundMCQ:
         }
         res = await db.assessment_submissions.insert_one(sub)
 
-        with patch("mongomock.collection.Collection.update_one", new=MagicMock(return_value=None)):
+        with patch(
+            "mongomock.collection.Collection.update_one",
+            new=MagicMock(return_value=MagicMock(matched_count=1)),
+        ):
             result = await candidate_service.finish_round(
                 db, str(res.inserted_id), str(candidate_user["_id"])
             )

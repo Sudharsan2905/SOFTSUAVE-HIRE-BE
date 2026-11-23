@@ -28,6 +28,8 @@ class AuthTokenResponse(BaseModel):
 class TokenRefreshResponse(BaseModel):
     access_token: str
     token_type: str
+    # Refresh tokens are single-use: every refresh returns the replacement to store.
+    refresh_token: str | None = None
 
 
 class GoogleUserData(BaseModel):

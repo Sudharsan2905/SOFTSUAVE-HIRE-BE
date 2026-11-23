@@ -13,6 +13,13 @@ from app.common.response_models.assessment_responses import (
 from app.common.responses import ApiResponse, success_response
 from app.common.router import DefaultResponseRouter
 from app.components.assessment import assessment_service
+from app.components.assessment.access import (
+    AssessmentGuard,
+    CandidateGuard,
+    ShareGuard,
+    SubmissionGuard,
+    WorkspaceGuard,
+)
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
     CreateShareRequest,
@@ -29,7 +36,9 @@ from app.core.limiter import limiter
 router = DefaultResponseRouter(prefix="/workspaces/{workspace_id}/assessments")
 
 
-@router.get("/stats", response_model=ApiResponse[AssessmentStatsResponse])
+@router.get(
+    "/stats", response_model=ApiResponse[AssessmentStatsResponse], dependencies=[WorkspaceGuard]
+)
 async def get_assessment_stats(
     workspace_id: str,
     db: DB,
@@ -39,7 +48,7 @@ async def get_assessment_stats(
     return success_response(SuccessMessages.ASSESSMENT_STATS_RETRIEVED, result)
 
 
-@router.get("")
+@router.get("", dependencies=[WorkspaceGuard])
 async def list_assessments(
     workspace_id: str,
     db: DB,
@@ -57,7 +66,9 @@ async def list_assessments(
     return success_response(SuccessMessages.ASSESSMENTS_RETRIEVED, result)
 
 
-@router.post("", response_model=ApiResponse[AssessmentDetailResponse])
+@router.post(
+    "", response_model=ApiResponse[AssessmentDetailResponse], dependencies=[WorkspaceGuard]
+)
 async def create_assessment(
     workspace_id: str,
     request: CreateAssessmentRequest,
@@ -70,7 +81,11 @@ async def create_assessment(
     return success_response(SuccessMessages.ASSESSMENT_CREATED, result)
 
 
-@router.get("/{assessment_id}", response_model=ApiResponse[AssessmentDetailResponse])
+@router.get(
+    "/{assessment_id}",
+    response_model=ApiResponse[AssessmentDetailResponse],
+    dependencies=[AssessmentGuard],
+)
 async def get_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -81,7 +96,7 @@ async def get_assessment(
     return success_response(SuccessMessages.ASSESSMENT_RETRIEVED, result)
 
 
-@router.delete("/{assessment_id}")
+@router.delete("/{assessment_id}", dependencies=[AssessmentGuard])
 async def delete_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -92,7 +107,11 @@ async def delete_assessment(
     return success_response(SuccessMessages.ASSESSMENT_DELETED)
 
 
-@router.put("/{assessment_id}", response_model=ApiResponse[AssessmentDetailResponse])
+@router.put(
+    "/{assessment_id}",
+    response_model=ApiResponse[AssessmentDetailResponse],
+    dependencies=[AssessmentGuard],
+)
 async def update_assessment(
     workspace_id: str,
     assessment_id: str,
@@ -106,7 +125,7 @@ async def update_assessment(
     return success_response(SuccessMessages.ASSESSMENT_UPDATED, result)
 
 
-@router.get("/{assessment_id}/submissions")
+@router.get("/{assessment_id}/submissions", dependencies=[AssessmentGuard])
 async def list_submissions(
     workspace_id: str,
     assessment_id: str,
@@ -136,7 +155,7 @@ async def list_submissions(
     return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, result)
 
 
-@router.get("/{assessment_id}/submissions/export")
+@router.get("/{assessment_id}/submissions/export", dependencies=[AssessmentGuard])
 async def export_submission_list(
     workspace_id: str,
     assessment_id: str,
@@ -165,6 +184,7 @@ async def export_submission_list(
 @router.get(
     "/{assessment_id}/submissions/stats",
     response_model=ApiResponse[SubmissionStatsResponse],
+    dependencies=[AssessmentGuard],
 )
 async def get_submission_stats(
     workspace_id: str,
@@ -176,7 +196,7 @@ async def get_submission_stats(
     return success_response(SuccessMessages.SUBMISSION_STATS_RETRIEVED, result)
 
 
-@router.get("/{assessment_id}/submissions/{submission_id}")
+@router.get("/{assessment_id}/submissions/{submission_id}", dependencies=[SubmissionGuard])
 async def get_submission(
     workspace_id: str,
     assessment_id: str,
@@ -188,7 +208,9 @@ async def get_submission(
     return success_response(SuccessMessages.SUBMISSION_RETRIEVED, result)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/reaccess")
+@router.post(
+    "/{assessment_id}/submissions/{submission_id}/reaccess", dependencies=[SubmissionGuard]
+)
 async def grant_reaccess(
     workspace_id: str,
     assessment_id: str,
@@ -203,7 +225,7 @@ async def grant_reaccess(
     return success_response(SuccessMessages.REACCESS_GRANTED)
 
 
-@router.delete("/{assessment_id}/submissions/{submission_id}")
+@router.delete("/{assessment_id}/submissions/{submission_id}", dependencies=[SubmissionGuard])
 async def delete_submission(
     workspace_id: str,
     assessment_id: str,
@@ -215,7 +237,9 @@ async def delete_submission(
     return success_response(SuccessMessages.SUBMISSION_DELETED)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/terminate")
+@router.post(
+    "/{assessment_id}/submissions/{submission_id}/terminate", dependencies=[SubmissionGuard]
+)
 async def terminate_submission(
     workspace_id: str,
     assessment_id: str,
@@ -237,7 +261,9 @@ async def terminate_submission(
     return success_response(SuccessMessages.SESSION_TERMINATED)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/complete")
+@router.post(
+    "/{assessment_id}/submissions/{submission_id}/complete", dependencies=[SubmissionGuard]
+)
 async def force_complete_submission(
     workspace_id: str,
     assessment_id: str,
@@ -256,7 +282,7 @@ async def force_complete_submission(
     return success_response(SuccessMessages.SESSION_COMPLETED)
 
 
-@router.post("/{assessment_id}/submissions/{submission_id}/resume")
+@router.post("/{assessment_id}/submissions/{submission_id}/resume", dependencies=[SubmissionGuard])
 async def resume_interview(
     workspace_id: str,
     assessment_id: str,
@@ -271,6 +297,7 @@ async def resume_interview(
 
 @router.get(
     "/{assessment_id}/candidates/{candidate_id}/submission",
+    dependencies=[CandidateGuard],
 )
 async def get_candidate_submission(
     workspace_id: str,
@@ -290,6 +317,7 @@ async def get_candidate_submission(
 
 @router.get(
     "/{assessment_id}/candidates/{candidate_id}/versions",
+    dependencies=[CandidateGuard],
 )
 async def get_candidate_versions(
     workspace_id: str,
@@ -314,7 +342,7 @@ async def get_candidate_versions(
     return success_response(SuccessMessages.VERSIONS_RETRIEVED, {"versions": versions})
 
 
-@router.put("/{assessment_id}/permanent-restriction")
+@router.put("/{assessment_id}/permanent-restriction", dependencies=[AssessmentGuard])
 async def update_permanent_restriction(
     workspace_id: str,
     assessment_id: str,
@@ -328,7 +356,11 @@ async def update_permanent_restriction(
     return success_response(SuccessMessages.PERMANENT_RESTRICTION_UPDATED)
 
 
-@router.post("/{assessment_id}/shares", response_model=ApiResponse[ShareLinkResponse])
+@router.post(
+    "/{assessment_id}/shares",
+    response_model=ApiResponse[ShareLinkResponse],
+    dependencies=[AssessmentGuard],
+)
 async def create_share(
     workspace_id: str,
     assessment_id: str,
@@ -344,7 +376,7 @@ async def create_share(
     return success_response(SuccessMessages.SHARE_LINK_CREATED, result)
 
 
-@router.get("/{assessment_id}/shares")
+@router.get("/{assessment_id}/shares", dependencies=[AssessmentGuard])
 async def list_shares(
     workspace_id: str,
     assessment_id: str,
@@ -357,7 +389,11 @@ async def list_shares(
     return success_response(SuccessMessages.SHARES_RETRIEVED, result)
 
 
-@router.put("/{assessment_id}/shares/{share_id}", response_model=ApiResponse[ShareLinkResponse])
+@router.put(
+    "/{assessment_id}/shares/{share_id}",
+    response_model=ApiResponse[ShareLinkResponse],
+    dependencies=[ShareGuard],
+)
 async def update_share(
     workspace_id: str,
     assessment_id: str,
@@ -372,7 +408,7 @@ async def update_share(
     return success_response(SuccessMessages.SHARE_UPDATED, result)
 
 
-@router.delete("/{assessment_id}/shares/{share_id}")
+@router.delete("/{assessment_id}/shares/{share_id}", dependencies=[ShareGuard])
 async def delete_share(
     workspace_id: str,
     assessment_id: str,

@@ -37,6 +37,35 @@ def validate_object_id(v: str) -> str:
     return v
 
 
+QUESTION_IMAGE_PREFIX = "question-images/"
+
+
+def is_valid_question_image_key(key: object) -> bool:
+    """True only for keys under ``question-images/`` with no traversal or odd characters.
+
+    Question/option image keys are later turned into presigned S3 URLs, so an arbitrary
+    key would let a caller mint a URL for any object in the bucket (proctoring media of
+    other tenants, etc.).
+    """
+    return (
+        isinstance(key, str)
+        and key.startswith(QUESTION_IMAGE_PREFIX)
+        and len(key) <= 300
+        and ".." not in key
+        and "//" not in key
+        and "\\" not in key
+        and re.fullmatch(r"[A-Za-z0-9._/\-]+", key) is not None
+    )
+
+
+def validate_image_key(v: str | None) -> str | None:
+    if v is None or v == "":
+        return v  # "" is the explicit "clear the image" value
+    if not is_valid_question_image_key(v):
+        raise ValueError("Invalid image key")
+    return v
+
+
 def validate_non_empty_string(v: str) -> str:
     if not v.strip():
         raise ValueError("Field must not be blank")
@@ -107,3 +136,6 @@ def strip_string(v: str) -> str:
 
 def lowercase_string(v: str) -> str:
     return v.strip().lower() if isinstance(v, str) else v
+
+
+ImageKey = Annotated[str | None, AfterValidator(validate_image_key)]

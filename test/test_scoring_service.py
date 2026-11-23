@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from bson import ObjectId
 
 from app.components.scoring import scoring_service
@@ -11,6 +12,14 @@ from app.components.scoring.scoring_service import (
     calculate_submission_score,
     score_round,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_llm_state():
+    scoring_service.reset_llm_state()
+    yield
+    scoring_service.reset_llm_state()
+
 
 # ---------------------------------------------------------------------------
 # _score_mcq
@@ -104,7 +113,7 @@ async def test_score_essays_batch_with_llm():
     fake_resp.choices = [MagicMock()]
     fake_resp.choices[
         0
-    ].message.content = '[{"question_id": "q1", "is_correct": true, "feedback": "Good"}]'
+    ].message.content = '{"is_correct": true, "similarity": 95, "feedback": "Good"}'
     fake_client = MagicMock()
     fake_client.chat.completions.create = AsyncMock(return_value=fake_resp)
 

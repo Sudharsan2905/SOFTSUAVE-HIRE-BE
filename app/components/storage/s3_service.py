@@ -2,11 +2,16 @@
 AWS S3 service using aioboto3 (async boto3).
 
 Provides upload, pre-signed URL generation, and delete operations.
-All functions are async and share a module-level aioboto3.Session singleton
-for connection reuse.
+All functions are async and share ONE long-lived S3 client (opened lazily, closed on
+shutdown via ``close()``) so TLS connections are pooled instead of re-created per call.
 """
 
+import asyncio
+from contextlib import AsyncExitStack
+from typing import Any
+
 import aioboto3
+from botocore.config import Config
 
 from app.core.config import settings
 
@@ -18,6 +23,39 @@ _session = aioboto3.Session(
     aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
     region_name=settings.AWS_REGION,
 )
+
+_client: Any = None
+_stack: AsyncExitStack | None = None
+_client_lock = asyncio.Lock()
+_S3_CONFIG = Config(
+    max_pool_connections=100,
+    connect_timeout=5,
+    read_timeout=30,
+    retries={"max_attempts": 3, "mode": "standard"},
+)
+
+
+async def _get_client() -> Any:
+    """Return the shared S3 client, creating it on first use."""
+    global _client, _stack
+    if _client is not None:
+        return _client
+    async with _client_lock:
+        if _client is None:
+            stack = AsyncExitStack()
+            _client = await stack.enter_async_context(_session.client("s3", config=_S3_CONFIG))
+            _stack = stack
+    return _client
+
+
+async def close() -> None:
+    """Close the shared client (called from the app lifespan on shutdown)."""
+    global _client, _stack
+    if _stack is not None:
+        await _stack.aclose()
+    _client = None
+    _stack = None
+
 
 # ---------------------------------------------------------------------------
 # S3 key prefix constants
@@ -124,13 +162,13 @@ async def upload(
     Returns:
         The s3_key that was used for the upload.
     """
-    async with _session.client("s3") as s3:
-        await s3.put_object(
-            Bucket=settings.S3_BUCKET_NAME,
-            Key=s3_key,
-            Body=file_bytes,
-            ContentType=content_type,
-        )
+    s3 = await _get_client()
+    await s3.put_object(
+        Bucket=settings.S3_BUCKET_NAME,
+        Key=s3_key,
+        Body=file_bytes,
+        ContentType=content_type,
+    )
     return s3_key
 
 
@@ -146,15 +184,15 @@ async def get_presigned_url(s3_key: str, expires_in: int = 3600) -> str:
         A pre-signed HTTPS URL string that allows unauthenticated GET access
         for the specified duration.
     """
-    async with _session.client("s3") as s3:
-        url: str = await s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={
-                "Bucket": settings.S3_BUCKET_NAME,
-                "Key": s3_key,
-            },
-            ExpiresIn=expires_in,
-        )
+    s3 = await _get_client()
+    url: str = await s3.generate_presigned_url(
+        ClientMethod="get_object",
+        Params={
+            "Bucket": settings.S3_BUCKET_NAME,
+            "Key": s3_key,
+        },
+        ExpiresIn=expires_in,
+    )
     return url
 
 
@@ -165,8 +203,8 @@ async def delete(s3_key: str) -> None:
     Args:
         s3_key: Key of the object to remove from the configured S3 bucket.
     """
-    async with _session.client("s3") as s3:
-        await s3.delete_object(
-            Bucket=settings.S3_BUCKET_NAME,
-            Key=s3_key,
-        )
+    s3 = await _get_client()
+    await s3.delete_object(
+        Bucket=settings.S3_BUCKET_NAME,
+        Key=s3_key,
+    )

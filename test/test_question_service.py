@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.common.exceptions import ConflictException, NotFoundException, ValidationException
+from app.common.uploads import PayloadTooLargeException
 from app.components.question_bank import question_service
 
 
@@ -29,8 +30,8 @@ class _FakeUploadFile:
         self._stream = io.BytesIO(content)
         self.content_type = content_type
 
-    async def read(self) -> bytes:
-        return self._stream.read()
+    async def read(self, size: int = -1) -> bytes:
+        return self._stream.read(size)
 
 
 class TestCreateCategory:
@@ -221,25 +222,25 @@ class TestCreateQuestion:
 
 class TestUploadQuestionImage:
     async def test_success(self, db, category):
-        file = _FakeUploadFile(b"fake-bytes", "image/png")
+        file = _FakeUploadFile(b"\x89PNG\r\n\x1a\n" + b"fake-bytes", "image/png")
         result = await question_service.upload_question_image(db, str(category["_id"]), file)
         assert result["image_key"].startswith(f"question-images/{category['_id']}/")
         assert result["image_url"] == "https://signed.example/x"
 
     async def test_rejects_unsupported_type(self, db, category):
-        file = _FakeUploadFile(b"fake-bytes", "application/pdf")
+        file = _FakeUploadFile(b"%PDF-1.4 fake-bytes", "image/png")  # lying Content-Type
         with pytest.raises(ValidationException, match="JPEG, PNG, WEBP, or GIF"):
             await question_service.upload_question_image(db, str(category["_id"]), file)
 
     async def test_rejects_oversized_file(self, db, category):
-        file = _FakeUploadFile(b"x" * (5 * 1024 * 1024 + 1), "image/jpeg")
-        with pytest.raises(ValidationException, match="smaller than 5MB"):
+        file = _FakeUploadFile(b"\xff\xd8\xff" + b"x" * (5 * 1024 * 1024 + 1), "image/jpeg")
+        with pytest.raises(PayloadTooLargeException, match="must not exceed 5 MB"):
             await question_service.upload_question_image(db, str(category["_id"]), file)
 
     async def test_nonexistent_category_raises(self, db):
         from bson import ObjectId
 
-        file = _FakeUploadFile(b"fake-bytes", "image/jpeg")
+        file = _FakeUploadFile(b"\xff\xd8\xfffake-bytes", "image/jpeg")
         with pytest.raises(NotFoundException):
             await question_service.upload_question_image(db, str(ObjectId()), file)
 

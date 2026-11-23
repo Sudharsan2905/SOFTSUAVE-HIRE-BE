@@ -1,12 +1,21 @@
+import asyncio
 import random
+import time
+from datetime import timedelta
 from typing import Any
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ReturnDocument
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
 from app.common.constants.messages import ErrorMessages
-from app.common.exceptions import AppException, ForbiddenException, NotFoundException
+from app.common.exceptions import (
+    AppException,
+    ForbiddenException,
+    NotFoundException,
+    ValidationException,
+)
 from app.common.response_models.candidate_responses import (
     AnswerSavedResponse,
     MalpracticeRecordResponse,
@@ -22,6 +31,8 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.common.validators import is_valid_question_image_key
+from app.components.candidate import timing
 from app.components.storage import s3_service
 from app.components.websocket.connection_manager import admin_manager, manager
 from app.core.config import settings
@@ -52,6 +63,63 @@ _VIDEO_EVENTS = {"FACE_ABSENCE", "MULTIPLE_FACES", "EYE_DIRECTION"}
 _AUDIO_EVENTS = {"AUDIO_VIOLATION", "SPEAKING", "BACKGROUND_NOISE"}
 
 
+_PUBLIC_ASSESSMENT_HIDDEN_FIELDS = (
+    "share_link",
+    "restrict_candidate_access",
+    "restriction_mode",
+    "restricted_emails",
+    "created_by",
+)
+_MAX_ANSWER_CHARS = 20_000
+_MAX_ANSWER_ITEMS = 50
+
+
+async def _resolve_assessment_and_share(
+    db: AsyncIOMotorDatabase, share_link: str
+) -> tuple[dict | None, dict | None]:
+    """Resolve (assessment, share_doc) for a candidate share link.
+
+    A signed link that carries a nonce ("n") is only valid while its assessment_shares
+    document is active — revoking the share must stop it working, so it never falls back
+    to decoding the signature alone.
+    """
+    share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
+    if share_doc:
+        assessment = await db.assessments.find_one(
+            {"_id": share_doc["assessment_id"], "is_active": True}
+        )
+        return assessment, share_doc
+
+    try:
+        decoded = decode_sharelink(share_link)
+    except Exception:
+        # Legacy: plain share_link field on the assessment document.
+        return await db.assessments.find_one({"share_link": share_link, "is_active": True}), None
+
+    if "n" in decoded:
+        return None, None  # nonce link whose share was revoked / never existed
+    try:
+        assessment = await db.assessments.find_one(
+            {"_id": ObjectId(decoded["a"]), "is_active": True}
+        )
+    except Exception:
+        assessment = None
+    return assessment, None
+
+
+def _enforce_share_window(share_doc: dict | None) -> None:
+    """Reject a *new* attempt outside the share link's start/end window."""
+    if not share_doc:
+        return
+    now = utcnow()
+    start = timing.aware(share_doc.get("start_time"))
+    end = timing.aware(share_doc.get("end_time"))
+    if start and now < start:
+        raise ForbiddenException("This assessment has not started yet.")
+    if end and now > end:
+        raise ForbiddenException("This assessment link has expired.")
+
+
 async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) -> dict:
     """Return assessment metadata for a candidate via share link, without internal question IDs.
 
@@ -61,25 +129,14 @@ async def get_candidate_assessment(db: AsyncIOMotorDatabase, share_link: str) ->
     Raises:
         NotFoundException: If the share link is invalid.
     """
-    # 1. Look up share document first — carries monitoring_overrides and assessment_id.
-    share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
-
-    doc = None
-    if share_doc:
-        doc = await db.assessments.find_one({"_id": share_doc["assessment_id"], "is_active": True})
-    else:
-        # 2. Fall back: decode a signed link directly.
-        try:
-            decoded = decode_sharelink(share_link)
-            doc = await db.assessments.find_one({"_id": ObjectId(decoded["a"]), "is_active": True})
-        except Exception:
-            # 3. Legacy: plain share_link field on the assessment document.
-            doc = await db.assessments.find_one({"share_link": share_link, "is_active": True})
+    doc, share_doc = await _resolve_assessment_and_share(db, share_link)
 
     if not doc:
         raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
 
     safe = serialize_doc(doc)
+    for field in _PUBLIC_ASSESSMENT_HIDDEN_FIELDS:
+        safe.pop(field, None)
     for r in safe.get("rounds", []):
         r.pop("question_ids", None)
 
@@ -115,19 +172,49 @@ async def _handle_existing_submission(db: AsyncIOMotorDatabase, existing: dict) 
         )
     # ON_HOLD and IN_PROGRESS are both returnable — the WS will tell candidate the real state
     if status in [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]:
-        return serialize_doc(existing)
-    await db.assessment_submissions.update_one(
+        return _candidate_view(serialize_doc(existing))
+
+    now = utcnow()
+    set_fields: dict = {
+        "status": SubmissionStatus.IN_PROGRESS,
+        "started_at": now,
+        "updated_at": now,
+    }
+    rd = timing.current_round_doc(existing)
+    if rd is not None:
+        set_fields.update(timing.provisional_round_fields(now, rd))
+    updated = await db.assessment_submissions.find_one_and_update(
         {"_id": existing["_id"]},
-        {
-            "$set": {
-                "status": SubmissionStatus.IN_PROGRESS,
-                "started_at": utcnow(),
-                "updated_at": utcnow(),
-            }
-        },
+        {"$set": set_fields},
+        return_document=ReturnDocument.AFTER,
     )
-    updated = await db.assessment_submissions.find_one({"_id": existing["_id"]})
-    return serialize_doc(updated)
+    return _candidate_view(serialize_doc(updated))
+
+
+def _answer_key_snapshot(q: dict) -> dict:
+    """Grading data copied from the live question document (options with ``is_correct``,
+    reference answer, question text)."""
+    return {
+        "question_text": q.get("question_text", ""),
+        "correct_answer": q.get("correct_answer"),
+        "options": [
+            {
+                "id": str(o.get("id", o.get("_id", ""))),
+                "text": o.get("text", ""),
+                "is_correct": bool(o.get("is_correct")),
+            }
+            for o in q.get("options") or []
+        ],
+    }
+
+
+def _candidate_view(sub: dict) -> dict:
+    """Remove server-only grading data from a serialised submission before it is returned
+    to the candidate."""
+    for rd in sub.get("rounds_data") or []:
+        for q in rd.get("questions") or []:
+            q.pop("answer_key", None)
+    return sub
 
 
 def _sanitize_question(q: dict) -> dict:
@@ -150,7 +237,7 @@ def _sanitize_question(q: dict) -> dict:
 
 async def _resolve_question_image_url(image_key: str | None) -> str | None:
     """Return a presigned URL for an S3 image key, or None if absent/on error."""
-    if not image_key:
+    if not image_key or not is_valid_question_image_key(image_key):
         return None
     try:
         return await s3_service.get_presigned_url(image_key)
@@ -160,19 +247,23 @@ async def _resolve_question_image_url(image_key: str | None) -> str | None:
 
 async def _resolve_questions_images(questions: list[dict]) -> list[dict]:
     """Return a copy of candidate-facing questions with image_key replaced by a presigned
-    image_url on the question and each option."""
-    resolved = []
-    for q in questions:
+    image_url on the question and each option. URLs are resolved concurrently."""
+
+    async def _one(q: dict) -> dict:
         qd = dict(q)
-        qd["image_url"] = await _resolve_question_image_url(qd.pop("image_key", None))
-        new_options = []
-        for opt in qd.get("options") or []:
-            od = dict(opt)
-            od["image_url"] = await _resolve_question_image_url(od.pop("image_key", None))
-            new_options.append(od)
-        qd["options"] = new_options
-        resolved.append(qd)
-    return resolved
+        qd.pop("answer_key", None)  # never sent to the candidate
+        option_dicts = [dict(o) for o in qd.get("options") or []]
+        urls = await asyncio.gather(
+            _resolve_question_image_url(qd.pop("image_key", None)),
+            *(_resolve_question_image_url(od.pop("image_key", None)) for od in option_dicts),
+        )
+        qd["image_url"] = urls[0]
+        for od, url in zip(option_dicts, urls[1:], strict=True):
+            od["image_url"] = url
+        qd["options"] = option_dicts
+        return qd
+
+    return list(await asyncio.gather(*(_one(q) for q in questions)))
 
 
 async def _build_round_data(
@@ -198,7 +289,14 @@ async def _build_round_data(
     questions_raw = await db.questions.find({"_id": {"$in": selected_ids}}).to_list(
         len(selected_ids)
     )
-    safe_questions = [_sanitize_question(q) for q in questions_raw]
+    safe_questions = []
+    for q in questions_raw:
+        sq = _sanitize_question(q)
+        # Snapshot of the grading data, frozen at exam start: editing or deleting the live
+        # question afterwards must not change how this attempt is scored. Server-side only —
+        # stripped from every candidate-facing payload (see _candidate_view).
+        sq["answer_key"] = _answer_key_snapshot(q)
+        safe_questions.append(sq)
     _rng.shuffle(safe_questions)
     return {
         "round_number": round_cfg["round_number"],
@@ -249,27 +347,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         NotFoundException: If the assessment share link is invalid.
         ForbiddenException: If the submission is already COMPLETED or MALPRACTICE.
     """
-    assessment = None
-    share_doc: dict | None = None
-
-    # 1. Look up the share document — carries monitoring_overrides and assessment_id.
-    share_doc = await db.assessment_shares.find_one({"share_link": share_link, "is_active": True})
-    if share_doc:
-        assessment = await db.assessments.find_one(
-            {"_id": share_doc["assessment_id"], "is_active": True}
-        )
-    else:
-        # 2. Fall back: decode a signed link (expirable / permanent) directly.
-        try:
-            decoded = decode_sharelink(share_link)
-            assessment = await db.assessments.find_one(
-                {"_id": ObjectId(decoded["a"]), "is_active": True}
-            )
-        except Exception:
-            # 3. Legacy: plain share_link field on the assessment document.
-            assessment = await db.assessments.find_one(
-                {"share_link": share_link, "is_active": True}
-            )
+    assessment, share_doc = await _resolve_assessment_and_share(db, share_link)
 
     if not assessment:
         raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
@@ -289,17 +367,23 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
     if existing:
         return await _handle_existing_submission(db, existing)
 
-    rounds_data = [
-        await _build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", [])
-    ]
+    # A brand-new attempt must fall inside the share link's validity window.
+    _enforce_share_window(share_doc)
+
+    rounds_data = list(
+        await asyncio.gather(
+            *(_build_round_data(db, round_cfg) for round_cfg in assessment.get("rounds", []))
+        )
+    )
 
     monitoring_details = _build_monitoring_details(assessment, share_doc)
 
     now = utcnow()
-    for rd in rounds_data:
-        if rd.get("round_number") == 1:
-            rd["started_at"] = now
-            break
+    first_round = next((rd for rd in rounds_data if rd.get("round_number") == 1), None)
+    timer_fields: dict = {}
+    if first_round is not None:
+        first_round["started_at"] = now
+        timer_fields = timing.provisional_round_fields(now, first_round)
 
     submission = {
         "assessment_id": assessment["_id"],
@@ -309,6 +393,8 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         "status": SubmissionStatus.IN_PROGRESS,
         "rounds_data": rounds_data,
         "current_round": 1,
+        "workspace_id": assessment.get("workspace_id"),
+        **timer_fields,
         "score": 0,
         "percentage": 0.0,
         "screenshots": [],
@@ -327,7 +413,7 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         f"Assessment started: candidate_id={candidate_id} share_link={share_link} "
         f"submission_id={result.inserted_id}"
     )
-    return serialize_doc(submission)
+    return _candidate_view(serialize_doc(submission))
 
 
 def _build_monitoring_details(assessment: dict | None, share_doc: dict | None) -> dict:
@@ -358,11 +444,17 @@ def _build_monitoring_details(assessment: dict | None, share_doc: dict | None) -
     }
 
 
-async def start_interview(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> None:
-    """Record the actual interview start time for the current active round.
+async def start_interview(
+    db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str
+) -> dict[str, int]:
+    """Start the server-side timer for the current round (idempotent).
 
-    Called from the interview screen after monitoring requirements are satisfied.
-    Sets started_at on the submission (first round only) and on the current round.
+    Returns ``{"remaining_seconds": n}`` so the browser can sync its countdown to the
+    server clock the moment the round begins.
+
+    Called from the interview screen after monitoring requirements are satisfied.  The
+    timer starts exactly once per round: repeat calls (page reload, reconnect) never
+    reset the deadline.
 
     Raises:
         NotFoundException: If no active in-progress submission exists.
@@ -372,25 +464,44 @@ async def start_interview(db: AsyncIOMotorDatabase, submission_id: str, candidat
             "_id": ObjectId(submission_id),
             "candidate_id": ObjectId(candidate_id),
             "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
-        }
+        },
+        {
+            "current_round": 1,
+            "round_timer_started": 1,
+            "current_deadline_at": 1,
+            "current_round_seconds": 1,
+            "status": 1,
+            "paused_at": 1,
+            "rounds_data.round_number": 1,
+            "rounds_data.max_duration_minutes": 1,
+            "rounds_data.started_at": 1,
+        },
     )
     if not sub:
         raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
+    if timing.timer_started(sub):
+        return {"remaining_seconds": timing.remaining_seconds(sub)}
+
     current = sub.get("current_round", 1)
     now = utcnow()
+    seconds = timing.round_seconds(timing.current_round_doc(sub))
     set_fields: dict = {
         "rounds_data.$[rd].started_at": now,
+        "rounds_data.$[rd].deadline_at": now + timedelta(seconds=seconds),
         "updated_at": now,
+        **timing.started_round_fields(now, seconds),
     }
     if current == 1:
         set_fields["started_at"] = now
 
     await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
+        {"_id": sub["_id"], "round_timer_started": {"$ne": True}},
         {"$set": set_fields},
         array_filters=[{"rd.round_number": current}],
     )
+    invalidate_answer_ctx(submission_id)
+    return {"remaining_seconds": seconds}
 
 
 async def get_submission_status(
@@ -444,6 +555,7 @@ async def get_current_round(
     """Return the questions and metadata for the candidate's current round.
 
     Correct answers and is_correct flags are never included in the response.
+    ``remaining_seconds`` is always computed by the server from the round deadline.
 
     Raises:
         NotFoundException: If the submission or round index is not found.
@@ -463,10 +575,10 @@ async def get_current_round(
         raise ForbiddenException("This assessment has already been completed.")
     if sub_status == SubmissionStatus.TERMINATED:
         raise ForbiddenException("This session has been terminated by an administrator.")
-    if sub_status == SubmissionStatus.ON_HOLD:
-        # Allow reading round data so the frontend can restore UI; it will show the
-        # ON_HOLD overlay via WebSocket rather than blocking entirely.
-        pass
+    if sub_status == SubmissionStatus.MALPRACTICE:
+        raise ForbiddenException("This session has ended due to malpractice.")
+    # ON_HOLD: allow reading round data so the frontend can restore UI; it shows the
+    # ON_HOLD overlay via WebSocket rather than blocking entirely.
 
     current = sub.get("current_round", 1)
     idx = current - 1
@@ -485,7 +597,7 @@ async def get_current_round(
         "round": {
             "round_number": current,
             "questions": await _resolve_questions_images(rd.get("questions", [])),
-            "max_duration_minutes": rd.get("max_duration_minutes", 30),
+            "max_duration_minutes": timing.round_seconds(rd) // 60,
         },
         "tab_monitoring": effective.get("tab_monitoring", False),
         "audio_monitoring": effective.get("audio_monitoring", False),
@@ -494,11 +606,100 @@ async def get_current_round(
         "screenshot_mode": effective.get("screenshot_mode", "time_interval"),
         "screenshot_interval_seconds": effective.get("screenshot_interval_seconds"),
         "screenshot_count": effective.get("screenshot_count"),
-        # Persisted session state for seamless resume after network loss
-        "remaining_seconds": sub.get("remaining_seconds"),
+        # Server-owned timer: the single source of truth for the countdown.
+        "remaining_seconds": timing.remaining_seconds(sub),
         "current_question_idx": sub.get("current_question_idx", 0),
+        # The candidate's own saved answers, so a reload restores their progress.
+        "answers": rd.get("answers") or {},
         "session_status": sub_status if sub_status else "in_progress",
     }
+
+
+def _validate_answer_payload(answer: Any) -> None:
+    if isinstance(answer, str):
+        if len(answer) > _MAX_ANSWER_CHARS:
+            raise ValidationException("Answer is too long")
+    elif isinstance(answer, list):
+        if len(answer) > _MAX_ANSWER_ITEMS or any(
+            not isinstance(a, str) or len(a) > _MAX_ANSWER_CHARS for a in answer
+        ):
+            raise ValidationException("Invalid answer")
+    else:
+        raise ValidationException("Invalid answer")
+
+
+MAX_SCREENSHOTS_PER_SESSION = 2000
+_ANSWER_CTX_TTL_SECONDS = 20.0
+_ANSWER_CTX_MAX = 20_000
+# (monotonic stored_at, context) per "submission:candidate".  Holds only what is needed to
+# validate an answer so the hot path avoids re-reading the large submission document.
+_answer_ctx: dict[str, tuple[float, dict]] = {}
+
+
+def invalidate_answer_ctx(submission_id: str) -> None:
+    """Forget cached answer contexts for a submission (round/deadline/status changed)."""
+    # list() snapshot: the reaper thread may call this while the API loop mutates the dict
+    for key in [k for k in list(_answer_ctx) if k.startswith(f"{submission_id}:")]:
+        _answer_ctx.pop(key, None)
+
+
+async def _load_answer_ctx(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
+    key = f"{submission_id}:{candidate_id}"
+    hit = _answer_ctx.get(key)
+    if hit and time.monotonic() - hit[0] < _ANSWER_CTX_TTL_SECONDS:
+        return hit[1]
+
+    sub = await db.assessment_submissions.find_one(
+        {
+            "_id": ObjectId(submission_id),
+            "candidate_id": ObjectId(candidate_id),
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+        },
+        {
+            "current_round": 1,
+            "status": 1,
+            "paused_at": 1,
+            "round_timer_started": 1,
+            "current_deadline_at": 1,
+            "current_round_seconds": 1,
+            "rounds_data.round_number": 1,
+            "rounds_data.max_duration_minutes": 1,
+            "rounds_data.started_at": 1,
+            "rounds_data.questions.id": 1,
+            "rounds_data.questions._id": 1,
+        },
+    )
+    if not sub:
+        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
+
+    current = sub.get("current_round", 1)
+    rd = timing.current_round_doc(sub)
+    idx = next(
+        (i for i, r in enumerate(sub.get("rounds_data", [])) if r.get("round_number") == current),
+        current - 1,
+    )
+    ctx = {
+        "oid": sub["_id"],
+        "current_round": current,
+        "idx": idx,
+        "qids": {str(q.get("id") or q.get("_id")) for q in (rd or {}).get("questions", [])},
+        "timing_sub": {
+            k: sub.get(k)
+            for k in (
+                "status",
+                "paused_at",
+                "round_timer_started",
+                "current_deadline_at",
+                "current_round_seconds",
+                "current_round",
+                "rounds_data",
+            )
+        },
+    }
+    if len(_answer_ctx) >= _ANSWER_CTX_MAX:
+        _answer_ctx.clear()
+    _answer_ctx[key] = (time.monotonic(), ctx)
+    return ctx
 
 
 async def submit_answer(
@@ -510,64 +711,121 @@ async def submit_answer(
 ) -> AnswerSavedResponse:
     """Persist a candidate's answer for a question in the current round.
 
+    Rejects answers for questions outside the current round and answers sent after the
+    server-side deadline (plus a small network grace).  The per-submission context needed
+    for those checks is cached briefly, and the write itself is guarded on status and
+    round, so a stale cache can never write into a finished or advanced session.
+
     Raises:
         NotFoundException: If no active in-progress submission exists.
+        ForbiddenException: If the round time is over.
     """
-    sub = await db.assessment_submissions.find_one(
-        {
-            "_id": ObjectId(submission_id),
-            "candidate_id": ObjectId(candidate_id),
-            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
-        }
-    )
-    if not sub:
-        raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
+    _validate_answer_payload(answer)
+    ctx = await _load_answer_ctx(db, submission_id, candidate_id)
 
-    idx = sub.get("current_round", 1) - 1
-    await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
+    if question_id not in ctx["qids"] or timing.is_expired(
+        ctx["timing_sub"], settings.SUBMIT_GRACE_SECONDS
+    ):
+        # The cache is per process: with several workers the round/deadline may have moved
+        # on another one. Re-read once before rejecting.
+        invalidate_answer_ctx(submission_id)
+        ctx = await _load_answer_ctx(db, submission_id, candidate_id)
+    if timing.is_expired(ctx["timing_sub"], settings.SUBMIT_GRACE_SECONDS):
+        raise ForbiddenException("Time is over for this round.")
+    if question_id not in ctx["qids"]:
+        raise ValidationException("Question does not belong to the current round")
+
+    result = await db.assessment_submissions.update_one(
+        {
+            "_id": ctx["oid"],
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+            "current_round": ctx["current_round"],
+        },
         {
             "$set": {
-                f"rounds_data.{idx}.answers.{question_id}": answer,
+                f"rounds_data.{ctx['idx']}.answers.{question_id}": answer,
                 "updated_at": utcnow(),
             }
         },
     )
+    if result.matched_count == 0:  # round advanced or session ended since the cache was filled
+        invalidate_answer_ctx(submission_id)
+        fresh = await _load_answer_ctx(db, submission_id, candidate_id)  # NotFound if ended
+        if fresh["current_round"] == ctx["current_round"] or question_id not in fresh["qids"]:
+            raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
+        result = await db.assessment_submissions.update_one(
+            {
+                "_id": fresh["oid"],
+                "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+                "current_round": fresh["current_round"],
+            },
+            {
+                "$set": {
+                    f"rounds_data.{fresh['idx']}.answers.{question_id}": answer,
+                    "updated_at": utcnow(),
+                }
+            },
+        )
+        if result.matched_count == 0:
+            raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
     return AnswerSavedResponse(saved=True)
 
 
-async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_id: str) -> dict:
+async def finish_round(
+    db: AsyncIOMotorDatabase,
+    submission_id: str,
+    candidate_id: str,
+    expected_round: int | None = None,
+) -> dict:
     """Mark the current round complete and advance or finalise the assessment.
 
     Does NOT score the round — scoring is handled by a background task after this returns.
+    Idempotent: finishing an already-completed submission returns ``completed=True`` with
+    ``already_completed=True`` (the caller must not re-score).  When the client states which
+    round it is finishing (``expected_round``) and that round was already submitted — e.g. the
+    timer expired and the candidate also clicked Submit — the call is a no-op instead of
+    skipping the next round.  Terminal states other than COMPLETED can never be revived.
 
     Returns:
         {'completed': True, 'finished_round': int} if all rounds are done,
         {'completed': False, 'next_round': int, 'finished_round': int} otherwise.
 
     Raises:
-        NotFoundException: If no active submission or round is found.
+        NotFoundException: If no matching submission or round is found.
+        ForbiddenException: If the submission is not IN_PROGRESS.
     """
     sub = await db.assessment_submissions.find_one(
-        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
+        {
+            "status": 1,
+            "current_round": 1,
+            "rounds_data.round_number": 1,
+            "rounds_data.max_duration_minutes": 1,
+        },
     )
     if not sub:
         raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
-    if not assessment:
-        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
-
     current = sub.get("current_round", 1)
-    total_rounds = len(assessment.get("rounds", []))
+    status = sub.get("status")
+    if status == SubmissionStatus.COMPLETED:
+        return {"completed": True, "finished_round": current, "already_completed": True}
+    if status != SubmissionStatus.IN_PROGRESS:
+        raise ForbiddenException(f"Cannot submit a session with status '{status}'.")
+    if expected_round is not None and expected_round != current:
+        return {
+            "completed": False,
+            "next_round": current,
+            "finished_round": expected_round,
+            "already_completed": True,
+        }
 
-    current_rd = next(
-        (rd for rd in sub.get("rounds_data", []) if rd.get("round_number") == current),
-        None,
-    )
+    rounds = sub.get("rounds_data", [])
+    current_rd = timing.current_round_doc(sub)
     if not current_rd:
         raise NotFoundException("Round not found")
 
+    total_rounds = len(rounds)
     now = utcnow()
     is_last_round = current >= total_rounds
 
@@ -576,27 +834,30 @@ async def finish_round(db: AsyncIOMotorDatabase, submission_id: str, candidate_i
         "rounds_data.$[rd].completed_at": now,
         "updated_at": now,
     }
+    array_filters: list[dict] = [{"rd.round_number": current}]
 
     if is_last_round:
         set_fields["status"] = SubmissionStatus.COMPLETED
         set_fields["completed_at"] = now
     else:
+        next_rd = next((r for r in rounds if r.get("round_number") == current + 1), None)
         set_fields["current_round"] = current + 1
-        set_fields["remaining_seconds"] = None
         set_fields["current_question_idx"] = 0
+        set_fields["rounds_data.$[nxt].started_at"] = now
+        array_filters.append({"nxt.round_number": current + 1})
+        if next_rd is not None:
+            set_fields.update(timing.provisional_round_fields(now, next_rd))
 
-    await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
-        {"$set": set_fields},
-        array_filters=[{"rd.round_number": current}],
+    # Atomic transition: only an IN_PROGRESS submission still on `current` can advance,
+    # so a replayed / concurrent finish cannot double-advance or revive a terminal state.
+    result = await db.assessment_submissions.update_one(
+        {"_id": sub["_id"], "status": SubmissionStatus.IN_PROGRESS, "current_round": current},
+        {"$set": set_fields, "$unset": {"remaining_seconds": ""}},
+        array_filters=array_filters,
     )
-
-    if not is_last_round:
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {"$set": {"rounds_data.$[nxt].started_at": now}},
-            array_filters=[{"nxt.round_number": current + 1}],
-        )
+    invalidate_answer_ctx(submission_id)
+    if result.matched_count == 0:
+        raise ForbiddenException("This round has already been submitted.")
 
     if is_last_round:
         logger.info(
@@ -622,10 +883,17 @@ async def save_screenshot(
 ) -> None:
     """Upload a screenshot to S3 and record its key in the submission document.
 
-    Silently no-ops if the submission is not found.
+    Silently no-ops if the submission is not found or is no longer active.
     """
     sub = await db.assessment_submissions.find_one(
-        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+        {
+            "_id": ObjectId(submission_id),
+            "candidate_id": ObjectId(candidate_id),
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+            # Per-session cap: once slot N exists the session is full — drop further uploads.
+            f"screenshots.{MAX_SCREENSHOTS_PER_SESSION - 1}": {"$exists": False},
+        },
+        {"current_round": 1},
     )
     if not sub:
         return
@@ -676,17 +944,11 @@ async def _upload_evidence_files(
     effective_monitoring: dict,
     file_bytes_map: dict,
 ) -> dict:
-    """Upload applicable evidence files to S3 and return a dict of S3 keys.
+    """Upload applicable evidence files to S3 (concurrently) and return their keys.
 
     Keys in the returned dict: screen_image_s3_key, face_image_s3_key,
     screen_video_s3_key, audio_clip_s3_key.  Each is None when not uploaded.
     """
-    keys: dict = {
-        "screen_image_s3_key": None,
-        "face_image_s3_key": None,
-        "screen_video_s3_key": None,
-        "audio_clip_s3_key": None,
-    }
 
     async def _upload(map_key: str, fallback_ct: str, evidence_type: str) -> str | None:
         """Upload one evidence file (if present) and return its S3 key, else None."""
@@ -702,24 +964,73 @@ async def _upload_evidence_files(
         await s3_service.upload(file_bytes, key, content_type)
         return key
 
-    if effective_monitoring.get("screenshot_enabled", False):
-        keys["screen_image_s3_key"] = await _upload(
-            "screen_image", _DEFAULT_CONTENT_TYPE, "screen_image"
-        )
+    async def _skip() -> None:
+        return None
 
-    if effective_monitoring.get("video_monitoring", False):
-        keys["face_image_s3_key"] = await _upload("face_image", _DEFAULT_CONTENT_TYPE, "face_image")
-        keys["screen_video_s3_key"] = await _upload("video_chunk", "video/webm", "video_chunk")
+    video = bool(effective_monitoring.get("video_monitoring", False))
+    screen_image, face_image, screen_video, audio_clip = await asyncio.gather(
+        _upload("screen_image", _DEFAULT_CONTENT_TYPE, "screen_image")
+        if effective_monitoring.get("screenshot_enabled", False)
+        else _skip(),
+        _upload("face_image", _DEFAULT_CONTENT_TYPE, "face_image") if video else _skip(),
+        _upload("video_chunk", "video/webm", "video_chunk") if video else _skip(),
+        _upload("audio_clip", "audio/webm", "audio_clip")
+        if effective_monitoring.get("audio_monitoring", False)
+        else _skip(),
+    )
+    return {
+        "screen_image_s3_key": screen_image,
+        "face_image_s3_key": face_image,
+        "screen_video_s3_key": screen_video,
+        "audio_clip_s3_key": audio_clip,
+    }
 
-    if effective_monitoring.get("audio_monitoring", False):
-        keys["audio_clip_s3_key"] = await _upload("audio_clip", "audio/webm", "audio_clip")
 
-    return keys
-
-
-async def _persist_malpractice_event(
+async def _record_malpractice_event(
     db: AsyncIOMotorDatabase,
-    sub: dict,
+    submission_id: str,
+    event_data: dict,
+    now: Any,
+) -> dict | None:
+    """Atomically bump the strike counter and append the event.
+
+    ``$inc`` + ``$push`` in a single update means concurrent violations can neither
+    under-count strikes nor collide on ``event_index`` (== new_count - 1).  Returns the
+    updated counters, or None if the submission is no longer active.
+    """
+    updated: dict | None = await db.assessment_submissions.find_one_and_update(
+        {
+            "_id": ObjectId(submission_id),
+            "status": {"$in": [SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD]},
+        },
+        {
+            "$inc": {"malpractice_count": 1},
+            "$push": {"malpractice_events": event_data},
+            "$set": {"updated_at": now},
+        },
+        projection={"malpractice_count": 1, "current_round": 1},
+        return_document=ReturnDocument.AFTER,
+    )
+    return updated
+
+
+async def _finalise_malpractice(db: AsyncIOMotorDatabase, submission_id: str, now: Any) -> None:
+    """Terminate the session once the strike limit is reached and notify the candidate."""
+    invalidate_answer_ctx(submission_id)
+    await db.assessment_submissions.update_one(
+        {"_id": ObjectId(submission_id)},
+        {
+            "$set": {
+                "status": SubmissionStatus.MALPRACTICE,
+                "completed_at": now,
+                "updated_at": now,
+            }
+        },
+    )
+    await manager.send_json(submission_id, {"type": "terminated", "reason": "malpractice"})
+
+
+async def _broadcast_malpractice(
     submission_id: str,
     event_data: dict,
     new_count: int,
@@ -727,21 +1038,7 @@ async def _persist_malpractice_event(
     now: Any,
     workspace_id: str,
 ) -> None:
-    """Write the malpractice event to DB, notify candidate if terminal, and broadcast to admins."""
-    update_set: dict = {"malpractice_count": new_count, "updated_at": now}
-    if is_terminal:
-        update_set["status"] = SubmissionStatus.MALPRACTICE
-        update_set["completed_at"] = now
-
-    await db.assessment_submissions.update_one(
-        {"_id": sub["_id"]},
-        {"$set": update_set, "$push": {"malpractice_events": event_data}},
-    )
-
-    if is_terminal:
-        await manager.send_json(submission_id, {"type": "terminated", "reason": "malpractice"})
-
-    # Broadcast real-time malpractice event to all admins monitoring this workspace
+    """Broadcast the malpractice event to admins monitoring this workspace."""
     await admin_manager.broadcast_event(
         {
             "type": "malpractice_event",
@@ -772,35 +1069,48 @@ async def flag_malpractice(
     the effective monitoring configuration.
 
     On the 3rd strike (malpractice_count >= MAX_MALPRACTICE_COUNT) the submission
-    is terminated and a WebSocket event is pushed to the candidate.
+    is terminated and a WebSocket event is pushed to the candidate.  Events for a
+    submission that is no longer active are ignored (a finished or terminated session
+    can't be flipped to MALPRACTICE).
 
     Raises:
         NotFoundException: If no matching submission exists.
     """
     sub = await db.assessment_submissions.find_one(
-        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
+        {
+            "status": 1,
+            "current_round": 1,
+            "malpractice_count": 1,
+            "monitoring_details": 1,
+            "workspace_id": 1,
+            "assessment_id": 1,
+        },
     )
     if not sub:
         raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
 
-    # ── Resolve effective monitoring config ────────────────────────────────
+    round_number = sub.get("current_round", 1)
+    current_count = sub.get("malpractice_count", 0)
+    ignored = MalpracticeRecordResponse(
+        malpractice_count=current_count, is_terminal=False, current_round=round_number
+    )
+    if sub.get("status") not in (SubmissionStatus.IN_PROGRESS, SubmissionStatus.ON_HOLD):
+        return ignored
+
     # Already fully resolved (assessment defaults + share overrides) at start_assessment time.
     effective_monitoring: dict = sub.get("monitoring_details") or {}
-    assessment = await db.assessments.find_one({"_id": sub["assessment_id"], "is_active": True})
-    workspace_id = str(assessment["workspace_id"]) if assessment else ""
-
-    # ── Guard: silently skip if monitoring is disabled for this event type ──
     if not _is_malpractice_event_enabled(malpractice_type, effective_monitoring):
-        return MalpracticeRecordResponse(
-            malpractice_count=sub.get("malpractice_count", 0),
-            is_terminal=False,
-            current_round=sub.get("current_round", 1),
+        return ignored
+
+    workspace_id = str(sub["workspace_id"]) if sub.get("workspace_id") else ""
+    if not workspace_id:  # legacy submission created before workspace_id was denormalised
+        assessment = await db.assessments.find_one(
+            {"_id": sub["assessment_id"]}, {"workspace_id": 1}
         )
+        workspace_id = str(assessment["workspace_id"]) if assessment else ""
 
     now = utcnow()
-    round_number = sub.get("current_round", 1)
-
-    # ── Upload evidence files to S3 ────────────────────────────────────────
     s3_keys = await _upload_evidence_files(
         submission_id,
         round_number,
@@ -809,28 +1119,27 @@ async def flag_malpractice(
         effective_monitoring,
         file_bytes_map or {},
     )
-
-    # ── Build event record ─────────────────────────────────────────────────
-    new_count = (sub.get("malpractice_count") or 0) + 1
-    is_terminal = new_count >= settings.MAX_MALPRACTICE_COUNT
-    # event_index is the 0-based position this event will occupy after $push
-    event_index = len(sub.get("malpractice_events") or [])
-
     event_data: dict = {
         "type": malpractice_type,
         "description": description or "",
         "timestamp": now,
         "round": round_number,
-        "is_terminal": is_terminal,
+        # Predicted from the count we read; the authoritative terminal decision below uses
+        # the atomically-incremented counter.
+        "is_terminal": current_count + 1 >= settings.MAX_MALPRACTICE_COUNT,
         **s3_keys,
     }
 
-    # ── Persist and (if terminal) notify via WebSocket ─────────────────────
-    await _persist_malpractice_event(
-        db, sub, submission_id, event_data, new_count, is_terminal, now, workspace_id
-    )
+    updated = await _record_malpractice_event(db, submission_id, event_data, now)
+    if updated is None:  # became inactive while evidence was uploading
+        return ignored
 
+    new_count = updated.get("malpractice_count", current_count + 1)
+    event_index = new_count - 1
+    is_terminal = new_count >= settings.MAX_MALPRACTICE_COUNT
     if is_terminal:
+        await _finalise_malpractice(db, submission_id, now)
+        event_data["is_terminal"] = True
         logger.warning(
             f"Malpractice terminal: submission_id={submission_id} type={malpractice_type} "
             f"count={new_count}"
@@ -841,6 +1150,9 @@ async def flag_malpractice(
             f"count={new_count}"
         )
 
+    await _broadcast_malpractice(
+        submission_id, event_data, new_count, is_terminal, now, workspace_id
+    )
     return MalpracticeRecordResponse(
         malpractice_count=new_count,
         is_terminal=is_terminal,
@@ -876,6 +1188,7 @@ async def put_session_terminated(
             "Only pending or in-progress submissions can be terminated."
         )
 
+    invalidate_answer_ctx(submission_id)
     now = utcnow()
     await db.assessment_submissions.update_one(
         {"_id": ObjectId(submission_id)},
@@ -918,6 +1231,7 @@ async def put_session_completed(
             "Only pending or in-progress submissions can be completed."
         )
 
+    invalidate_answer_ctx(submission_id)
     now = utcnow()
     await db.assessment_submissions.update_one(
         {"_id": ObjectId(submission_id)},
@@ -966,28 +1280,19 @@ async def get_session_state(
     submission_id: str,
     candidate_id: str,
 ) -> SessionStateResponse:
-    """Return the persisted timer/position state for a candidate's submission.
-
-    Used by the frontend on reconnect to restore the timer and question position
-    without a full round reload.
+    """Return the persisted position plus the server-computed remaining time.
 
     Raises:
         NotFoundException: If the submission is not found.
     """
     sub = await db.assessment_submissions.find_one(
-        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
-        {
-            "status": 1,
-            "remaining_seconds": 1,
-            "current_question_idx": 1,
-            "current_round": 1,
-        },
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
     )
     if not sub:
         raise NotFoundException("Submission not found")
     return SessionStateResponse(
         status=str(sub.get("status", "")),
-        remaining_seconds=sub.get("remaining_seconds"),
+        remaining_seconds=timing.remaining_seconds(sub),
         current_question_idx=sub.get("current_question_idx", 0),
         current_round=sub.get("current_round", 1),
     )
@@ -1005,14 +1310,20 @@ async def upload_malpractice_media(
 ) -> None:
     """Upload video/audio clips for an existing malpractice event (Phase 2 of two-phase flow).
 
-    Validates ownership and index bounds, uploads to S3, then patches the specific
-    malpractice_events array element using the positional dot-notation update.
+    Evidence is write-once: a clip already attached to an event can never be replaced, so
+    a candidate cannot swap an incriminating recording for a benign one.
 
     Raises:
         NotFoundException: If submission not found or event_index out of range.
     """
     sub = await db.assessment_submissions.find_one(
-        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)}
+        {"_id": ObjectId(submission_id), "candidate_id": ObjectId(candidate_id)},
+        {
+            "malpractice_events.round": 1,
+            "malpractice_events.type": 1,
+            "malpractice_events.timestamp": 1,
+            "current_round": 1,
+        },
     )
     if not sub:
         raise NotFoundException(ErrorMessages.SUBMISSION_NOT_FOUND)
@@ -1026,29 +1337,49 @@ async def upload_malpractice_media(
     mal_type = event.get("type", "unknown")
     now = utcnow()
     ts = now.isoformat()
+    # Identify the event by value, not by array index: a dotted `events.0.field` path also
+    # matches an element field literally named "0", which would break the write-once check.
+    identity: dict = (
+        {"timestamp": event["timestamp"]}
+        if event.get("timestamp") is not None
+        else {"type": mal_type, "round": round_n}
+    )
 
-    update_fields: dict = {}
+    async def _attach(field: str, data: bytes, evidence_type: str, content_type: str) -> None:
+        key = s3_service.make_evidence_key(submission_id, round_n, mal_type, evidence_type, ts)
+        # `field: None` matches a missing or null field — only an empty slot is writable.
+        result = await db.assessment_submissions.update_one(
+            {
+                "_id": sub["_id"],
+                "malpractice_events": {"$elemMatch": {**identity, field: None}},
+            },
+            {"$set": {f"malpractice_events.$.{field}": key, "updated_at": now}},
+        )
+        if result.modified_count:
+            try:
+                await s3_service.upload(data, key, content_type)
+            except Exception:
+                # Release the claimed slot so the client can retry the upload.
+                await db.assessment_submissions.update_one(
+                    {
+                        "_id": sub["_id"],
+                        "malpractice_events": {"$elemMatch": {**identity, field: key}},
+                    },
+                    {"$set": {f"malpractice_events.$.{field}": None}},
+                )
+                raise
+            logger.info(
+                f"Malpractice media uploaded: submission_id={submission_id} "
+                f"event_index={event_index} field={field}"
+            )
 
+    tasks = []
     if video_bytes:
-        key = s3_service.make_evidence_key(submission_id, round_n, mal_type, "video_chunk", ts)
-        await s3_service.upload(video_bytes, key, video_content_type)
-        update_fields[f"malpractice_events.{event_index}.screen_video_s3_key"] = key
-
+        tasks.append(_attach("screen_video_s3_key", video_bytes, "video_chunk", video_content_type))
     if audio_bytes:
-        key = s3_service.make_evidence_key(submission_id, round_n, mal_type, "audio_clip", ts)
-        await s3_service.upload(audio_bytes, key, audio_content_type)
-        update_fields[f"malpractice_events.{event_index}.audio_clip_s3_key"] = key
-
-    if update_fields:
-        update_fields["updated_at"] = now
-        await db.assessment_submissions.update_one(
-            {"_id": sub["_id"]},
-            {"$set": update_fields},
-        )
-        logger.info(
-            f"Malpractice media uploaded: submission_id={submission_id} "
-            f"event_index={event_index} fields={list(update_fields.keys())}"
-        )
+        tasks.append(_attach("audio_clip_s3_key", audio_bytes, "audio_clip", audio_content_type))
+    if tasks:
+        await asyncio.gather(*tasks)
 
 
 async def get_live_interviews(
@@ -1059,8 +1390,12 @@ async def get_live_interviews(
     sort_order: str,
     page: int,
     page_size: int,
+    workspace_ids: list[str] | None = None,
 ) -> dict:
     """Return paginated in-progress submissions joined with candidate and assessment data.
+
+    ``workspace_ids`` restricts results to those workspaces (None = unrestricted, i.e. super
+    admin; an empty list yields nothing).
 
     Supports filtering by monitoring_type and full-text search on candidate name/assessment name.
     """
@@ -1079,6 +1414,19 @@ async def get_live_interviews(
             }
         },
         {"$unwind": "$assessment"},
+        *(
+            [
+                {
+                    _MATCH: {
+                        "assessment.workspace_id": {
+                            "$in": [ObjectId(w) for w in workspace_ids if ObjectId.is_valid(w)]
+                        }
+                    }
+                }
+            ]
+            if workspace_ids is not None
+            else []
+        ),
         {
             "$lookup": {
                 "from": "users",

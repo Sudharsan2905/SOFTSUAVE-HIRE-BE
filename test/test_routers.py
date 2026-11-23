@@ -400,6 +400,7 @@ class TestAuthRoutes:
             "family_name": "User",
             "sub": "google_sub_123",
             "aud": settings.GOOGLE_CLIENT_ID,
+            "email_verified": "true",
         }
         mock_client_instance = AsyncMock()
         mock_client_instance.get = AsyncMock(return_value=mock_response)
@@ -946,7 +947,8 @@ class TestCandidateRoutes:
             headers=auth_headers(candidate_token),
             json={"question_id": "q_001", "answer": "Option A"},
         )
-        assert resp.status_code == 200
+        # q_001 is not part of this submission's round — the server must reject it.
+        assert resp.status_code == 422
 
     def test_finish_round(self, client, seeded_candidate, seeded_assessment, candidate_token):
         share_link = seeded_assessment["share_link"]
@@ -1018,7 +1020,7 @@ class TestCandidateRoutes:
             headers=auth_headers(candidate_token),
             files={"file": ("big.png", io.BytesIO(big_data), "image/png")},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 413
 
     def test_flag_malpractice(self, client, seeded_candidate, seeded_assessment, candidate_token):
         share_link = seeded_assessment["share_link"]
