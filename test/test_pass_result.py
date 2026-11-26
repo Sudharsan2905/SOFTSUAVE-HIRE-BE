@@ -259,3 +259,84 @@ class TestCandidateNeverSeesPassMark:
         view = await candidate_service.get_candidate_assessment(db, created["share_link"])
         assert "pass_percentage" not in view
         assert "result" not in view
+
+
+class TestResultFilter:
+    """The Passed / Failed filter on the View Details submissions list (and the export)."""
+
+    @staticmethod
+    async def _seed(db, workspace, super_admin):
+        created = await _create(db, workspace, super_admin, pass_percentage=60)
+        aid = created["id"]
+        rows = {
+            "passed_high": {"percentage": 92.0},
+            "passed_edge": {"percentage": 60.0},
+            "failed_low": {"percentage": 35.0},
+            "failed_edge": {"percentage": 59.9},
+            "malpractice": {"percentage": 95.0, "status": "malpractice"},
+            "in_progress": {"percentage": 70.0, "status": "in_progress"},
+            "needs_review": {"percentage": 80.0, "scoring_status": "needs_review"},
+        }
+        ids = {}
+        for name, over in rows.items():
+            user = await db.users.insert_one(
+                {"first_name": name, "last_name": "T", "email": f"{name}@example.com"}
+            )
+            doc = _submission(aid, user.inserted_id, **over)
+            ids[name] = (await db.assessment_submissions.insert_one(doc)).inserted_id
+        return aid, ids
+
+    @staticmethod
+    def _listed(out):
+        return {s["percentage"] for s in out["submissions"]}
+
+    async def test_passed_only(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        out = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20, result="passed"
+        )
+        assert self._listed(out) == {92.0, 60.0}
+        assert {s["result"] for s in out["submissions"]} == {"passed"}
+        assert out["pagination"]["total"] == 2
+
+    async def test_failed_only(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        out = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20, result="failed"
+        )
+        assert self._listed(out) == {35.0, 59.9}
+        assert {s["result"] for s in out["submissions"]} == {"failed"}
+        assert out["pagination"]["total"] == 2
+
+    async def test_no_filter_returns_everyone(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        out = await assessment_service.get_submissions(db, aid, None, "started_at", "desc", 1, 20)
+        assert out["pagination"]["total"] == 7
+
+    async def test_combines_with_status_filter(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        completed = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20, status="completed", result="passed"
+        )
+        assert completed["pagination"]["total"] == 2
+        # a result filter can never surface an unfinished session
+        running = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20, status="in_progress", result="passed"
+        )
+        assert running["pagination"]["total"] == 0
+
+    async def test_follows_the_current_pass_mark(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        await assessment_service.update_assessment(
+            db, str(workspace["_id"]), aid, {"pass_percentage": 90}
+        )
+        passed = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20, result="passed"
+        )
+        assert self._listed(passed) == {92.0}
+
+    async def test_export_respects_the_filter(self, db, workspace, super_admin):
+        aid, _ = await self._seed(db, workspace, super_admin)
+        failed = await assessment_service.export_submissions(db, aid, result="failed")
+        assert {r["percentage"] for r in failed} == {35.0, 59.9}
+        assert {r["result"] for r in failed} == {"failed"}

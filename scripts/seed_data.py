@@ -15,6 +15,10 @@ Documents get deterministic _ids, so re-running --load upserts instead of duplic
 The workspace and super admin are looked up in the database (they must already exist).
 Seeded candidates all share the password  Candidate@123
 
+The "Campus Hiring Drive 2026" assessment has 50 dedicated candidates: 40 completed (a spread of
+scores either side of its 60% pass mark, some with proctoring flags) and 10 in mixed states
+(3 in progress, 2 on hold, 3 malpractice, 2 terminated).
+
 Each assessment gets a pass_percentage (40-70). Submission results are NOT stored: the API derives
 passed/failed for completed, scored submissions from percentage >= pass_percentage.
 """
@@ -533,6 +537,21 @@ ASSESSMENT_SPECS = [
             (40, pick(PY, types=["essay"]) + pick(SQL, types=["essay"])),
         ],
     },
+    {
+        "key": "campus-drive-2026",
+        "pass": 60,
+        "name": "Campus Hiring Drive 2026 - Engineering Screening",
+        "description": "Large proctored campus-drive screening in three rounds: quantitative aptitude, Python fundamentals and SQL basics. 50 candidates; 40 finished, the rest are in assorted states.",
+        "accessibility": "monitoring",
+        "monitoring": MON_FULL,
+        "expected": 60,
+        "age_days": 12,
+        "rounds": [
+            (20, pick(APT)),
+            (30, pick(PY, types=MCQ_TYPES)),
+            (25, pick(SQL, types=MCQ_TYPES)),
+        ],
+    },
 ]
 
 
@@ -646,16 +665,16 @@ def sanitized(q: dict) -> dict:
     }
 
 
-def answer_for(q: dict, skill: float):
+def answer_for(q: dict, skill: float, rand: random.Random = rng):
     """Pick an answer for a question; correct with probability `skill`."""
     if q["question_type"] == "essay":
         return "A concise written answer covering the main idea and one example."
     correct = [o["id"] for o in q["options"] if o["is_correct"]]
     wrong = [o["id"] for o in q["options"] if not o["is_correct"]]
-    if rng.random() < skill:
+    if rand.random() < skill:
         chosen = correct
     else:
-        chosen = [rng.choice(wrong)]
+        chosen = [rand.choice(wrong)]
     return chosen[0] if q["question_type"] == "mcq_single" else chosen
 
 
@@ -667,7 +686,17 @@ def is_right(q: dict, ans) -> bool:
     return given == correct
 
 
-def build_submissions(assessments, shares, questions, candidates):
+def build_submissions(
+    assessments,
+    shares,
+    questions,
+    candidates,
+    plan=None,
+    skills=None,
+    rand: random.Random = rng,
+):
+    plan = SUBMISSION_PLAN if plan is None else plan
+    skills = SKILL if skills is None else skills
     qmap = {q["_id"]: q for q in questions}
     amap = {a["_id"]: a for a in assessments}
     first_share = {}
@@ -676,17 +705,17 @@ def build_submissions(assessments, shares, questions, candidates):
     cand_ids = [c["_id"] for c in candidates]
 
     subs = []
-    for key, ci, status, extra in SUBMISSION_PLAN:
+    for key, ci, status, extra in plan:
         a = amap[oid(f"assessment:{key}")]
-        skill = SKILL[ci]
+        skill = skills[ci]
         started = a["created_at"] + timedelta(
-            days=rng.uniform(1, max(2, (NOW - a["created_at"]).days - 1)),
-            hours=rng.uniform(0, 8),
+            days=rand.uniform(1, max(2, (NOW - a["created_at"]).days - 1)),
+            hours=rand.uniform(0, 8),
         )
         if status in ("in_progress", "on_hold"):
-            started = ago(minutes=rng.randint(4, 25)) if status == "in_progress" else ago(hours=2)
+            started = ago(minutes=rand.randint(4, 25)) if status == "in_progress" else ago(hours=2)
         current = extra.get("round", 1)
-        if status in ("completed", "malpractice", "terminated"):
+        if status in ("completed", "malpractice", "terminated") and "round" not in extra:
             current = len(a["rounds"])
 
         rounds_data, total_q, correct_q = [], 0, 0
@@ -705,7 +734,7 @@ def build_submissions(assessments, shares, questions, candidates):
             if done or partial:
                 upto = len(qs) if done else max(1, len(qs) // 2)
                 for q in qs[:upto]:
-                    answers[str(q["_id"])] = answer_for(q, skill)
+                    answers[str(q["_id"])] = answer_for(q, skill, rand)
             r_correct = sum(
                 1 for q in qs if str(q["_id"]) in answers and is_right(q, answers[str(q["_id"])])
             )
@@ -720,7 +749,7 @@ def build_submissions(assessments, shares, questions, candidates):
             }
             if done:
                 cursor = cursor + timedelta(
-                    minutes=rnd["max_duration_minutes"] * rng.uniform(0.55, 0.95)
+                    minutes=rnd["max_duration_minutes"] * rand.uniform(0.55, 0.95)
                 )
                 rd["completed_at"] = cursor
                 rd.update(
@@ -740,12 +769,12 @@ def build_submissions(assessments, shares, questions, candidates):
         completed_at = cursor if finished else None
         events = []
         for _ in range(extra.get("events", 3 if status == "malpractice" else 0)):
-            t, desc = rng.choice(MALPRACTICE)
+            t, desc = rand.choice(MALPRACTICE)
             events.append(
                 {
                     "type": t,
                     "description": desc,
-                    "timestamp": started + timedelta(minutes=rng.randint(3, 25)),
+                    "timestamp": started + timedelta(minutes=rand.randint(3, 25)),
                     "round": 1,
                     "is_terminal": False,
                 }
@@ -793,6 +822,100 @@ def build_submissions(assessments, shares, questions, candidates):
     return subs
 
 
+# ─── Campus drive: 50 candidates, 40 completed + 10 in mixed states ───────────
+
+DRIVE_KEY = "campus-drive-2026"
+DRIVE_FIRST = [
+    ("Aditya", "male"), ("Akash", "male"), ("Bhavna", "female"), ("Chaitanya", "male"),
+    ("Deepak", "male"), ("Esha", "female"), ("Farhan", "male"), ("Gayathri", "female"),
+    ("Harini", "female"), ("Ishaan", "male"), ("Jyothi", "female"), ("Kavya", "female"),
+    ("Manoj", "male"), ("Naveen", "male"), ("Pooja", "female"), ("Rahul", "male"),
+    ("Sanjana", "female"), ("Tarun", "male"), ("Uma", "female"), ("Varun", "male"),
+    ("Yamini", "female"), ("Zoya", "female"), ("Nikhil", "male"), ("Swetha", "female"),
+]  # fmt: skip
+DRIVE_LAST = [
+    "Agarwal", "Balaji", "Chandran", "Desai", "Gupta", "Hegde", "Menon", "Pillai", "Raghavan",
+    "Saxena", "Tiwari", "Verma",
+]  # fmt: skip
+DRIVE_COLLEGES = [
+    ("Anna University", "Chennai, Tamil Nadu"),
+    ("VIT Vellore", "Vellore, Tamil Nadu"),
+    ("NIT Trichy", "Tiruchirappalli, Tamil Nadu"),
+    ("PSG College of Technology", "Coimbatore, Tamil Nadu"),
+    ("SRM Institute of Science and Technology", "Chennai, Tamil Nadu"),
+    ("Amrita Vishwa Vidyapeetham", "Coimbatore, Tamil Nadu"),
+    ("College of Engineering Guindy", "Chennai, Tamil Nadu"),
+    ("Kongu Engineering College", "Erode, Tamil Nadu"),
+    ("Thiagarajar College of Engineering", "Madurai, Tamil Nadu"),
+    ("RV College of Engineering", "Bengaluru, Karnataka"),
+]  # fmt: skip
+
+# 40 completed, then 10 in mixed states: (status, extra)
+DRIVE_STATES: list[tuple[str, dict]] = [
+    *[("completed", {}) for _ in range(40)],
+    ("in_progress", {"round": 1}),
+    ("in_progress", {"round": 2}),
+    ("in_progress", {"round": 3}),
+    ("on_hold", {"round": 1}),
+    ("on_hold", {"round": 2}),
+    ("malpractice", {"events": 3, "round": 1}),
+    ("malpractice", {"events": 3, "round": 2}),
+    ("malpractice", {"events": 3, "round": 3}),
+    ("terminated", {"round": 2}),
+    ("terminated", {"round": 3}),
+]
+
+
+def build_drive_candidates(drand: random.Random) -> tuple[list[dict], list[float]]:
+    """50 extra candidates (distinct from the original 14) and a skill level for each."""
+    taken = {(f, last) for f, last, *_ in CANDIDATES}
+    combos = [(f, g, last) for f, g in DRIVE_FIRST for last in DRIVE_LAST if (f, last) not in taken]
+    chosen = drand.sample(combos, 50)
+    pw_hash = hash_password(CANDIDATE_PASSWORD)
+    docs, skills = [], []
+    for i, (first, gender, last) in enumerate(chosen):
+        inst, loc = drand.choice(DRIVE_COLLEGES)
+        created = ago(days=drand.uniform(13, 40))
+        docs.append(
+            {
+                "_id": oid(f"user:{first}.{last}"),
+                "first_name": first,
+                "last_name": last,
+                "email": f"{first}.{last}@example.com".lower(),
+                "password_hash": pw_hash,
+                "role": "candidate",
+                "is_active": True,
+                "email_verified": True,
+                "workspace_ids": [],
+                "default_workspace_id": None,
+                "candidate_type": "student" if i % 6 else "professional",
+                "google_id": None,
+                "phone": f"+91 9{drand.randint(100000000, 999999999)}",
+                "dob": f"{drand.randint(1998, 2004)}-{drand.randint(1, 12):02d}-{drand.randint(1, 28):02d}",
+                "gender": gender,
+                "institution": inst,
+                "location": loc,
+                "created_at": created,
+                "updated_at": created,
+            }
+        )
+        skills.append(round(drand.uniform(0.35, 0.97), 2))
+    return docs, skills
+
+
+def build_drive_plan(drand: random.Random) -> list[tuple[str, int, str, dict]]:
+    """Shuffle who ends up in which state, and sprinkle proctoring flags on some finishers."""
+    order = list(range(50))
+    drand.shuffle(order)
+    plan = []
+    for ci, (status, extra) in zip(order, DRIVE_STATES, strict=True):
+        extra = dict(extra)
+        if status == "completed" and drand.random() < 0.22:
+            extra["events"] = drand.choice([1, 1, 2])
+        plan.append((DRIVE_KEY, ci, status, extra))
+    return plan
+
+
 # ─── Output / load ────────────────────────────────────────────────────────────
 
 
@@ -825,6 +948,20 @@ def main() -> None:
     candidates = build_candidates()
     assessments, shares = build_assessments(ws["_id"], admin["_id"])
     submissions = build_submissions(assessments, shares, questions, candidates)
+
+    # Campus drive: its own random source, so the data above never changes when this changes.
+    drand = random.Random(2026)
+    drive_candidates, drive_skills = build_drive_candidates(drand)
+    candidates += drive_candidates
+    submissions += build_submissions(
+        assessments,
+        shares,
+        questions,
+        drive_candidates,
+        plan=build_drive_plan(drand),
+        skills=drive_skills,
+        rand=drand,
+    )
 
     data = {
         "question_categories": categories,

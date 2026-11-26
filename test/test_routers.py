@@ -776,6 +776,38 @@ class TestAssessmentRoutes:
         )
         assert resp.status_code == 200
 
+    @pytest.mark.parametrize("value", ["passed", "failed"])
+    def test_list_submissions_result_filter(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token, value
+    ):
+        resp = client.get(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions",
+            params={"result": value},
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["pass_percentage"] == 50
+
+    def test_list_submissions_rejects_unknown_result(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
+    ):
+        resp = client.get(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions",
+            params={"result": "maybe"},
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 422
+
+    def test_export_submissions_result_filter(
+        self, client, seeded_admin, seeded_workspace, seeded_assessment, admin_token
+    ):
+        resp = client.get(
+            f"/api/workspaces/{seeded_workspace['_id']}/assessments/{seeded_assessment['_id']}/submissions/export",
+            params={"result": "passed"},
+            headers=auth_headers(admin_token),
+        )
+        assert resp.status_code == 200
+
     def test_get_submission(
         self,
         client,
