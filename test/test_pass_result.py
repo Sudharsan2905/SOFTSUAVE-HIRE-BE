@@ -107,6 +107,49 @@ class TestEvaluateResult:
         assert evaluate_result(unscored, 50) is None
 
 
+class TestLastRoundStillScoring:
+    """Right after the final round is finished, scoring_status is still 'scored' from the
+    previous round and the percentage is partial: that must not read as a Failed result."""
+
+    STALE = {
+        "status": "completed",
+        "scoring_status": "scored",
+        "percentage": 10.0,
+        "rounds_data": [{"round_number": 1, "score": 1}, {"round_number": 2}],
+    }
+
+    def test_no_result_until_every_round_is_scored(self):
+        assert evaluate_result(self.STALE, 50) is None
+        scored = {
+            **self.STALE,
+            "rounds_data": [{"round_number": 1, "score": 1}, {"round_number": 2, "score": 5}],
+        }
+        assert evaluate_result(scored, 50) == "failed"
+        assert evaluate_result({**scored, "percentage": 80.0}, 50) == "passed"
+
+    async def test_not_counted_in_stats_list_or_export(
+        self, db, workspace, super_admin, candidate_user
+    ):
+        created = await _create(db, workspace, super_admin, pass_percentage=50)
+        aid = created["id"]
+        await db.assessment_submissions.insert_one(
+            _submission(
+                aid, candidate_user["_id"], **{k: v for k, v in self.STALE.items() if k != "status"}
+            )
+        )
+        stats = await assessment_service.get_submission_stats(db, aid)
+        assert (stats["passed"], stats["failed"]) == (0, 0)
+
+        listed = await assessment_service.get_submissions(
+            db, aid, None, "started_at", "desc", 1, 20
+        )
+        assert listed["submissions"][0]["result"] is None
+
+        rows = await assessment_service.export_submissions(db, aid)
+        assert rows[0]["result"] is None
+        assert "rounds_data" not in rows[0]
+
+
 class TestAssessmentPassPercentage:
     async def test_defaults_to_50_when_omitted(self, db, workspace, super_admin):
         created = await _create(db, workspace, super_admin)
