@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from bson import ObjectId
 from fastapi import BackgroundTasks, Query, Request
@@ -139,8 +139,9 @@ async def list_submissions(
     status: Annotated[str | None, Query()] = None,
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
+    result: Annotated[Literal["passed", "failed"] | None, Query()] = None,
 ) -> dict:
-    result = await assessment_service.get_submissions(
+    data = await assessment_service.get_submissions(
         db,
         assessment_id,
         search,
@@ -151,8 +152,9 @@ async def list_submissions(
         status=status,
         from_date=from_date,
         to_date=to_date,
+        result=result,
     )
-    return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, result)
+    return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, data)
 
 
 @router.get("/{assessment_id}/submissions/export", dependencies=[AssessmentGuard])
@@ -167,8 +169,9 @@ async def export_submission_list(
     sort_order: Annotated[str, Query()] = "desc",
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
+    result: Annotated[Literal["passed", "failed"] | None, Query()] = None,
 ) -> dict:
-    result = await assessment_service.export_submissions(
+    data = await assessment_service.export_submissions(
         db,
         assessment_id,
         status,
@@ -177,8 +180,9 @@ async def export_submission_list(
         sort_order=sort_order,
         from_date=from_date,
         to_date=to_date,
+        result=result,
     )
-    return success_response(SuccessMessages.EXPORT_READY, result)
+    return success_response(SuccessMessages.EXPORT_READY, data)
 
 
 @router.get(

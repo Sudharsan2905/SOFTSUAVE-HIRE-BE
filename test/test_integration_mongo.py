@@ -322,3 +322,45 @@ class TestPassFailStats:
 
         stats = await assessment_service.get_submission_stats(rdb, str(aid))
         assert (stats["pass_percentage"], stats["passed"], stats["failed"]) == (50, 3, 1)
+
+    async def test_list_filter_on_real_mongo(self, rdb):
+        from app.components.assessment import assessment_service
+
+        aid = ObjectId()
+        await rdb.assessments.insert_one({"_id": aid, "pass_percentage": 60})
+        done = [{"round_number": 1, "score": 3}]
+
+        def sub(pct, **over):
+            return {
+                "assessment_id": aid,
+                "candidate_id": ObjectId(),
+                "status": SubmissionStatus.COMPLETED,
+                "scoring_status": "scored",
+                "percentage": pct,
+                "rounds_data": done,
+                "is_active": True,
+                "started_at": utcnow(),
+                **over,
+            }
+
+        await rdb.assessment_submissions.insert_many(
+            [
+                sub(90.0),
+                sub(60.0),
+                sub(20.0),
+                sub(59.9),
+                sub(95.0, status=SubmissionStatus.MALPRACTICE),
+                sub(70.0, rounds_data=[{"round_number": 1}]),  # last round still unscored
+            ]
+        )
+
+        async def listed(**kw):
+            out = await assessment_service.get_submissions(
+                rdb, str(aid), None, "started_at", "desc", 1, 20, **kw
+            )
+            return sorted(s["percentage"] for s in out["submissions"]), out["pagination"]["total"]
+
+        assert await listed(result="passed") == ([60.0, 90.0], 2)
+        assert await listed(result="failed") == ([20.0, 59.9], 2)
+        assert (await listed())[1] == 6
+        assert await listed(status="malpractice", result="passed") == ([], 0)

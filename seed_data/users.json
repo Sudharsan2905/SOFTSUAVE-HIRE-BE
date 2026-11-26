@@ -6,7 +6,7 @@
     "first_name": "Aarav",
     "last_name": "Sharma",
     "email": "aarav.sharma@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -20,10 +20,10 @@
     "institution": "Anna University",
     "location": "Chennai, Tamil Nadu",
     "created_at": {
-      "$date": "2026-10-22T16:51:27Z"
+      "$date": "2026-10-22T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-22T16:51:27Z"
+      "$date": "2026-10-22T17:16:51Z"
     }
   },
   {
@@ -33,7 +33,7 @@
     "first_name": "Priya",
     "last_name": "Nair",
     "email": "priya.nair@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -47,10 +47,10 @@
     "institution": "TCS",
     "location": "Kochi, Kerala",
     "created_at": {
-      "$date": "2026-10-23T16:51:27Z"
+      "$date": "2026-10-23T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-23T16:51:27Z"
+      "$date": "2026-10-23T17:16:51Z"
     }
   },
   {
@@ -60,7 +60,7 @@
     "first_name": "Rohan",
     "last_name": "Mehta",
     "email": "rohan.mehta@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -74,10 +74,10 @@
     "institution": "VIT Vellore",
     "location": "Vellore, Tamil Nadu",
     "created_at": {
-      "$date": "2026-10-24T16:51:27Z"
+      "$date": "2026-10-24T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-24T16:51:27Z"
+      "$date": "2026-10-24T17:16:51Z"
     }
   },
   {
@@ -87,7 +87,7 @@
     "first_name": "Ananya",
     "last_name": "Iyer",
     "email": "ananya.iyer@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -101,10 +101,10 @@
     "institution": "Zoho Corporation",
     "location": "Chennai, Tamil Nadu",
     "created_at": {
-      "$date": "2026-10-25T16:51:27Z"
+      "$date": "2026-10-25T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-25T16:51:27Z"
+      "$date": "2026-10-25T17:16:51Z"
     }
   },
   {
@@ -114,7 +114,7 @@
     "first_name": "Karthik",
     "last_name": "Subramanian",
     "email": "karthik.subramanian@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -128,10 +128,10 @@
     "institution": "Freshworks",
     "location": "Chennai, Tamil Nadu",
     "created_at": {
-      "$date": "2026-10-26T16:51:27Z"
+      "$date": "2026-10-26T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-26T16:51:27Z"
+      "$date": "2026-10-26T17:16:51Z"
     }
   },
   {
@@ -141,7 +141,7 @@
     "first_name": "Sneha",
     "last_name": "Reddy",
     "email": "sneha.reddy@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -155,10 +155,10 @@
     "institution": "NIT Warangal",
     "location": "Hyderabad, Telangana",
     "created_at": {
-      "$date": "2026-10-27T16:51:27Z"
+      "$date": "2026-10-27T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-27T16:51:27Z"
+      "$date": "2026-10-27T17:16:51Z"
     }
   },
   {
@@ -168,7 +168,7 @@
     "first_name": "Vikram",
     "last_name": "Singh",
     "email": "vikram.singh@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -182,10 +182,10 @@
     "institution": "Infosys",
     "location": "Bengaluru, Karnataka",
     "created_at": {
-      "$date": "2026-10-28T16:51:27Z"
+      "$date": "2026-10-28T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-28T16:51:27Z"
+      "$date": "2026-10-28T17:16:51Z"
     }
   },
   {
@@ -195,7 +195,7 @@
     "first_name": "Divya",
     "last_name": "Krishnan",
     "email": "divya.krishnan@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -209,10 +209,10 @@
     "institution": "PSG College of Technology",
     "location": "Coimbatore, Tamil Nadu",
     "created_at": {
-      "$date": "2026-10-29T16:51:27Z"
+      "$date": "2026-10-29T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-29T16:51:27Z"
+      "$date": "2026-10-29T17:16:51Z"
     }
   },
   {
@@ -222,7 +222,7 @@
     "first_name": "Arjun",
     "last_name": "Patel",
     "email": "arjun.patel@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -236,10 +236,10 @@
     "institution": "Wipro",
     "location": "Pune, Maharashtra",
     "created_at": {
-      "$date": "2026-10-30T16:51:27Z"
+      "$date": "2026-10-30T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-30T16:51:27Z"
+      "$date": "2026-10-30T17:16:51Z"
     }
   },
   {
@@ -249,7 +249,7 @@
     "first_name": "Meera",
     "last_name": "Joshi",
     "email": "meera.joshi@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -263,10 +263,10 @@
     "institution": "BITS Pilani",
     "location": "Pilani, Rajasthan",
     "created_at": {
-      "$date": "2026-10-31T16:51:27Z"
+      "$date": "2026-10-31T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-31T16:51:27Z"
+      "$date": "2026-10-31T17:16:51Z"
     }
   },
   {
@@ -276,7 +276,7 @@
     "first_name": "Siddharth",
     "last_name": "Rao",
     "email": "siddharth.rao@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -290,10 +290,10 @@
     "institution": "Thoughtworks",
     "location": "Bengaluru, Karnataka",
     "created_at": {
-      "$date": "2026-11-01T16:51:27Z"
+      "$date": "2026-11-01T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-01T16:51:27Z"
+      "$date": "2026-11-01T17:16:51Z"
     }
   },
   {
@@ -303,7 +303,7 @@
     "first_name": "Lakshmi",
     "last_name": "Venkatesh",
     "email": "lakshmi.venkatesh@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -317,10 +317,10 @@
     "institution": "SRM Institute",
     "location": "Chennai, Tamil Nadu",
     "created_at": {
-      "$date": "2026-11-02T16:51:27Z"
+      "$date": "2026-11-02T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-02T16:51:27Z"
+      "$date": "2026-11-02T17:16:51Z"
     }
   },
   {
@@ -330,7 +330,7 @@
     "first_name": "Imran",
     "last_name": "Khan",
     "email": "imran.khan@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -344,10 +344,10 @@
     "institution": "HCLTech",
     "location": "Noida, Uttar Pradesh",
     "created_at": {
-      "$date": "2026-11-03T16:51:27Z"
+      "$date": "2026-11-03T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-03T16:51:27Z"
+      "$date": "2026-11-03T17:16:51Z"
     }
   },
   {
@@ -357,7 +357,7 @@
     "first_name": "Nisha",
     "last_name": "Thomas",
     "email": "nisha.thomas@example.com",
-    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "password_hash": "$2b$12$9k0hYW3OiaUQisg0CaZcKuNuL2S1pRRIwDnMQQGSSu9W.Kq.LF4AK",
     "role": "candidate",
     "is_active": true,
     "email_verified": true,
@@ -371,10 +371,1360 @@
     "institution": "College of Engineering Trivandrum",
     "location": "Trivandrum, Kerala",
     "created_at": {
-      "$date": "2026-11-04T16:51:27Z"
+      "$date": "2026-11-04T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-04T16:51:27Z"
+      "$date": "2026-11-04T17:16:51Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "c137f7da5cb14e6cf7a73ba4"
+    },
+    "first_name": "Esha",
+    "last_name": "Agarwal",
+    "email": "esha.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9127247423",
+    "dob": "2002-04-25",
+    "gender": "female",
+    "institution": "Thiagarajar College of Engineering",
+    "location": "Madurai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-30T17:37:30.378Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-30T17:37:30.378Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "3d262533c65dc46097388258"
+    },
+    "first_name": "Naveen",
+    "last_name": "Pillai",
+    "email": "naveen.pillai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9661799480",
+    "dob": "2003-02-23",
+    "gender": "male",
+    "institution": "Anna University",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-18T17:26:05.520Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T17:26:05.520Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6a935b85b345f375306ecbc6"
+    },
+    "first_name": "Zoya",
+    "last_name": "Hegde",
+    "email": "zoya.hegde@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9345808782",
+    "dob": "2004-02-21",
+    "gender": "female",
+    "institution": "Kongu Engineering College",
+    "location": "Erode, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-09T20:59:50.993Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-09T20:59:50.993Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6ad6b6b1595dd11e87f2473a"
+    },
+    "first_name": "Zoya",
+    "last_name": "Tiwari",
+    "email": "zoya.tiwari@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9685868185",
+    "dob": "2000-09-13",
+    "gender": "female",
+    "institution": "Kongu Engineering College",
+    "location": "Erode, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-25T10:16:11.010Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-25T10:16:11.010Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "4c8b2589fe11d02a9b883c1f"
+    },
+    "first_name": "Deepak",
+    "last_name": "Gupta",
+    "email": "deepak.gupta@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9794563894",
+    "dob": "2002-12-16",
+    "gender": "male",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-29T22:04:50.100Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-29T22:04:50.100Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b2468a1cb7030c8cd588219c"
+    },
+    "first_name": "Ishaan",
+    "last_name": "Menon",
+    "email": "ishaan.menon@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9416081829",
+    "dob": "2004-05-01",
+    "gender": "male",
+    "institution": "College of Engineering Guindy",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-02T00:39:12.695Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-02T00:39:12.695Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "3671bfa82c6a85874e3db6d2"
+    },
+    "first_name": "Swetha",
+    "last_name": "Raghavan",
+    "email": "swetha.raghavan@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9962801954",
+    "dob": "2002-08-12",
+    "gender": "female",
+    "institution": "RV College of Engineering",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-10-18T18:45:57.196Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T18:45:57.196Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e563654de666c7494c01280a"
+    },
+    "first_name": "Tarun",
+    "last_name": "Verma",
+    "email": "tarun.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9601068181",
+    "dob": "2002-08-26",
+    "gender": "male",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-26T00:26:41.908Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-26T00:26:41.908Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5b440d94db479c88c33012db"
+    },
+    "first_name": "Swetha",
+    "last_name": "Gupta",
+    "email": "swetha.gupta@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9440007977",
+    "dob": "2001-02-15",
+    "gender": "female",
+    "institution": "Anna University",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-22T06:31:54.262Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-22T06:31:54.262Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "7d62e54fe135b470bd6bc91c"
+    },
+    "first_name": "Yamini",
+    "last_name": "Verma",
+    "email": "yamini.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9296547184",
+    "dob": "2001-12-16",
+    "gender": "female",
+    "institution": "Thiagarajar College of Engineering",
+    "location": "Madurai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-06T17:33:29.683Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-06T17:33:29.683Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "77982d9eeceb807d49e89365"
+    },
+    "first_name": "Uma",
+    "last_name": "Saxena",
+    "email": "uma.saxena@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9497422744",
+    "dob": "1998-04-24",
+    "gender": "female",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-20T07:57:57.477Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T07:57:57.477Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6ae8718e0f07227507843073"
+    },
+    "first_name": "Jyothi",
+    "last_name": "Chandran",
+    "email": "jyothi.chandran@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9115067335",
+    "dob": "1998-01-15",
+    "gender": "female",
+    "institution": "NIT Trichy",
+    "location": "Tiruchirappalli, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-01T14:04:22.777Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-01T14:04:22.777Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a5441b1a4757c763a508d8f1"
+    },
+    "first_name": "Aditya",
+    "last_name": "Balaji",
+    "email": "aditya.balaji@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9313450963",
+    "dob": "1999-02-20",
+    "gender": "male",
+    "institution": "VIT Vellore",
+    "location": "Vellore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-28T05:54:51.055Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-28T05:54:51.055Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "78fab9b17673268d0be589e6"
+    },
+    "first_name": "Chaitanya",
+    "last_name": "Hegde",
+    "email": "chaitanya.hegde@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9817771848",
+    "dob": "2004-11-12",
+    "gender": "male",
+    "institution": "Thiagarajar College of Engineering",
+    "location": "Madurai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-18T21:33:18.316Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T21:33:18.316Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "556875d28baffeb84e1653c3"
+    },
+    "first_name": "Deepak",
+    "last_name": "Raghavan",
+    "email": "deepak.raghavan@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9716632306",
+    "dob": "2004-08-23",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-26T18:37:55.683Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-26T18:37:55.683Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "cc636c86cb993f8c7440c1f1"
+    },
+    "first_name": "Manoj",
+    "last_name": "Desai",
+    "email": "manoj.desai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9607862197",
+    "dob": "2002-03-20",
+    "gender": "male",
+    "institution": "NIT Trichy",
+    "location": "Tiruchirappalli, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-29T23:36:00.342Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-29T23:36:00.342Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "21e1e8f1b29055069e1c9cf5"
+    },
+    "first_name": "Deepak",
+    "last_name": "Chandran",
+    "email": "deepak.chandran@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9548586715",
+    "dob": "2003-03-05",
+    "gender": "male",
+    "institution": "Thiagarajar College of Engineering",
+    "location": "Madurai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-05T20:55:12.349Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-05T20:55:12.349Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b2d9809597471a52f05b6138"
+    },
+    "first_name": "Varun",
+    "last_name": "Chandran",
+    "email": "varun.chandran@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9542423666",
+    "dob": "2001-03-17",
+    "gender": "male",
+    "institution": "RV College of Engineering",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-11-05T10:59:24.106Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-05T10:59:24.106Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "07f5de39aee57646f8eba094"
+    },
+    "first_name": "Aditya",
+    "last_name": "Hegde",
+    "email": "aditya.hegde@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9213960451",
+    "dob": "2001-02-02",
+    "gender": "male",
+    "institution": "College of Engineering Guindy",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-13T08:07:24.165Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-13T08:07:24.165Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "3e4c2d037613884774aa5265"
+    },
+    "first_name": "Naveen",
+    "last_name": "Gupta",
+    "email": "naveen.gupta@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9127692059",
+    "dob": "1998-09-16",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-19T11:41:47.480Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T11:41:47.480Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "fd3d2eeb28fd959c20dd7556"
+    },
+    "first_name": "Harini",
+    "last_name": "Verma",
+    "email": "harini.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9230323102",
+    "dob": "2001-08-19",
+    "gender": "female",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-01T13:35:23.517Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-01T13:35:23.517Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "250bcf9b2884f24c30f85a05"
+    },
+    "first_name": "Sanjana",
+    "last_name": "Verma",
+    "email": "sanjana.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9657930992",
+    "dob": "1999-07-20",
+    "gender": "female",
+    "institution": "NIT Trichy",
+    "location": "Tiruchirappalli, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-09T13:33:35.044Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-09T13:33:35.044Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "902cbc3eace61ffd9907ca7f"
+    },
+    "first_name": "Jyothi",
+    "last_name": "Raghavan",
+    "email": "jyothi.raghavan@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9863304466",
+    "dob": "1998-09-13",
+    "gender": "female",
+    "institution": "RV College of Engineering",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-11-07T10:05:06.924Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-07T10:05:06.924Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "be78f403dcd57c9978ed30b3"
+    },
+    "first_name": "Pooja",
+    "last_name": "Tiwari",
+    "email": "pooja.tiwari@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9684938506",
+    "dob": "2004-01-15",
+    "gender": "female",
+    "institution": "NIT Trichy",
+    "location": "Tiruchirappalli, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-12T11:58:03.077Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-12T11:58:03.077Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "011a8e15a3ea9070db3ca02d"
+    },
+    "first_name": "Rahul",
+    "last_name": "Chandran",
+    "email": "rahul.chandran@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9828678324",
+    "dob": "1998-03-21",
+    "gender": "male",
+    "institution": "PSG College of Technology",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-31T15:45:07.219Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-31T15:45:07.219Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a87fbbe3ad7b97b8bb175edf"
+    },
+    "first_name": "Sanjana",
+    "last_name": "Agarwal",
+    "email": "sanjana.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9247877615",
+    "dob": "1999-11-28",
+    "gender": "female",
+    "institution": "Thiagarajar College of Engineering",
+    "location": "Madurai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-20T13:34:11.507Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T13:34:11.507Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "4898a2df0d234f3d5265900a"
+    },
+    "first_name": "Chaitanya",
+    "last_name": "Desai",
+    "email": "chaitanya.desai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9544622302",
+    "dob": "2004-02-13",
+    "gender": "male",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-02T05:39:04.544Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-02T05:39:04.544Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "9a27f4bab2ec95d7d77d4ecc"
+    },
+    "first_name": "Pooja",
+    "last_name": "Menon",
+    "email": "pooja.menon@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9598125208",
+    "dob": "2001-07-10",
+    "gender": "female",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-09T00:04:42.620Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-09T00:04:42.620Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "3496910a7a2046d6f6c681e6"
+    },
+    "first_name": "Chaitanya",
+    "last_name": "Saxena",
+    "email": "chaitanya.saxena@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9577367252",
+    "dob": "1998-09-26",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-30T16:45:06.056Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-30T16:45:06.056Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "ef7ac8c81595bb038f500a40"
+    },
+    "first_name": "Swetha",
+    "last_name": "Saxena",
+    "email": "swetha.saxena@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9330136146",
+    "dob": "1999-01-03",
+    "gender": "female",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-22T16:24:50.815Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-22T16:24:50.815Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "4528c78c6e996dff5956e0a6"
+    },
+    "first_name": "Nikhil",
+    "last_name": "Verma",
+    "email": "nikhil.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9941076831",
+    "dob": "2004-11-06",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-02T16:53:42.855Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-02T16:53:42.855Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b90993a99702b4cece3f8ad9"
+    },
+    "first_name": "Manoj",
+    "last_name": "Hegde",
+    "email": "manoj.hegde@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9477636853",
+    "dob": "2002-11-19",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-21T20:43:21.815Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-21T20:43:21.815Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a449342ff6e369dd5197c28f"
+    },
+    "first_name": "Varun",
+    "last_name": "Menon",
+    "email": "varun.menon@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9868812610",
+    "dob": "2000-09-25",
+    "gender": "male",
+    "institution": "PSG College of Technology",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-10T18:11:57.998Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-10T18:11:57.998Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "053ed83e8d1793db358c39c9"
+    },
+    "first_name": "Farhan",
+    "last_name": "Agarwal",
+    "email": "farhan.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9704335600",
+    "dob": "2000-11-18",
+    "gender": "male",
+    "institution": "PSG College of Technology",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-29T08:01:39.872Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-29T08:01:39.872Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5c94c61ffe9e063749217e69"
+    },
+    "first_name": "Naveen",
+    "last_name": "Chandran",
+    "email": "naveen.chandran@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9568208209",
+    "dob": "1999-02-22",
+    "gender": "male",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-11T02:47:37.367Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-11T02:47:37.367Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "f90727b3e1db52c866205f3d"
+    },
+    "first_name": "Akash",
+    "last_name": "Agarwal",
+    "email": "akash.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9299173937",
+    "dob": "2003-11-04",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-25T05:11:33.523Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-25T05:11:33.523Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b6db403b267498347ee94c4d"
+    },
+    "first_name": "Rahul",
+    "last_name": "Raghavan",
+    "email": "rahul.raghavan@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9168628244",
+    "dob": "2000-06-06",
+    "gender": "male",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-28T20:11:11.349Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-28T20:11:11.349Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "1c827e9524a5ecfc0bed1924"
+    },
+    "first_name": "Rahul",
+    "last_name": "Menon",
+    "email": "rahul.menon@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9934060420",
+    "dob": "2000-07-01",
+    "gender": "male",
+    "institution": "VIT Vellore",
+    "location": "Vellore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-13T08:17:33.820Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-13T08:17:33.820Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "f523df8e7b61783f3cad6989"
+    },
+    "first_name": "Varun",
+    "last_name": "Raghavan",
+    "email": "varun.raghavan@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9232092060",
+    "dob": "1998-11-18",
+    "gender": "male",
+    "institution": "PSG College of Technology",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-13T02:23:28.610Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-13T02:23:28.610Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "9f00ad421d150ff80ed67e09"
+    },
+    "first_name": "Uma",
+    "last_name": "Agarwal",
+    "email": "uma.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9589674278",
+    "dob": "2002-11-21",
+    "gender": "female",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-05T05:10:38.642Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-05T05:10:38.642Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "42b962596712b9d0a04019f3"
+    },
+    "first_name": "Chaitanya",
+    "last_name": "Tiwari",
+    "email": "chaitanya.tiwari@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9439370843",
+    "dob": "2002-04-20",
+    "gender": "male",
+    "institution": "Anna University",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-19T18:02:48.288Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T18:02:48.288Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "af245a65d1dbae9286071947"
+    },
+    "first_name": "Tarun",
+    "last_name": "Agarwal",
+    "email": "tarun.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9638225743",
+    "dob": "2003-05-13",
+    "gender": "male",
+    "institution": "VIT Vellore",
+    "location": "Vellore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-26T04:27:09.033Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-26T04:27:09.033Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "67a9071c4c5c31a706570701"
+    },
+    "first_name": "Swetha",
+    "last_name": "Pillai",
+    "email": "swetha.pillai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9867910823",
+    "dob": "2001-01-10",
+    "gender": "female",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-12T03:56:10.066Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-12T03:56:10.066Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "bec1517c8e2eba07db43d82e"
+    },
+    "first_name": "Zoya",
+    "last_name": "Desai",
+    "email": "zoya.desai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9925869148",
+    "dob": "2004-02-10",
+    "gender": "female",
+    "institution": "SRM Institute of Science and Technology",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-25T02:06:09.967Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-25T02:06:09.967Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "da1ff8a4c13d92254371ac1c"
+    },
+    "first_name": "Deepak",
+    "last_name": "Verma",
+    "email": "deepak.verma@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9121764845",
+    "dob": "2002-06-07",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-28T21:48:29.130Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-28T21:48:29.130Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5676b7639b980d197b96b2d6"
+    },
+    "first_name": "Uma",
+    "last_name": "Balaji",
+    "email": "uma.balaji@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9231732244",
+    "dob": "1998-01-05",
+    "gender": "female",
+    "institution": "VIT Vellore",
+    "location": "Vellore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-09T08:13:27.808Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-09T08:13:27.808Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a8679e4fca9bc2e7a75710e8"
+    },
+    "first_name": "Zoya",
+    "last_name": "Pillai",
+    "email": "zoya.pillai@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9804159715",
+    "dob": "2000-01-14",
+    "gender": "female",
+    "institution": "RV College of Engineering",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-10-27T05:26:45.122Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-27T05:26:45.122Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "46c74715d28d28c2b8a7bcf7"
+    },
+    "first_name": "Nikhil",
+    "last_name": "Gupta",
+    "email": "nikhil.gupta@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9504996268",
+    "dob": "1999-07-22",
+    "gender": "male",
+    "institution": "Amrita Vishwa Vidyapeetham",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-02T12:10:03.593Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-02T12:10:03.593Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "6db23bcc398a9d0ddf14537d"
+    },
+    "first_name": "Kavya",
+    "last_name": "Agarwal",
+    "email": "kavya.agarwal@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9130512653",
+    "dob": "2003-12-18",
+    "gender": "female",
+    "institution": "NIT Trichy",
+    "location": "Tiruchirappalli, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-08T18:23:38.910Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-08T18:23:38.910Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "de34a225218747328ac44a3e"
+    },
+    "first_name": "Yamini",
+    "last_name": "Hegde",
+    "email": "yamini.hegde@example.com",
+    "password_hash": "$2b$12$5X6meqM1JxmrN.7At/Vy2.jgWJXqCgG.PRAJv3XkcM7cjGgcU1nYu",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9944610676",
+    "dob": "1999-04-01",
+    "gender": "female",
+    "institution": "College of Engineering Guindy",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-20T17:06:51.032Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T17:06:51.032Z"
     }
   }
 ]

@@ -72,10 +72,10 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-10-31T16:51:27Z"
+      "$date": "2026-10-31T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-10-31T16:51:27Z"
+      "$date": "2026-10-31T17:16:51Z"
     },
     "share_link": "eyJhIjoiMTY1NWM3NGQxMGM5YmZkODg3NjgxYTY4In0.91eb95329f7d"
   },
@@ -138,10 +138,10 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-11-05T16:51:27Z"
+      "$date": "2026-11-05T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-05T16:51:27Z"
+      "$date": "2026-11-05T17:16:51Z"
     },
     "share_link": "eyJhIjoiODEwMzVjMTc5YWZhZWE4ZDE4YTdmNmU1In0.775aceabcd8c"
   },
@@ -193,10 +193,10 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-11-08T16:51:27Z"
+      "$date": "2026-11-08T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-08T16:51:27Z"
+      "$date": "2026-11-08T17:16:51Z"
     },
     "share_link": "eyJhIjoiYTViNmJkM2RiODNmYjdiMTJkYmUzYmM4In0.eba65b12d648"
   },
@@ -251,10 +251,10 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-11-12T16:51:27Z"
+      "$date": "2026-11-12T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-12T16:51:27Z"
+      "$date": "2026-11-12T17:16:51Z"
     },
     "share_link": "eyJhIjoiYjczOTY3YmY4MDA5YjFjNTFkZjI2YTc2In0.fd83477461c2"
   },
@@ -324,10 +324,10 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-11-17T16:51:27Z"
+      "$date": "2026-11-17T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-17T16:51:27Z"
+      "$date": "2026-11-17T17:16:51Z"
     },
     "share_link": "eyJhIjoiNmYyOWRmMmNhYmM4YTZjZGY2YWZlNDNmIn0.459e97498505"
   },
@@ -388,11 +388,139 @@
     },
     "is_active": true,
     "created_at": {
-      "$date": "2026-11-22T16:51:27Z"
+      "$date": "2026-11-22T17:16:51Z"
     },
     "updated_at": {
-      "$date": "2026-11-22T16:51:27Z"
+      "$date": "2026-11-22T17:16:51Z"
     },
     "share_link": "eyJhIjoiOGJiNDk2ZjcxNjk5NzFkZjgxZjlhNzFlIn0.caca376912ce"
+  },
+  {
+    "_id": {
+      "$oid": "4c64e36a69d96ad1ac71b844"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Campus Hiring Drive 2026 - Engineering Screening",
+    "description": "Large proctored campus-drive screening in three rounds: quantitative aptitude, Python fundamentals and SQL basics. 50 candidates; 40 finished, the rest are in assorted states.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 8,
+        "max_duration_minutes": 20,
+        "question_ids": [
+          {
+            "$oid": "01c7ffd32ca476b2ffcdafe5"
+          },
+          {
+            "$oid": "494f2ea8bd581e609276bc8a"
+          },
+          {
+            "$oid": "23e6f1a041e8b71b90400099"
+          },
+          {
+            "$oid": "c489ad2e2f2e98f47db81616"
+          },
+          {
+            "$oid": "d096d524b8dd22892da5b7cb"
+          },
+          {
+            "$oid": "0c813f3ed2635572ea7d7369"
+          },
+          {
+            "$oid": "e1cf00b8f762781778c5d7ad"
+          },
+          {
+            "$oid": "ea5a318e8c433282f46ff3b6"
+          }
+        ]
+      },
+      {
+        "round_number": 2,
+        "question_count": 9,
+        "max_duration_minutes": 30,
+        "question_ids": [
+          {
+            "$oid": "0318fdda196ac9e5022ebd94"
+          },
+          {
+            "$oid": "a8d7d546f543e8a3f4610210"
+          },
+          {
+            "$oid": "91af0191b2dd1f7f44a20e0e"
+          },
+          {
+            "$oid": "e0eaca4fc7c92d23705479d0"
+          },
+          {
+            "$oid": "9e036f67adbc98ac57205411"
+          },
+          {
+            "$oid": "87eb65c8fe9d32cd773411ba"
+          },
+          {
+            "$oid": "c30db43c249f9672a2fb1280"
+          },
+          {
+            "$oid": "fa9c2190798e12507eac525d"
+          },
+          {
+            "$oid": "55c2563cca3e3d3b1fc3e01e"
+          }
+        ]
+      },
+      {
+        "round_number": 3,
+        "question_count": 7,
+        "max_duration_minutes": 25,
+        "question_ids": [
+          {
+            "$oid": "cc4511f2d7064d93b7194d1a"
+          },
+          {
+            "$oid": "e41b8d4b5c10c81f8bccb3ba"
+          },
+          {
+            "$oid": "612190d7455698c2ad82c286"
+          },
+          {
+            "$oid": "e128e663b68552f90b32a7c3"
+          },
+          {
+            "$oid": "9a00f10040226155631c7b5f"
+          },
+          {
+            "$oid": "d8250d121bed38a233c4c80e"
+          },
+          {
+            "$oid": "bad43be4431b6b98958e982d"
+          }
+        ]
+      }
+    ],
+    "accessibility": "monitoring",
+    "monitoring_config": {
+      "tab_monitoring": true,
+      "audio_monitoring": true,
+      "video_monitoring": true,
+      "screenshot_enabled": true,
+      "screenshot_mode": "time_interval",
+      "screenshot_interval_seconds": 60,
+      "screenshot_count": null
+    },
+    "expected_candidates": 60,
+    "pass_percentage": 60,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-14T17:16:51Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-14T17:16:51Z"
+    },
+    "share_link": "eyJhIjoiNGM2NGUzNmE2OWQ5NmFkMWFjNzFiODQ0In0.03020eebea33"
   }
 ]

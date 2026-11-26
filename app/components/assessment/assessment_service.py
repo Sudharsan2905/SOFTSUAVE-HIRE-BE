@@ -444,8 +444,12 @@ async def get_submissions(
     status: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    result: str | None = None,
 ) -> dict:
     """Return paginated submissions for an assessment, joined with candidate user data.
+
+    ``result`` ("passed" / "failed") keeps only completed, fully scored submissions on that side of
+    the assessment's pass mark; it combines with the other filters.
 
     Uses an aggregation pipeline so candidate name/email can be searched.
     Question bodies are excluded from the response for performance.
@@ -454,9 +458,16 @@ async def get_submissions(
     sort_dir = 1 if sort_order == "asc" else -1
     sort_field = _CANDIDATE_SORT_MAP.get(sort_by, "started_at")
 
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
+    )
     match_query: dict = {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}
     if status:
         match_query["status"] = status
+    if result:
+        match_query = {
+            "$and": [match_query, result_query(pass_percentage, passed=result == "passed")]
+        }
 
     pipeline: list[Any] = [
         {_MATCH: match_query},
@@ -517,9 +528,6 @@ async def get_submissions(
     pipeline += [{"$sort": {sort_field: sort_dir}}, {"$skip": skip}, {"$limit": limit}]
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(limit)
 
-    pass_percentage = effective_pass_percentage(
-        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
-    )
     for d in docs:
         d["result"] = evaluate_result(d, pass_percentage)
 
@@ -720,10 +728,12 @@ async def export_submissions(
     sort_order: str = "desc",
     from_date: str | None = None,
     to_date: str | None = None,
+    result: str | None = None,
 ) -> list:
     """Return filtered submissions for an assessment in a flat format suitable for Excel export.
 
-    Filters: status, search (name/email), from_date, to_date. Sorted by sort_by/sort_order.
+    Filters: status, search (name/email), from_date, to_date, result (passed/failed).
+    Sorted by sort_by/sort_order.
     """
     from datetime import datetime as _dt
 
@@ -748,6 +758,14 @@ async def export_submissions(
             pass
     if date_match:
         match_query["started_at"] = date_match
+
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
+    )
+    if result:
+        match_query = {
+            "$and": [match_query, result_query(pass_percentage, passed=result == "passed")]
+        }
 
     pipeline: list[Any] = [
         {_MATCH: match_query},
@@ -815,9 +833,6 @@ async def export_submissions(
 
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
 
-    pass_percentage = effective_pass_percentage(
-        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
-    )
     for d in docs:
         d["result"] = evaluate_result(d, pass_percentage)
         for internal in ("scoring_status", "scoring_completed_at", "rounds_data"):
