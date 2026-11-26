@@ -792,6 +792,10 @@ async def export_submissions(
                 "status": 1,
                 "scoring_status": 1,
                 "scoring_completed_at": 1,
+                # only each round's score is needed, to tell whether every round is scored
+                "rounds_data": {
+                    "$map": {"input": "$rounds_data", "as": "rd", "in": {"score": "$$rd.score"}}
+                },
                 "started_at": 1,
                 "completed_at": 1,
                 "rounds": {
@@ -816,8 +820,8 @@ async def export_submissions(
     )
     for d in docs:
         d["result"] = evaluate_result(d, pass_percentage)
-        d.pop("scoring_status", None)
-        d.pop("scoring_completed_at", None)
+        for internal in ("scoring_status", "scoring_completed_at", "rounds_data"):
+            d.pop(internal, None)
     return serialize_docs(docs)
 
 

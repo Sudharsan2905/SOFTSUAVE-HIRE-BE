@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Talentia backend: FastAPI (async) on Python 3.12 with MongoDB through Motor. It serves the React frontend in the sibling `SOFTSUAVE-HIRE-FE` repo (see `../CLAUDE.md` for cross-repo contracts). `README.md` is detailed but partly stale. It describes a smaller module set than exists and a 3-file component pattern, while the code also has repositories, response models and more components. Trust the code.
+Talentia backend: FastAPI (async) on Python 3.12 with MongoDB through Motor. It serves the React frontend in the sibling `SOFTSUAVE-HIRE-FE` repo (a workspace-level `CLAUDE.md` in the parent folder, if present locally, covers cross-repo contracts). `README.md` is detailed but partly stale. It describes a smaller module set than exists and a 3-file component pattern, while the code also has repositories, response models and more components. Trust the code.
 
 ## Commands
 
@@ -39,7 +39,7 @@ Pushes to `main` auto-deploy over SSH (`.github/workflows/deploy.yml`): `git pul
 - **Errors:** raise the `AppException` subclasses from `app/common/exceptions.py` (401/403/404/409/422). Handlers in `exception_handlers.py` convert them, plus validation errors and unhandled exceptions, into the same envelope. Don't return ad-hoc `HTTPException` bodies.
 - **Auth and RBAC:** use the `Annotated` dependency aliases `CurrentUser`, `AdminUser`, `SuperAdminUser` and `CandidateUser` (from `app/components/auth/auth_dependencies.py`) and `DB` (from `app/core/dependencies.py`). Access tokens are HS256 JWTs. Refresh tokens are random, stored SHA-256 hashed in `refresh_tokens` with a TTL index. Password rules are in `app/common/validators.py::check_password_strength`, shared by every schema that accepts a password.
 - **Enums and constants:** `app/common/constants/app_constants.py` (`UserRole`, `QuestionType`, `SubmissionStatus`, `MalpracticeType`, ...). The frontend mirrors these, so changing a value is a cross-repo change.
-- **Interview runtime:** `candidate` handles start/answer/finish-round/screenshot/malpractice. `scoring` has background tasks (`scoring_tasks.py`), `proctoring` evaluates malpractice, `livekit` issues video tokens, and `websocket` (`connection_manager.py`, `ws_router.py`) pushes live updates to admins. Screenshots are stored under `uploads/screenshots/{submission_id}/` locally, or in S3 via `storage/s3_service.py`.
+- **Interview runtime:** `candidate` handles start/answer/finish-round/screenshot/malpractice. `scoring` has background tasks (`scoring_tasks.py`), `proctoring` evaluates malpractice, `livekit` issues video tokens, and `websocket` (`connection_manager.py`, `ws_router.py`) pushes live updates to admins. Screenshots and other proctoring evidence are uploaded to S3 through `storage/s3_service.py` (the README's local `uploads/screenshots` storage is outdated). A scheduler (`scheduler/background.py`, APScheduler cron) runs `submission_reaper.py`, which auto-submits expired sessions, puts abandoned ones on hold and retries scoring (only for submissions whose `scoring_status` is pending, failed or needs_review). `REDIS_URL` is optional; leave it empty to run as a single process.
 - **Indexes:** defined in the lifespan. A new unique or query-critical field needs an index added there.
 
 ## Testing
@@ -50,4 +50,5 @@ Pushes to `main` auto-deploy over SSH (`.github/workflows/deploy.yml`): `git pul
 
 - `.env` exists locally and may contain real secrets. Never print it or commit it. `detect-secrets` runs in pre-commit against `.secrets.baseline`. Mark intentional test passwords with `# pragma: allowlist secret`.
 - Ruff selects bandit (`S`), complexity (max 15) and naming rules. `B008` is ignored because FastAPI's `Depends()` in defaults is required. Tests are exempt from `S` and `N`.
-- `DATABASE_NAME`, `MONGODB_URL` and `JWT_SECRET_KEY` empty means startup raises `RuntimeError` by design.
+- Startup raises `RuntimeError` by design if any of `JWT_SECRET_KEY`, `MONGODB_URL`, `DATABASE_NAME`, `S3_BUCKET_NAME` or `AWS_ACCESS_KEY_ID` is empty (see `core/lifespan.py`). Locally, a placeholder for the two AWS values is enough to boot; only S3 features then fail.
+- **Pass/fail:** `assessments.pass_percentage` (default 50) is the only stored value. A submission's `result` is derived on read by `components/assessment/result.py` for completed submissions whose rounds are all scored, and is admin-only. Don't store it or add it to candidate-facing payloads. The overall `percentage` is total correct over total questions across all rounds.

@@ -4,9 +4,12 @@ Nothing is stored on the submission: the result is computed from the submission'
 ``percentage`` and the assessment's ``pass_percentage`` every time it is read. Changing an
 assessment's pass mark therefore re-evaluates every candidate automatically.
 
-A result is only given to a submission that is ``completed`` *and* fully scored. Sessions that
-ended as malpractice / terminated, are still running, or are waiting on (or failed) scoring have
-no result (``None``), so those flows look exactly as they did before.
+A result is only given to a submission that is ``completed`` *and* fully scored: ``scoring_status``
+is ``scored`` **and every round has its own score**. The second check matters because scoring runs
+per round and ``finish_round`` does not reset ``scoring_status``: right after the last round is
+finished the submission still says ``scored`` from the previous round, with a partial percentage.
+Sessions that ended as malpractice / terminated, are still running, or are waiting on (or failed)
+scoring have no result (``None``), so those flows look exactly as they did before.
 
 Results are admin-facing only; never add them to candidate-facing payloads.
 """
@@ -31,9 +34,12 @@ def effective_pass_percentage(assessment: dict | None) -> int:
 def _is_scored(submission: dict) -> bool:
     scoring_status = submission.get("scoring_status")
     if scoring_status is not None:
-        return bool(scoring_status == _SCORED)
-    # Submissions scored before ``scoring_status`` existed only carry a completion timestamp.
-    return submission.get("scoring_completed_at") is not None
+        if scoring_status != _SCORED:
+            return False
+    elif submission.get("scoring_completed_at") is None:
+        # Submissions scored before ``scoring_status`` existed only carry a completion timestamp.
+        return False
+    return all(rd.get("score") is not None for rd in submission.get("rounds_data") or [])
 
 
 def evaluate_result(submission: dict, pass_percentage: int) -> str | None:
@@ -49,6 +55,8 @@ def result_query(pass_percentage: int, passed: bool) -> dict[str, Any]:
     return {
         "status": SubmissionStatus.COMPLETED,
         "percentage": {"$gte": pass_percentage} if passed else {"$lt": pass_percentage},
+        # every round scored (a missing/null round score matches the inner $elemMatch)
+        "rounds_data": {"$not": {"$elemMatch": {"score": None}}},
         "$or": [
             {"scoring_status": _SCORED},
             {"scoring_status": {"$exists": False}, "scoring_completed_at": {"$ne": None}},

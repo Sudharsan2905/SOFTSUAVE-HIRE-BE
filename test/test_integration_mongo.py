@@ -283,3 +283,42 @@ class TestOverallPercentage:
         assert stored["scoring_status"] == "scored"
         assert evaluate_result(stored, 50) == "passed"
         assert evaluate_result(stored, 51) == "failed"
+
+
+class TestPassFailStats:
+    """result_query uses $not/$elemMatch, so check it against a real MongoDB."""
+
+    async def test_counts_only_fully_scored_completed_submissions(self, rdb):
+        from app.components.assessment import assessment_service
+
+        aid = ObjectId()
+        await rdb.assessments.insert_one({"_id": aid, "pass_percentage": 50})
+
+        def sub(pct, rounds, **over):
+            return {
+                "assessment_id": aid,
+                "candidate_id": ObjectId(),
+                "status": SubmissionStatus.COMPLETED,
+                "scoring_status": "scored",
+                "percentage": pct,
+                "rounds_data": rounds,
+                "is_active": True,
+                **over,
+            }
+
+        done = [{"round_number": 1, "score": 1}, {"round_number": 2, "score": 2}]
+        await rdb.assessment_submissions.insert_many(
+            [
+                sub(80.0, done),  # passed
+                sub(50.0, done),  # passed (boundary)
+                sub(49.9, done),  # failed
+                sub(10.0, [{"round_number": 1, "score": 1}, {"round_number": 2}]),  # stale
+                sub(90.0, [{"round_number": 1, "score": None}]),  # unscored round
+                sub(90.0, done, status=SubmissionStatus.MALPRACTICE),  # not completed
+                sub(90.0, done, scoring_status="needs_review"),  # not fully scored
+                sub(70.0, []),  # no rounds recorded: nothing left to score
+            ]
+        )
+
+        stats = await assessment_service.get_submission_stats(rdb, str(aid))
+        assert (stats["pass_percentage"], stats["passed"], stats["failed"]) == (50, 3, 1)
