@@ -5,7 +5,6 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.common.constants.app_constants import QuestionType, SubmissionStatus
-from app.components.storage import s3_service
 from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
@@ -19,6 +18,7 @@ from app.common.utils import (
     serialize_docs,
     utcnow,
 )
+from app.components.storage import s3_service
 from app.core.logging import logger
 
 _MATCH = "$match"
@@ -111,6 +111,17 @@ async def get_assessment_stats(db: AsyncIOMotorDatabase, workspace_id: str) -> d
         {"assessment_id": {"$in": assessment_ids}, "created_at": {"$gte": cutoff}}
     )
 
+    # Candidates actively taking a test right now: IN_PROGRESS only (same definition as the
+    # live-monitoring list). ON_HOLD, PENDING, COMPLETED, TERMINATED and MALPRACTICE are excluded.
+    active_candidate_ids = await db.assessment_submissions.distinct(
+        "candidate_id",
+        {
+            "assessment_id": {"$in": assessment_ids},
+            "status": SubmissionStatus.IN_PROGRESS,
+        },
+    )
+    active_now = len(active_candidate_ids)
+
     # Average completion % across all completed submissions
     avg_completion = 0
     async for doc in db.assessment_submissions.aggregate(
@@ -125,6 +136,7 @@ async def get_assessment_stats(db: AsyncIOMotorDatabase, workspace_id: str) -> d
         "total": total,
         "monitoring": monitoring,
         "standard": standard,
+        "active_now": active_now,
         "submissions_30d": submissions_30d,
         "avg_completion": avg_completion,
     }

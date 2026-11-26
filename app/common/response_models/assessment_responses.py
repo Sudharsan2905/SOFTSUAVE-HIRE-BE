@@ -26,6 +26,7 @@ class AssessmentStatsResponse(BaseModel):
     total: int
     monitoring: int
     standard: int
+    active_now: int = 0
     submissions_30d: int
     avg_completion: int
 
