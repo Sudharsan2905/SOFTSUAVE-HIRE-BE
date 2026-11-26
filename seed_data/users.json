@@ -1,0 +1,380 @@
+[
+  {
+    "_id": {
+      "$oid": "d4c33233926db97c61837389"
+    },
+    "first_name": "Aarav",
+    "last_name": "Sharma",
+    "email": "aarav.sharma@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9786579303",
+    "dob": "1991-01-24",
+    "gender": "male",
+    "institution": "Anna University",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-22T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-22T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "394d22a9c8e5e2d474feb868"
+    },
+    "first_name": "Priya",
+    "last_name": "Nair",
+    "email": "priya.nair@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9395310485",
+    "dob": "1993-04-05",
+    "gender": "female",
+    "institution": "TCS",
+    "location": "Kochi, Kerala",
+    "created_at": {
+      "$date": "2026-10-23T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-23T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5ba00f2ff484f3889f7c57c8"
+    },
+    "first_name": "Rohan",
+    "last_name": "Mehta",
+    "email": "rohan.mehta@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9890779946",
+    "dob": "1991-11-24",
+    "gender": "male",
+    "institution": "VIT Vellore",
+    "location": "Vellore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-24T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-24T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5a78ec25f30820068f244292"
+    },
+    "first_name": "Ananya",
+    "last_name": "Iyer",
+    "email": "ananya.iyer@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9685582861",
+    "dob": "1991-10-14",
+    "gender": "female",
+    "institution": "Zoho Corporation",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-25T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-25T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "0c4439258be52648d3fc5a28"
+    },
+    "first_name": "Karthik",
+    "last_name": "Subramanian",
+    "email": "karthik.subramanian@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9134126396",
+    "dob": "1990-02-07",
+    "gender": "male",
+    "institution": "Freshworks",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-26T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-26T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "dbd713fcb71108e2197e63c3"
+    },
+    "first_name": "Sneha",
+    "last_name": "Reddy",
+    "email": "sneha.reddy@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9349817734",
+    "dob": "1998-10-01",
+    "gender": "female",
+    "institution": "NIT Warangal",
+    "location": "Hyderabad, Telangana",
+    "created_at": {
+      "$date": "2026-10-27T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-27T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a225ff4cef6f2f8a0cd97f95"
+    },
+    "first_name": "Vikram",
+    "last_name": "Singh",
+    "email": "vikram.singh@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9702632297",
+    "dob": "1993-12-21",
+    "gender": "male",
+    "institution": "Infosys",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-10-28T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-28T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "f1a2e524ff8ffec6e50bce92"
+    },
+    "first_name": "Divya",
+    "last_name": "Krishnan",
+    "email": "divya.krishnan@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9853041955",
+    "dob": "1998-07-08",
+    "gender": "female",
+    "institution": "PSG College of Technology",
+    "location": "Coimbatore, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-10-29T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-29T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "f627c63c47b33b4f51079117"
+    },
+    "first_name": "Arjun",
+    "last_name": "Patel",
+    "email": "arjun.patel@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9582334538",
+    "dob": "1999-05-26",
+    "gender": "male",
+    "institution": "Wipro",
+    "location": "Pune, Maharashtra",
+    "created_at": {
+      "$date": "2026-10-30T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-30T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "bc0d2acc9c13f3d7af2b4a27"
+    },
+    "first_name": "Meera",
+    "last_name": "Joshi",
+    "email": "meera.joshi@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9106977991",
+    "dob": "2002-03-23",
+    "gender": "female",
+    "institution": "BITS Pilani",
+    "location": "Pilani, Rajasthan",
+    "created_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "478ca3de35757f83ddbd8e4d"
+    },
+    "first_name": "Siddharth",
+    "last_name": "Rao",
+    "email": "siddharth.rao@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9553778756",
+    "dob": "1995-05-05",
+    "gender": "male",
+    "institution": "Thoughtworks",
+    "location": "Bengaluru, Karnataka",
+    "created_at": {
+      "$date": "2026-11-01T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-01T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b62a1c2e2006bb1c79c11669"
+    },
+    "first_name": "Lakshmi",
+    "last_name": "Venkatesh",
+    "email": "lakshmi.venkatesh@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9331191390",
+    "dob": "2002-06-04",
+    "gender": "female",
+    "institution": "SRM Institute",
+    "location": "Chennai, Tamil Nadu",
+    "created_at": {
+      "$date": "2026-11-02T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-02T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "c1951214e0fcfedc4b7a1172"
+    },
+    "first_name": "Imran",
+    "last_name": "Khan",
+    "email": "imran.khan@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "professional",
+    "google_id": null,
+    "phone": "+91 9199585092",
+    "dob": "1996-02-12",
+    "gender": "male",
+    "institution": "HCLTech",
+    "location": "Noida, Uttar Pradesh",
+    "created_at": {
+      "$date": "2026-11-03T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-03T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "0fa7044523cf2c7e83999aea"
+    },
+    "first_name": "Nisha",
+    "last_name": "Thomas",
+    "email": "nisha.thomas@example.com",
+    "password_hash": "$2b$12$jATc5CgzDyxgYGYaYHU9qO5NBlxsUA01ja0mf6JO2HomjWtLneGpi",
+    "role": "candidate",
+    "is_active": true,
+    "email_verified": true,
+    "workspace_ids": [],
+    "default_workspace_id": null,
+    "candidate_type": "student",
+    "google_id": null,
+    "phone": "+91 9469319644",
+    "dob": "1999-05-26",
+    "gender": "female",
+    "institution": "College of Engineering Trivandrum",
+    "location": "Trivandrum, Kerala",
+    "created_at": {
+      "$date": "2026-11-04T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-04T16:51:27Z"
+    }
+  }
+]

@@ -63,6 +63,8 @@ class CreateAssessmentRequest(BaseModel):
     accessibility: AssessmentAccessibility = AssessmentAccessibility.NORMAL
     monitoring_config: MonitoringConfig | None = None
     expected_candidates: int | None = Field(None, ge=1)
+    # Overall percentage a candidate must reach to pass. Optional: defaults to 50 when omitted.
+    pass_percentage: int | None = Field(None, ge=1, le=100)
 
 
 class UpdateAssessmentRequest(BaseModel):
@@ -72,6 +74,7 @@ class UpdateAssessmentRequest(BaseModel):
     accessibility: AssessmentAccessibility | None = None
     monitoring_config: MonitoringConfig | None = None
     expected_candidates: int | None = Field(None, ge=1)
+    pass_percentage: int | None = Field(None, ge=1, le=100)
 
 
 class GenerateExpirableLinkRequest(BaseModel):

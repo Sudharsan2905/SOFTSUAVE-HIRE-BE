@@ -60,15 +60,16 @@ async def calculate_and_store_score(
         result = await score_round(db, target_rd)
         needs_review = bool(result.get("needs_manual_review"))
 
-        total_rounds = len(sub.get("rounds_data", []))
         others = [rd for rd in sub.get("rounds_data", []) if rd.get("round_number") != round_number]
         already_scored = [rd for rd in others if rd.get("score") is not None]
-        cumulative_pct = round(
-            (sum(rd.get("percentage", 0.0) for rd in already_scored) + result["percentage"])
-            / total_rounds,
-            1,
-        )
         cumulative_score = sum(rd.get("score", 0) for rd in already_scored) + result["score"]
+        # Overall percentage = total correct / total questions across *all* rounds (no averaging
+        # of per-round percentages). Rounds not scored yet count toward the denominator, so the
+        # figure only becomes final once every round is scored; pass/fail is only derived then.
+        total_questions = sum(len(rd.get("questions") or []) for rd in sub.get("rounds_data", []))
+        cumulative_pct = (
+            round(cumulative_score / total_questions * 100, 1) if total_questions else 0.0
+        )
         aggregate_review = needs_review or any(rd.get("scoring_needs_review") for rd in others)
 
         now = utcnow()

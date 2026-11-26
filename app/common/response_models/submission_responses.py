@@ -2,7 +2,11 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.common.constants.app_constants import MalpracticeType, SubmissionStatus
+from app.common.constants.app_constants import (
+    MalpracticeType,
+    SubmissionResult,
+    SubmissionStatus,
+)
 from app.common.response_models.user_responses import CandidateProfileResponse
 
 
@@ -77,6 +81,8 @@ class CandidateSubmissionResponse(BaseModel):
     status: SubmissionStatus
     score: int
     percentage: float
+    pass_percentage: int | None = None
+    result: SubmissionResult | None = None
     malpractice_count: int
     reaccess_count: int
     started_at: datetime | None = None

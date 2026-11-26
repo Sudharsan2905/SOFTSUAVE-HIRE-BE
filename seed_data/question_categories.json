@@ -1,0 +1,70 @@
+[
+  {
+    "_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "name": "Python Programming",
+    "description": "Core Python language, data structures and idioms.",
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "question_count": 10,
+    "created_at": {
+      "$date": "2026-10-17T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "name": "JavaScript & React",
+    "description": "Modern JavaScript, browser behaviour and React fundamentals.",
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "question_count": 9,
+    "created_at": {
+      "$date": "2026-10-18T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "name": "SQL & Databases",
+    "description": "Relational concepts, SQL querying and database design.",
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "question_count": 8,
+    "created_at": {
+      "$date": "2026-10-19T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "name": "Quantitative Aptitude",
+    "description": "Numerical ability and logical reasoning for graduate hiring.",
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "question_count": 8,
+    "created_at": {
+      "$date": "2026-10-20T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:51:27Z"
+    }
+  }
+]

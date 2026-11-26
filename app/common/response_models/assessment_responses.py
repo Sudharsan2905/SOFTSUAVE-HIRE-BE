@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, model_validator
 
-from app.common.constants.app_constants import AssessmentAccessibility
+from app.common.constants.app_constants import DEFAULT_PASS_PERCENTAGE, AssessmentAccessibility
 
 
 class MonitoringConfigResponse(BaseModel):
@@ -37,6 +37,9 @@ class SubmissionStatsResponse(BaseModel):
     on_hold: int
     malpractice: int
     avg_percentage: float
+    pass_percentage: int = DEFAULT_PASS_PERCENTAGE
+    passed: int = 0
+    failed: int = 0
 
 
 class AssessmentListItemResponse(BaseModel):
@@ -47,6 +50,7 @@ class AssessmentListItemResponse(BaseModel):
     rounds_count: int
     submission_count: int = 0
     expected_candidates: int | None = None
+    pass_percentage: int = DEFAULT_PASS_PERCENTAGE
     share_link: str
     created_at: datetime
 
