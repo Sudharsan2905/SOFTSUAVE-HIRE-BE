@@ -65,6 +65,28 @@ async def assessment_access(
     return current_user
 
 
+async def verify_assessments_in_workspace(
+    db: AsyncIOMotorDatabase, workspace_id: str, assessment_ids: list[str]
+) -> list[ObjectId]:
+    """Return the ObjectIds of ``assessment_ids`` once every one is verified to be an active
+    assessment of ``workspace_id``.
+
+    For routes that take several assessments at once, where the single-id ``AssessmentGuard``
+    cannot be used. All-or-nothing: one malformed, foreign, missing or soft-deleted id fails the
+    whole request with the same 404, so nothing is revealed about other tenants' objects.
+    Order is kept (duplicates dropped).
+    """
+    oids = list(dict.fromkeys(to_oid(a) for a in assessment_ids))
+    if not oids:
+        raise NotFoundException(_NOT_FOUND)
+    found = await db.assessments.count_documents(
+        {"_id": {"$in": oids}, "workspace_id": to_oid(workspace_id), "is_active": {"$ne": False}}
+    )
+    if found != len(oids):
+        raise NotFoundException(_NOT_FOUND)
+    return oids
+
+
 async def submission_access(
     workspace_id: str, assessment_id: str, submission_id: str, db: DB, current_user: AdminUser
 ) -> dict:
@@ -133,4 +155,5 @@ __all__ = [
     "member_workspace_ids",
     "submission_workspace_id",
     "to_oid",
+    "verify_assessments_in_workspace",
 ]
