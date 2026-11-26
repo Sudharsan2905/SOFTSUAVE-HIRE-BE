@@ -597,3 +597,78 @@ class TestCreateAssessmentPydanticBranches:
             str(super_admin["_id"]),
         )
         assert result["name"] == "Pydantic Test"
+
+
+class TestAssessmentStatsActiveNow:
+    """`active_now` counts candidates currently taking a test (IN_PROGRESS only)."""
+
+    @staticmethod
+    async def _add_submission(db, assessment_id, status, candidate_id=None):
+        from app.common.utils import utcnow
+
+        await db.assessment_submissions.insert_one(
+            {
+                "assessment_id": ObjectId(assessment_id),
+                "candidate_id": candidate_id or ObjectId(),
+                "status": status,
+                "rounds_data": [],
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            }
+        )
+
+    async def test_zero_when_no_submissions(self, db, workspace, assessment):
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+        assert stats["active_now"] == 0
+
+    async def test_counts_only_in_progress(self, db, workspace, assessment):
+        from app.common.constants.app_constants import SubmissionStatus as S
+
+        for status in (
+            S.IN_PROGRESS,
+            S.IN_PROGRESS,
+            S.PENDING,
+            S.COMPLETED,
+            S.ON_HOLD,
+            S.TERMINATED,
+            S.MALPRACTICE,
+        ):
+            await self._add_submission(db, assessment["id"], status)
+
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+        assert stats["active_now"] == 2
+
+    async def test_same_candidate_counted_once(self, db, workspace, assessment):
+        from app.common.constants.app_constants import SubmissionStatus as S
+
+        same = ObjectId()
+        await self._add_submission(db, assessment["id"], S.IN_PROGRESS, same)
+        await self._add_submission(db, assessment["id"], S.IN_PROGRESS, same)
+
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+        assert stats["active_now"] == 1
+
+    async def test_ignores_other_workspaces(self, db, workspace, assessment):
+        from app.common.constants.app_constants import SubmissionStatus as S
+
+        await self._add_submission(db, ObjectId(), S.IN_PROGRESS)  # unrelated assessment
+
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+        assert stats["active_now"] == 0
+
+    async def test_existing_stats_unchanged(self, db, workspace, assessment):
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+        assert stats["total"] == 1
+        assert stats["standard"] == 1
+        assert stats["monitoring"] == 0
+        assert {"submissions_30d", "avg_completion"} <= stats.keys()
+
+    async def test_active_now_survives_route_response_model(self, db, workspace, assessment):
+        """The stats route filters output through AssessmentStatsResponse; active_now must pass."""
+        from app.common.constants.app_constants import SubmissionStatus as S
+        from app.common.response_models.assessment_responses import AssessmentStatsResponse
+
+        await self._add_submission(db, assessment["id"], S.IN_PROGRESS)
+        stats = await assessment_service.get_assessment_stats(db, str(workspace["_id"]))
+
+        assert AssessmentStatsResponse(**stats).model_dump()["active_now"] == 1
