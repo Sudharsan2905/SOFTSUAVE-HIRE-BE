@@ -42,9 +42,14 @@ def _is_scored(submission: dict) -> bool:
     return all(rd.get("score") is not None for rd in submission.get("rounds_data") or [])
 
 
+def is_final(submission: dict) -> bool:
+    """True once a submission is ``completed`` and fully scored, i.e. it can be judged."""
+    return submission.get("status") == SubmissionStatus.COMPLETED and _is_scored(submission)
+
+
 def evaluate_result(submission: dict, pass_percentage: int) -> str | None:
     """Return ``"passed"`` / ``"failed"``, or ``None`` when the submission has no result yet."""
-    if submission.get("status") != SubmissionStatus.COMPLETED or not _is_scored(submission):
+    if not is_final(submission):
         return None
     percentage = float(submission.get("percentage") or 0.0)
     return SubmissionResult.PASSED if percentage >= pass_percentage else SubmissionResult.FAILED

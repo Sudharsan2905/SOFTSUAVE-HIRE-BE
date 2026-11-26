@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, model_validator
 
 from app.common.constants.app_constants import DEFAULT_PASS_PERCENTAGE, AssessmentAccessibility
+from app.common.schemas.pagination import PaginationMeta
 
 
 class MonitoringConfigResponse(BaseModel):
@@ -40,6 +41,60 @@ class SubmissionStatsResponse(BaseModel):
     pass_percentage: int = DEFAULT_PASS_PERCENTAGE
     passed: int = 0
     failed: int = 0
+
+
+class ScoreFilterAssessment(BaseModel):
+    id: str
+    name: str
+
+
+class ScoreFilterSummary(BaseModel):
+    """Counts over every candidate matching the search, before the result filter is applied."""
+
+    total: int = 0
+    completed: int = 0
+    passed: int = 0
+    failed: int = 0
+    incomplete: int = 0
+
+
+class ScoreFilterCandidate(BaseModel):
+    id: str
+    name: str
+    email: str | None = None
+
+
+class ScoreFilterBreakdownItem(BaseModel):
+    """One candidate's state in one selected assessment.
+
+    ``status`` is the submission status, or ``not_attempted`` (no submission) or
+    ``scoring_pending`` (completed, but scoring has not finished).
+    """
+
+    assessment_id: str
+    status: str
+    score: int | None = None
+    total: int | None = None
+    percentage: float | None = None
+
+
+class ScoreFilterRow(BaseModel):
+    candidate: ScoreFilterCandidate
+    completed_count: int
+    combined_score: int | None = None
+    combined_total: int | None = None
+    combined_percentage: float | None = None
+    # "passed" / "failed" (needs a pass percentage), "incomplete", or None (complete, no mark yet)
+    result: str | None = None
+    breakdown: list[ScoreFilterBreakdownItem] = []
+
+
+class ScoreFilterResponse(BaseModel):
+    assessments: list[ScoreFilterAssessment]
+    pass_percentage: float | None = None
+    summary: ScoreFilterSummary
+    candidates: list[ScoreFilterRow]
+    pagination: PaginationMeta
 
 
 class AssessmentListItemResponse(BaseModel):

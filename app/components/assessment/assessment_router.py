@@ -7,18 +7,20 @@ from app.common.constants.messages import ErrorMessages, SuccessMessages
 from app.common.response_models.assessment_responses import (
     AssessmentDetailResponse,
     AssessmentStatsResponse,
+    ScoreFilterResponse,
     ShareLinkResponse,
     SubmissionStatsResponse,
 )
 from app.common.responses import ApiResponse, success_response
 from app.common.router import DefaultResponseRouter
-from app.components.assessment import assessment_service
+from app.components.assessment import assessment_service, score_filter_service
 from app.components.assessment.access import (
     AssessmentGuard,
     CandidateGuard,
     ShareGuard,
     SubmissionGuard,
     WorkspaceGuard,
+    verify_assessments_in_workspace,
 )
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
@@ -46,6 +48,41 @@ async def get_assessment_stats(
 ) -> dict:
     result = await assessment_service.get_assessment_stats(db, workspace_id)
     return success_response(SuccessMessages.ASSESSMENT_STATS_RETRIEVED, result)
+
+
+# Declared before ``/{assessment_id}`` so this fixed path is not captured as an assessment id.
+@router.get(
+    "/score-filter",
+    response_model=ApiResponse[ScoreFilterResponse],
+    dependencies=[WorkspaceGuard],
+)
+async def get_score_filter(
+    workspace_id: str,
+    db: DB,
+    current_user: AdminUser,
+    assessment_ids: Annotated[list[str], Query(min_length=1, max_length=10)],
+    pass_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+    result: Annotated[Literal["all", "passed", "failed", "incomplete"], Query()] = "all",
+    search: Annotated[str | None, Query()] = None,
+    sort_by: Annotated[Literal["combined_percentage", "name"], Query()] = "combined_percentage",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "desc",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> dict:
+    # Every id must be an active assessment of this workspace (all-or-nothing, else 404).
+    assessment_oids = await verify_assessments_in_workspace(db, workspace_id, assessment_ids)
+    data = await score_filter_service.get_score_filter(
+        db,
+        assessment_oids,
+        pass_percentage,
+        result,
+        search,
+        sort_by,
+        sort_order,
+        page,
+        page_size,
+    )
+    return success_response(SuccessMessages.SCORE_FILTER_RETRIEVED, data)
 
 
 @router.get("", dependencies=[WorkspaceGuard])

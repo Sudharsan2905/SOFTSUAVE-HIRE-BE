@@ -38,6 +38,7 @@ class SuccessMessages:
     ASSESSMENTS_RETRIEVED = "Assessments retrieved"
     ASSESSMENT_RETRIEVED = "Assessment retrieved"
     ASSESSMENT_STATS_RETRIEVED = "Assessment stats retrieved"
+    SCORE_FILTER_RETRIEVED = "Score filter results retrieved"
     SHARE_LINK_CREATED = "Share link created"
     PERMANENT_RESTRICTION_UPDATED = "Permanent link restriction updated"
     SHARE_LINK_VALIDATED = "Share link validated"
