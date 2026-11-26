@@ -1,0 +1,299 @@
+[
+  {
+    "_id": {
+      "$oid": "13baee52731c2c015b30e515"
+    },
+    "assessment_id": {
+      "$oid": "1655c74d10c9bfd887681a68"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiMTY1NWM3NGQxMGM5YmZkODg3NjgxYTY4IiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTAtMzFUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0xNVQxNzo1MToyNyJ9.823a83c3605a",
+    "start_time": {
+      "$date": "2026-10-31T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-15T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "8275023132b895ca786e27bf"
+    },
+    "assessment_id": {
+      "$oid": "1655c74d10c9bfd887681a68"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "Campus Drive",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiMTY1NWM3NGQxMGM5YmZkODg3NjgxYTY4IiwibiI6InNlZWQxIiwicyI6IjIwMjYtMTAtMzFUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0xNVQxNzo1MToyNyJ9.f6c9e8298417",
+    "start_time": {
+      "$date": "2026-10-31T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-15T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "1fe83b51827402e1b0128ee9"
+    },
+    "assessment_id": {
+      "$oid": "81035c179afaea8d18a7f6e5"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiODEwMzVjMTc5YWZhZWE4ZDE4YTdmNmU1IiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTEtMDVUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0yMFQxNzo1MToyNyJ9.53b54a908bfa",
+    "start_time": {
+      "$date": "2026-11-05T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-20T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-05T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-05T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "60fbff47269d1d7e601b6728"
+    },
+    "assessment_id": {
+      "$oid": "a5b6bd3db83fb7b12dbe3bc8"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiYTViNmJkM2RiODNmYjdiMTJkYmUzYmM4IiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTEtMDhUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0yM1QxNzo1MToyNyJ9.c0b3750d3626",
+    "start_time": {
+      "$date": "2026-11-08T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-23T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e26faf1afdd62a4247180059"
+    },
+    "assessment_id": {
+      "$oid": "a5b6bd3db83fb7b12dbe3bc8"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "Campus Drive",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiYTViNmJkM2RiODNmYjdiMTJkYmUzYmM4IiwibiI6InNlZWQxIiwicyI6IjIwMjYtMTEtMDhUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0yM1QxNzo1MToyNyJ9.8fe715486092",
+    "start_time": {
+      "$date": "2026-11-08T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-23T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "4a3715e94de432b5c9e1c751"
+    },
+    "assessment_id": {
+      "$oid": "b73967bf8009b1c51df26a76"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiYjczOTY3YmY4MDA5YjFjNTFkZjI2YTc2IiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTEtMTJUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0yN1QxNzo1MToyNyJ9.c3f1ae95d1ca",
+    "start_time": {
+      "$date": "2026-11-12T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-27T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "b71f6a842e1eeb10e1d41fa7"
+    },
+    "assessment_id": {
+      "$oid": "b73967bf8009b1c51df26a76"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "Campus Drive",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiYjczOTY3YmY4MDA5YjFjNTFkZjI2YTc2IiwibiI6InNlZWQxIiwicyI6IjIwMjYtMTEtMTJUMTc6NTE6MjciLCJlIjoiMjAyNi0xMi0yN1QxNzo1MToyNyJ9.a99fa51870ed",
+    "start_time": {
+      "$date": "2026-11-12T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2026-12-27T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "fe81e644ff8b20e2fe64b156"
+    },
+    "assessment_id": {
+      "$oid": "6f29df2cabc8a6cdf6afe43f"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiNmYyOWRmMmNhYmM4YTZjZGY2YWZlNDNmIiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTEtMTdUMTc6NTE6MjciLCJlIjoiMjAyNy0wMS0wMVQxNzo1MToyNyJ9.93f064216968",
+    "start_time": {
+      "$date": "2026-11-17T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2027-01-01T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-17T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-17T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "f2c3bfd10a6b01a732427d70"
+    },
+    "assessment_id": {
+      "$oid": "8bb496f7169971df81f9a71e"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "label": "General Link",
+    "monitoring_overrides": null,
+    "share_link": "eyJhIjoiOGJiNDk2ZjcxNjk5NzFkZjgxZjlhNzFlIiwibiI6InNlZWQwIiwicyI6IjIwMjYtMTEtMjJUMTc6NTE6MjciLCJlIjoiMjAyNy0wMS0wNlQxNzo1MToyNyJ9.de380db90be1",
+    "start_time": {
+      "$date": "2026-11-22T17:51:27Z"
+    },
+    "end_time": {
+      "$date": "2027-01-06T17:51:27Z"
+    },
+    "restrict_candidate_access": false,
+    "restriction_mode": null,
+    "restricted_emails": [],
+    "is_active": true,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-11-22T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-22T16:51:27Z"
+    }
+  }
+]

@@ -233,3 +233,53 @@ class TestReaperReal:
             assert await submission_reaper.reap_expired_submissions(rdb) == 1
         doc = await rdb.assessment_submissions.find_one({"_id": sub["_id"]})
         assert doc["status"] == SubmissionStatus.COMPLETED
+
+
+class TestOverallPercentage:
+    """Overall % = total correct / total questions, not the average of round percentages."""
+
+    @staticmethod
+    def _question():
+        return {
+            "_id": ObjectId(),
+            "question_type": "mcq_single",
+            "options": [
+                {"id": "a", "text": "A", "is_correct": True},
+                {"id": "b", "text": "B", "is_correct": False},
+            ],
+        }
+
+    @staticmethod
+    def _round(number, questions, answers):
+        return {
+            "round_number": number,
+            "questions": [
+                {"id": str(q["_id"]), "type": "mcq_single", "text": "?"} for q in questions
+            ],
+            "answers": {str(q["_id"]): a for q, a in zip(questions, answers, strict=True)},
+            "completed": True,
+        }
+
+    async def test_not_an_average_of_rounds(self, rdb):
+        from app.components.assessment.result import evaluate_result
+        from app.components.scoring import scoring_tasks
+
+        r1 = [self._question()]  # 1 of 1 correct -> round 100%
+        r2 = [self._question() for _ in range(3)]  # 1 of 3 correct -> round 33.3%
+        await rdb.questions.insert_many(r1 + r2)
+        sub = await _sub(
+            rdb,
+            status=SubmissionStatus.COMPLETED,
+            rounds_data=[self._round(1, r1, ["a"]), self._round(2, r2, ["a", "b", "b"])],
+        )
+
+        await scoring_tasks.calculate_and_store_score(rdb, str(sub["_id"]), 1)
+        await scoring_tasks.calculate_and_store_score(rdb, str(sub["_id"]), 2)
+
+        stored = await rdb.assessment_submissions.find_one({"_id": sub["_id"]})
+        # 2 correct of 4 questions = 50.0; averaging the rounds would have given 66.7
+        assert stored["score"] == 2
+        assert stored["percentage"] == 50.0
+        assert stored["scoring_status"] == "scored"
+        assert evaluate_result(stored, 50) == "passed"
+        assert evaluate_result(stored, 51) == "failed"

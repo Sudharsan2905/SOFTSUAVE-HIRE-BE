@@ -33,6 +33,17 @@ class SubmissionStatus(str, Enum):
     MALPRACTICE = "malpractice"
 
 
+class SubmissionResult(str, Enum):
+    """Admin-facing outcome of a finished submission, derived from the assessment pass mark."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+
+
+# Pass mark (overall percentage) applied when an assessment has none configured.
+DEFAULT_PASS_PERCENTAGE = 50
+
+
 class SortOrder(str, Enum):
     ASC = "asc"
     DESC = "desc"

@@ -69,6 +69,7 @@ _PUBLIC_ASSESSMENT_HIDDEN_FIELDS = (
     "restriction_mode",
     "restricted_emails",
     "created_by",
+    "pass_percentage",  # results are admin-only; candidates never see the pass mark
 )
 _MAX_ANSWER_CHARS = 20_000
 _MAX_ANSWER_ITEMS = 50

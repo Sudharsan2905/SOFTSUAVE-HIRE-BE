@@ -4,7 +4,11 @@ from typing import Any
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from app.common.constants.app_constants import QuestionType, SubmissionStatus
+from app.common.constants.app_constants import (
+    DEFAULT_PASS_PERCENTAGE,
+    QuestionType,
+    SubmissionStatus,
+)
 from app.common.constants.messages import ErrorMessages
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import (
@@ -19,6 +23,11 @@ from app.common.utils import (
     utcnow,
 )
 from app.common.validators import is_valid_question_image_key
+from app.components.assessment.result import (
+    effective_pass_percentage,
+    evaluate_result,
+    result_query,
+)
 from app.components.candidate import timing
 from app.components.storage import s3_service
 from app.core.logging import logger
@@ -69,6 +78,7 @@ async def create_assessment(
         "accessibility": data["accessibility"],
         "monitoring_config": monitoring,
         "expected_candidates": data.get("expected_candidates"),
+        "pass_percentage": data.get("pass_percentage") or DEFAULT_PASS_PERCENTAGE,
         "created_by": ObjectId(user_id),
         "is_active": True,
         "created_at": now,
@@ -148,7 +158,13 @@ async def get_submission_stats(db: AsyncIOMotorDatabase, assessment_id: str) -> 
     """Return aggregated submission counts and average percentage for one assessment."""
     assessment_oid = ObjectId(assessment_id)
 
-    result = {"total": 0, "completed": 0, "on_hold": 0, "malpractice": 0, "avg_percentage": 0.0}
+    result: dict[str, Any] = {
+        "total": 0,
+        "completed": 0,
+        "on_hold": 0,
+        "malpractice": 0,
+        "avg_percentage": 0.0,
+    }
 
     async for doc in db.assessment_submissions.aggregate(
         [
@@ -172,6 +188,19 @@ async def get_submission_stats(db: AsyncIOMotorDatabase, assessment_id: str) -> 
             "malpractice": doc["malpractice"],
             "avg_percentage": round(doc.get("avg_percentage") or 0.0, 1),
         }
+
+    # Pass / fail counts are derived from the assessment's current pass mark.
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": assessment_oid}, {"pass_percentage": 1})
+    )
+    base = {"assessment_id": assessment_oid, "is_active": {"$ne": False}}
+    result["pass_percentage"] = pass_percentage
+    result["passed"] = await db.assessment_submissions.count_documents(
+        {**base, **result_query(pass_percentage, passed=True)}
+    )
+    result["failed"] = await db.assessment_submissions.count_documents(
+        {**base, **result_query(pass_percentage, passed=False)}
+    )
 
     return result
 
@@ -209,6 +238,7 @@ async def get_assessments(
         doc["submission_count"] = await db.assessment_submissions.count_documents(
             {"assessment_id": doc["_id"]}
         )
+        doc["pass_percentage"] = effective_pass_percentage(doc)
 
     return {
         "assessments": serialize_docs(docs),
@@ -227,6 +257,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
     )
     if not doc:
         raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
+    doc["pass_percentage"] = effective_pass_percentage(doc)
     return serialize_doc(doc)
 
 
@@ -257,11 +288,14 @@ async def update_assessment(
         update["monitoring_config"] = mc.model_dump() if hasattr(mc, "model_dump") else mc
     if data.get("expected_candidates") is not None:
         update["expected_candidates"] = data["expected_candidates"]
+    if data.get("pass_percentage") is not None:
+        update["pass_percentage"] = data["pass_percentage"]
 
     await db.assessments.update_one({"_id": ObjectId(assessment_id)}, {"$set": update})
-    return serialize_doc(
-        await db.assessments.find_one({"_id": ObjectId(assessment_id), "is_active": True})
-    )
+    updated = await db.assessments.find_one({"_id": ObjectId(assessment_id), "is_active": True})
+    if updated:
+        updated["pass_percentage"] = effective_pass_percentage(updated)
+    return serialize_doc(updated)
 
 
 async def delete_assessment(
@@ -483,7 +517,14 @@ async def get_submissions(
     pipeline += [{"$sort": {sort_field: sort_dir}}, {"$skip": skip}, {"$limit": limit}]
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(limit)
 
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
+    )
+    for d in docs:
+        d["result"] = evaluate_result(d, pass_percentage)
+
     return {
+        "pass_percentage": pass_percentage,
         "submissions": serialize_docs(docs),
         "pagination": build_pagination_meta(total, page, page_size),
     }
@@ -562,6 +603,12 @@ async def get_submission_detail(db: AsyncIOMotorDatabase, submission_id: str) ->
     candidate = await db.users.find_one({"_id": sub["candidate_id"]}, {"password_hash": 0})
     result = serialize_doc(sub)
     result["candidate"] = serialize_doc(candidate)
+
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": sub.get("assessment_id")}, {"pass_percentage": 1})
+    )
+    result["pass_percentage"] = pass_percentage
+    result["result"] = evaluate_result(sub, pass_percentage)
 
     all_qids = [
         ObjectId(q["id"])
@@ -743,6 +790,8 @@ async def export_submissions(
                 "phone": "$candidate.phone",
                 "percentage": 1,
                 "status": 1,
+                "scoring_status": 1,
+                "scoring_completed_at": 1,
                 "started_at": 1,
                 "completed_at": 1,
                 "rounds": {
@@ -761,6 +810,14 @@ async def export_submissions(
     pipeline.append({"$sort": {sort_field: sort_dir}})
 
     docs = await db.assessment_submissions.aggregate(pipeline).to_list(10000)
+
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": ObjectId(assessment_id)}, {"pass_percentage": 1})
+    )
+    for d in docs:
+        d["result"] = evaluate_result(d, pass_percentage)
+        d.pop("scoring_status", None)
+        d.pop("scoring_completed_at", None)
     return serialize_docs(docs)
 
 

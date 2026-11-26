@@ -10,6 +10,7 @@ from app.common.constants.app_constants import (
 from app.common.exceptions import ForbiddenException, NotFoundException
 from app.common.utils import serialize_doc, utcnow
 from app.common.validators import is_valid_question_image_key
+from app.components.assessment.result import effective_pass_percentage, evaluate_result
 from app.components.storage import s3_service
 from app.core.config import settings
 from app.core.logging import logger
@@ -362,6 +363,11 @@ async def get_candidate_submission(
     # current_version is the max version number (= reaccess_count on live submission)
     current_version: int = sub.get("reaccess_count", 0)
 
+    # Pass mark of the assessment; the pass/fail result is derived, never stored.
+    pass_percentage = effective_pass_percentage(
+        await db.assessments.find_one({"_id": sub["assessment_id"]}, {"pass_percentage": 1})
+    )
+
     # ---------- HISTORICAL VERSION ----------
     if version != "current":
         try:
@@ -394,6 +400,8 @@ async def get_candidate_submission(
             "status": hist.get("status"),
             "score": hist.get("score", 0),
             "percentage": hist.get("percentage", 0.0),
+            "pass_percentage": pass_percentage,
+            "result": None,  # archived attempts are not evaluated; only the live attempt is
             "malpractice_count": hist.get("malpractice_count", 0),
             "reaccess_count": hist.get("reaccess_count", 0),
             "started_at": _iso(hist.get("started_at")),
@@ -435,6 +443,8 @@ async def get_candidate_submission(
         "status": sub.get("status"),
         "score": sub.get("score", 0),
         "percentage": sub.get("percentage", 0.0),
+        "pass_percentage": pass_percentage,
+        "result": evaluate_result(sub, pass_percentage),
         "malpractice_count": sub.get("malpractice_count", 0),
         "reaccess_count": sub.get("reaccess_count", 0),
         "started_at": _iso(sub.get("started_at")),

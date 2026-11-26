@@ -1,0 +1,398 @@
+[
+  {
+    "_id": {
+      "$oid": "1655c74d10c9bfd887681a68"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Python Developer Screening",
+    "description": "First-level screening for Python developer applicants: language fundamentals followed by a short aptitude round.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 8,
+        "max_duration_minutes": 20,
+        "question_ids": [
+          {
+            "$oid": "0318fdda196ac9e5022ebd94"
+          },
+          {
+            "$oid": "a8d7d546f543e8a3f4610210"
+          },
+          {
+            "$oid": "91af0191b2dd1f7f44a20e0e"
+          },
+          {
+            "$oid": "e0eaca4fc7c92d23705479d0"
+          },
+          {
+            "$oid": "9e036f67adbc98ac57205411"
+          },
+          {
+            "$oid": "87eb65c8fe9d32cd773411ba"
+          },
+          {
+            "$oid": "c30db43c249f9672a2fb1280"
+          },
+          {
+            "$oid": "fa9c2190798e12507eac525d"
+          }
+        ]
+      },
+      {
+        "round_number": 2,
+        "question_count": 5,
+        "max_duration_minutes": 15,
+        "question_ids": [
+          {
+            "$oid": "01c7ffd32ca476b2ffcdafe5"
+          },
+          {
+            "$oid": "494f2ea8bd581e609276bc8a"
+          },
+          {
+            "$oid": "23e6f1a041e8b71b90400099"
+          },
+          {
+            "$oid": "c489ad2e2f2e98f47db81616"
+          },
+          {
+            "$oid": "d096d524b8dd22892da5b7cb"
+          }
+        ]
+      }
+    ],
+    "accessibility": "normal",
+    "monitoring_config": null,
+    "expected_candidates": 40,
+    "pass_percentage": 50,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-31T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiMTY1NWM3NGQxMGM5YmZkODg3NjgxYTY4In0.91eb95329f7d"
+  },
+  {
+    "_id": {
+      "$oid": "81035c179afaea8d18a7f6e5"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Full-Stack JavaScript Assessment",
+    "description": "Proctored assessment covering core JavaScript semantics and React fundamentals for full-stack roles.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 8,
+        "max_duration_minutes": 30,
+        "question_ids": [
+          {
+            "$oid": "52d3333ff32d43080a9e3f0a"
+          },
+          {
+            "$oid": "d9d13e880cf48aebed3de53e"
+          },
+          {
+            "$oid": "551ca7b7f768bcc0ee66a82c"
+          },
+          {
+            "$oid": "2d1efb053cd062e0b386882b"
+          },
+          {
+            "$oid": "203125a6edbec8cc9af04206"
+          },
+          {
+            "$oid": "8c426bccce33b59a146e3fa3"
+          },
+          {
+            "$oid": "5221b2666b11f95717e96b6f"
+          },
+          {
+            "$oid": "146a1b7481cdd8f607c59276"
+          }
+        ]
+      }
+    ],
+    "accessibility": "monitoring",
+    "monitoring_config": {
+      "tab_monitoring": true,
+      "audio_monitoring": true,
+      "video_monitoring": true,
+      "screenshot_enabled": true,
+      "screenshot_mode": "time_interval",
+      "screenshot_interval_seconds": 60,
+      "screenshot_count": null
+    },
+    "expected_candidates": 25,
+    "pass_percentage": 60,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-05T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-05T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiODEwMzVjMTc5YWZhZWE4ZDE4YTdmNmU1In0.775aceabcd8c"
+  },
+  {
+    "_id": {
+      "$oid": "a5b6bd3db83fb7b12dbe3bc8"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Data & SQL Fundamentals",
+    "description": "Tests querying fundamentals, joins, transactions and database design basics.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 7,
+        "max_duration_minutes": 25,
+        "question_ids": [
+          {
+            "$oid": "cc4511f2d7064d93b7194d1a"
+          },
+          {
+            "$oid": "e41b8d4b5c10c81f8bccb3ba"
+          },
+          {
+            "$oid": "612190d7455698c2ad82c286"
+          },
+          {
+            "$oid": "e128e663b68552f90b32a7c3"
+          },
+          {
+            "$oid": "9a00f10040226155631c7b5f"
+          },
+          {
+            "$oid": "d8250d121bed38a233c4c80e"
+          },
+          {
+            "$oid": "bad43be4431b6b98958e982d"
+          }
+        ]
+      }
+    ],
+    "accessibility": "normal",
+    "monitoring_config": null,
+    "expected_candidates": 30,
+    "pass_percentage": 40,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-08T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiYTViNmJkM2RiODNmYjdiMTJkYmUzYmM4In0.eba65b12d648"
+  },
+  {
+    "_id": {
+      "$oid": "b73967bf8009b1c51df26a76"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Graduate Engineer Trainee - Aptitude Test",
+    "description": "Campus-drive aptitude test: speed, work, percentage and series reasoning.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 8,
+        "max_duration_minutes": 20,
+        "question_ids": [
+          {
+            "$oid": "01c7ffd32ca476b2ffcdafe5"
+          },
+          {
+            "$oid": "494f2ea8bd581e609276bc8a"
+          },
+          {
+            "$oid": "23e6f1a041e8b71b90400099"
+          },
+          {
+            "$oid": "c489ad2e2f2e98f47db81616"
+          },
+          {
+            "$oid": "d096d524b8dd22892da5b7cb"
+          },
+          {
+            "$oid": "0c813f3ed2635572ea7d7369"
+          },
+          {
+            "$oid": "e1cf00b8f762781778c5d7ad"
+          },
+          {
+            "$oid": "ea5a318e8c433282f46ff3b6"
+          }
+        ]
+      }
+    ],
+    "accessibility": "normal",
+    "monitoring_config": null,
+    "expected_candidates": 100,
+    "pass_percentage": 50,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-12T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiYjczOTY3YmY4MDA5YjFjNTFkZjI2YTc2In0.fd83477461c2"
+  },
+  {
+    "_id": {
+      "$oid": "6f29df2cabc8a6cdf6afe43f"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Frontend Engineer - React Proctored Test",
+    "description": "Two-round proctored test on JavaScript fundamentals and React performance hooks.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 3,
+        "max_duration_minutes": 20,
+        "question_ids": [
+          {
+            "$oid": "52d3333ff32d43080a9e3f0a"
+          },
+          {
+            "$oid": "d9d13e880cf48aebed3de53e"
+          },
+          {
+            "$oid": "551ca7b7f768bcc0ee66a82c"
+          }
+        ]
+      },
+      {
+        "round_number": 2,
+        "question_count": 5,
+        "max_duration_minutes": 20,
+        "question_ids": [
+          {
+            "$oid": "2d1efb053cd062e0b386882b"
+          },
+          {
+            "$oid": "203125a6edbec8cc9af04206"
+          },
+          {
+            "$oid": "8c426bccce33b59a146e3fa3"
+          },
+          {
+            "$oid": "5221b2666b11f95717e96b6f"
+          },
+          {
+            "$oid": "146a1b7481cdd8f607c59276"
+          }
+        ]
+      }
+    ],
+    "accessibility": "monitoring",
+    "monitoring_config": {
+      "tab_monitoring": true,
+      "audio_monitoring": false,
+      "video_monitoring": true,
+      "screenshot_enabled": true,
+      "screenshot_mode": "count",
+      "screenshot_interval_seconds": null,
+      "screenshot_count": 5
+    },
+    "expected_candidates": 15,
+    "pass_percentage": 70,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-17T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-17T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiNmYyOWRmMmNhYmM4YTZjZGY2YWZlNDNmIn0.459e97498505"
+  },
+  {
+    "_id": {
+      "$oid": "8bb496f7169971df81f9a71e"
+    },
+    "workspace_id": {
+      "$oid": "6b06f4acc37c2b5d330a5232"
+    },
+    "name": "Senior Backend Engineer - Technical Round",
+    "description": "Advanced Python and SQL MCQs followed by written explanations, scored against model answers.",
+    "rounds": [
+      {
+        "round_number": 1,
+        "question_count": 3,
+        "max_duration_minutes": 25,
+        "question_ids": [
+          {
+            "$oid": "fa9c2190798e12507eac525d"
+          },
+          {
+            "$oid": "55c2563cca3e3d3b1fc3e01e"
+          },
+          {
+            "$oid": "bad43be4431b6b98958e982d"
+          }
+        ]
+      },
+      {
+        "round_number": 2,
+        "question_count": 2,
+        "max_duration_minutes": 40,
+        "question_ids": [
+          {
+            "$oid": "d557c7ff1ec5c7f39fb78082"
+          },
+          {
+            "$oid": "186cc4c5dac17a888c0b0624"
+          }
+        ]
+      }
+    ],
+    "accessibility": "monitoring",
+    "monitoring_config": {
+      "tab_monitoring": true,
+      "audio_monitoring": true,
+      "video_monitoring": true,
+      "screenshot_enabled": true,
+      "screenshot_mode": "time_interval",
+      "screenshot_interval_seconds": 60,
+      "screenshot_count": null
+    },
+    "expected_candidates": 10,
+    "pass_percentage": 65,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "is_active": true,
+    "created_at": {
+      "$date": "2026-11-22T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-11-22T16:51:27Z"
+    },
+    "share_link": "eyJhIjoiOGJiNDk2ZjcxNjk5NzFkZjgxZjlhNzFlIn0.caca376912ce"
+  }
+]

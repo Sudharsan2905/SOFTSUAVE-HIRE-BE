@@ -42,6 +42,8 @@ max-complexity = 15
 "app/common/exceptions.py" = ["N818"]
 "app/common/services/email_service.py" = ["E501"]
 "app/components/auth/auth_service.py" = ["B904"]
+# Demo-data generator: long literal question text, a throwaway demo password, non-crypto random
+"scripts/seed_data.py" = ["E501", "S105", "S311"]
 
 [tool.ruff.format]
 quote-style = "double"

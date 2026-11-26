@@ -1,0 +1,1479 @@
+[
+  {
+    "_id": {
+      "$oid": "0318fdda196ac9e5022ebd94"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "Which of the following Python data types is immutable?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "list",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "tuple",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "dict",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "set",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a8d7d546f543e8a3f4610210"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "What does len({1, 2, 2, 3}) return?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "2",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "3",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "4",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "It raises an error",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:52:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:52:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "91af0191b2dd1f7f44a20e0e"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "Which keyword turns a normal function into a generator function?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "return",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "async",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "yield",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "lambda",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:53:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:53:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e0eaca4fc7c92d23705479d0"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "What is the output of print(2 ** 3 ** 2)?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "64",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "512",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "256",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "36",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:54:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:54:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "9e036f67adbc98ac57205411"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "Which of the following create a shallow copy of a list `a`?",
+    "question_type": "mcq_multi",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "a[:]",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "list(a)",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "a.copy()",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "b = a",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:55:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:55:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "87eb65c8fe9d32cd773411ba"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "What is the average-case time complexity of looking up a key in a Python dict?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "O(1)",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "O(log n)",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "O(n)",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "O(n log n)",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:56:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:56:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "c30db43c249f9672a2fb1280"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "What does the @staticmethod decorator do?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "Defines a method that does not receive the instance or class implicitly",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "Defines a method that receives the class as its first argument",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "Makes the method run only once",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "Prevents the method from being overridden",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:57:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:57:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "fa9c2190798e12507eac525d"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "What does this print?\n\ndef f(x, acc=[]):\n    acc.append(x)\n    return acc\n\nf(1)\nprint(f(2))",
+    "question_type": "mcq_single",
+    "complexity": "high",
+    "options": [
+      {
+        "id": "a",
+        "text": "[2]",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "[1, 2]",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "[1]",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "None",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:58:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:58:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "55c2563cca3e3d3b1fc3e01e"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "Which statement about the GIL (Global Interpreter Lock) in CPython is correct?",
+    "question_type": "mcq_single",
+    "complexity": "high",
+    "options": [
+      {
+        "id": "a",
+        "text": "It lets multiple threads execute Python bytecode truly in parallel",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "It allows only one thread to execute Python bytecode at a time",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "It only affects multiprocessing",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "It was removed in Python 3.0",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T16:59:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T16:59:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "d557c7ff1ec5c7f39fb78082"
+    },
+    "category_id": {
+      "$oid": "66b5d124deed6e7179a9c9a2"
+    },
+    "question_text": "Explain the difference between a list and a generator in Python, and describe a situation where a generator is the better choice.",
+    "question_type": "essay",
+    "complexity": "high",
+    "options": [],
+    "correct_answer": "A list stores all of its elements in memory and supports indexing and repeated iteration. A generator produces values lazily, one at a time, keeping only its state in memory, and can be consumed once. Generators are preferable for large or unbounded sequences, streaming data or pipelines (for example reading a multi-GB log file line by line) because they use constant memory.",
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-17T17:00:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-17T17:00:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "52d3333ff32d43080a9e3f0a"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "Which React hook is used to run side effects in a function component?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "useState",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "useEffect",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "useRef",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "useContext",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "d9d13e880cf48aebed3de53e"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "Which statement about `let` and `var` is correct?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "let is block-scoped, var is function-scoped",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "var is block-scoped, let is function-scoped",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "Both are block-scoped",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "Both are function-scoped",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:52:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:52:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "551ca7b7f768bcc0ee66a82c"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "What is the purpose of the `key` prop when rendering a list in React?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "It applies CSS styles to list items",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "It helps React identify which items changed, were added or removed",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "It encrypts the list data",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "It sorts the list automatically",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:53:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:53:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "2d1efb053cd062e0b386882b"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "What does `typeof null` return in JavaScript?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "\"null\"",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "\"undefined\"",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "\"object\"",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "\"number\"",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:54:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:54:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "203125a6edbec8cc9af04206"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "What does `0.1 + 0.2 === 0.3` evaluate to?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "true",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "false",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "undefined",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "It throws a TypeError",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:55:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:55:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "8c426bccce33b59a146e3fa3"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "Which of the following values are falsy in JavaScript?",
+    "question_type": "mcq_multi",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "0",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "\"\" (empty string)",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "NaN",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "[] (empty array)",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:56:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:56:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "5221b2666b11f95717e96b6f"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "Which hook memoizes the result of an expensive computation between renders?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "useCallback",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "useMemo",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "useReducer",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "useLayoutEffect",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:57:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:57:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "146a1b7481cdd8f607c59276"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "What happens when you call [].reduce((a, b) => a + b) with no initial value?",
+    "question_type": "mcq_single",
+    "complexity": "high",
+    "options": [
+      {
+        "id": "a",
+        "text": "It returns 0",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "It returns undefined",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "It throws a TypeError",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "It returns NaN",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:58:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:58:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "a420ddf2b5bb2e8f6d5969aa"
+    },
+    "category_id": {
+      "$oid": "ea510bfec4479ba5c630f322"
+    },
+    "question_text": "Explain how React's virtual DOM improves rendering performance, and mention one case where it does not help.",
+    "question_type": "essay",
+    "complexity": "medium",
+    "options": [],
+    "correct_answer": "React keeps a lightweight in-memory tree of the UI. On state changes it builds a new tree, diffs it against the previous one (reconciliation) and applies only the minimal set of real DOM updates, batching them. It does not help when a component re-renders expensively on every change with large lists without keys or memoization, or when the cost is in computation or layout rather than in DOM writes.",
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-18T16:59:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-18T16:59:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "cc4511f2d7064d93b7194d1a"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Which SQL clause filters groups after a GROUP BY aggregation?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "WHERE",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "HAVING",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "ORDER BY",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "LIMIT",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e41b8d4b5c10c81f8bccb3ba"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Which JOIN returns all rows from the left table and the matching rows from the right table?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "INNER JOIN",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "LEFT JOIN",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "CROSS JOIN",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "SELF JOIN",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:52:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:52:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "612190d7455698c2ad82c286"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "What is the difference between COUNT(*) and COUNT(column)?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "There is no difference",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "COUNT(column) ignores NULL values, COUNT(*) does not",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "COUNT(*) ignores NULL values, COUNT(column) does not",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "COUNT(column) counts only distinct values",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:53:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:53:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e128e663b68552f90b32a7c3"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Which of the following are part of the ACID properties?",
+    "question_type": "mcq_multi",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "Atomicity",
+        "is_correct": true
+      },
+      {
+        "id": "b",
+        "text": "Isolation",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "Durability",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "Availability",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:54:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:54:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "9a00f10040226155631c7b5f"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Which index structure is the default in most relational databases such as PostgreSQL and MySQL (InnoDB)?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "Hash index",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "B-tree",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "Bitmap index",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "Trie",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:55:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:55:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "d8250d121bed38a233c4c80e"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Which normal form eliminates transitive dependencies?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "1NF",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "2NF",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "3NF",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "BCNF only",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:56:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:56:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "bad43be4431b6b98958e982d"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "What does `SELECT NULL = NULL` return in standard SQL?",
+    "question_type": "mcq_single",
+    "complexity": "high",
+    "options": [
+      {
+        "id": "a",
+        "text": "TRUE",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "FALSE",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "NULL (unknown)",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "An error",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:57:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:57:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "186cc4c5dac17a888c0b0624"
+    },
+    "category_id": {
+      "$oid": "ea02aa5f647cdd4020a1e951"
+    },
+    "question_text": "Explain what a database index is and the trade-offs of adding many indexes to a write-heavy table.",
+    "question_type": "essay",
+    "complexity": "high",
+    "options": [],
+    "correct_answer": "An index is an auxiliary data structure (commonly a B-tree) that lets the database find rows without scanning the whole table, speeding up lookups, joins and sorts. The trade-off is that every INSERT, UPDATE and DELETE must also maintain each index, which slows writes, and indexes consume extra storage. On write-heavy tables you should index only columns that are actually queried.",
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-19T16:58:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-19T16:58:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "01c7ffd32ca476b2ffcdafe5"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "A train covers 120 km in 2 hours. At the same speed, how long will it take to cover 300 km?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "4 hours",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "5 hours",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "6 hours",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "7.5 hours",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:51:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:51:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "494f2ea8bd581e609276bc8a"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "What is the next number in the series 2, 6, 12, 20, 30, ?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "40",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "42",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "44",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "36",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:52:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:52:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "23e6f1a041e8b71b90400099"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "5 workers finish a job in 12 days. How many days will 10 workers take, working at the same rate?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "3",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "6",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "10",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "24",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:53:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:53:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "c489ad2e2f2e98f47db81616"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "What is 15% of 240?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "30",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "32",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "36",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "40",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:54:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:54:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "d096d524b8dd22892da5b7cb"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "What is the average of 10, 20, 30, 40 and 50?",
+    "question_type": "mcq_single",
+    "complexity": "low",
+    "options": [
+      {
+        "id": "a",
+        "text": "25",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "30",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "35",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "150",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:55:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:55:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "0c813f3ed2635572ea7d7369"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "A shopkeeper buys an item for Rs. 800 and sells it for Rs. 920. What is the profit percentage?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "12%",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "14%",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "15%",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "18%",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:56:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:56:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "e1cf00b8f762781778c5d7ad"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "A can finish a task in 10 days and B can finish it in 15 days. How many days will they take working together?",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "5",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "6",
+        "is_correct": true
+      },
+      {
+        "id": "c",
+        "text": "7.5",
+        "is_correct": false
+      },
+      {
+        "id": "d",
+        "text": "12.5",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:57:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:57:27Z"
+    }
+  },
+  {
+    "_id": {
+      "$oid": "ea5a318e8c433282f46ff3b6"
+    },
+    "category_id": {
+      "$oid": "d8c1c9e197fe9bcd80648fc7"
+    },
+    "question_text": "Find the odd one out: 2, 3, 5, 9, 11, 13",
+    "question_type": "mcq_single",
+    "complexity": "medium",
+    "options": [
+      {
+        "id": "a",
+        "text": "2",
+        "is_correct": false
+      },
+      {
+        "id": "b",
+        "text": "5",
+        "is_correct": false
+      },
+      {
+        "id": "c",
+        "text": "9",
+        "is_correct": true
+      },
+      {
+        "id": "d",
+        "text": "13",
+        "is_correct": false
+      }
+    ],
+    "correct_answer": null,
+    "image_key": null,
+    "created_by": {
+      "$oid": "6b06f47cc37c2b5d330a522f"
+    },
+    "created_at": {
+      "$date": "2026-10-20T16:58:27Z"
+    },
+    "updated_at": {
+      "$date": "2026-10-20T16:58:27Z"
+    }
+  }
+]
