@@ -49,7 +49,7 @@ class ScoreFilterAssessment(BaseModel):
 
 
 class ScoreFilterSummary(BaseModel):
-    """Counts over every candidate matching the search, before the result filter is applied."""
+    """Counts over every entry matching the search, before the result filter is applied."""
 
     total: int = 0
     completed: int = 0
@@ -64,36 +64,29 @@ class ScoreFilterCandidate(BaseModel):
     email: str | None = None
 
 
-class ScoreFilterBreakdownItem(BaseModel):
-    """One candidate's state in one selected assessment.
+class ScoreFilterEntry(BaseModel):
+    """One candidate's submission in one selected assessment (a flat row).
 
-    ``status`` is the submission status, or ``not_attempted`` (no submission) or
-    ``scoring_pending`` (completed, but scoring has not finished).
+    A candidate who took several of the selected assessments appears once per assessment.
+    ``status`` is the submission status, or ``scoring_pending`` (completed, but scoring has not
+    finished). ``score`` / ``total`` / ``percentage`` are only set once the submission is final.
     """
 
-    assessment_id: str
+    candidate: ScoreFilterCandidate
+    assessment: ScoreFilterAssessment
     status: str
     score: int | None = None
     total: int | None = None
     percentage: float | None = None
-
-
-class ScoreFilterRow(BaseModel):
-    candidate: ScoreFilterCandidate
-    completed_count: int
-    combined_score: int | None = None
-    combined_total: int | None = None
-    combined_percentage: float | None = None
-    # "passed" / "failed" (needs a pass percentage), "incomplete", or None (complete, no mark yet)
+    # "passed" / "failed" (needs a pass percentage), "incomplete", or None (final, no mark yet)
     result: str | None = None
-    breakdown: list[ScoreFilterBreakdownItem] = []
 
 
 class ScoreFilterResponse(BaseModel):
     assessments: list[ScoreFilterAssessment]
     pass_percentage: float | None = None
     summary: ScoreFilterSummary
-    candidates: list[ScoreFilterRow]
+    entries: list[ScoreFilterEntry]
     pagination: PaginationMeta
 
 

@@ -64,7 +64,7 @@ async def get_score_filter(
     pass_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
     result: Annotated[Literal["all", "passed", "failed", "incomplete"], Query()] = "all",
     search: Annotated[str | None, Query()] = None,
-    sort_by: Annotated[Literal["combined_percentage", "name"], Query()] = "combined_percentage",
+    sort_by: Annotated[Literal["percentage", "name"], Query()] = "percentage",
     sort_order: Annotated[Literal["asc", "desc"], Query()] = "desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -83,6 +83,26 @@ async def get_score_filter(
         page_size,
     )
     return success_response(SuccessMessages.SCORE_FILTER_RETRIEVED, data)
+
+
+# Same shape as ``/{assessment_id}/submissions/export``: every match, unpaged, as flat rows.
+@router.get("/score-filter/export", dependencies=[WorkspaceGuard])
+async def export_score_filter(
+    workspace_id: str,
+    db: DB,
+    current_user: AdminUser,
+    assessment_ids: Annotated[list[str], Query(min_length=1, max_length=10)],
+    pass_percentage: Annotated[float | None, Query(ge=0, le=100)] = None,
+    result: Annotated[Literal["all", "passed", "failed", "incomplete"], Query()] = "all",
+    search: Annotated[str | None, Query()] = None,
+    sort_by: Annotated[Literal["percentage", "name"], Query()] = "percentage",
+    sort_order: Annotated[Literal["asc", "desc"], Query()] = "desc",
+) -> dict:
+    assessment_oids = await verify_assessments_in_workspace(db, workspace_id, assessment_ids)
+    data = await score_filter_service.export_score_filter(
+        db, assessment_oids, pass_percentage, result, search, sort_by, sort_order
+    )
+    return success_response(SuccessMessages.EXPORT_READY, data)
 
 
 @router.get("", dependencies=[WorkspaceGuard])
