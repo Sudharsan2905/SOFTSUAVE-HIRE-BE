@@ -386,9 +386,15 @@ async def start_assessment(db: AsyncIOMotorDatabase, share_link: str, candidate_
         first_round["started_at"] = now
         timer_fields = timing.provisional_round_fields(now, first_round)
 
+    # New participants join the assessment's newest batch (Batch-1 until another is created).
+    from app.components.assessment.assessment_service import ensure_default_batch
+
+    await ensure_default_batch(db, assessment)
+
     submission = {
         "assessment_id": assessment["_id"],
         "candidate_id": ObjectId(candidate_id),
+        "batch": assessment["batch"][-1]["bId"],
         "share_id": ObjectId(share_doc["_id"]) if share_doc else None,
         "monitoring_details": monitoring_details,
         "status": SubmissionStatus.IN_PROGRESS,

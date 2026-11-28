@@ -20,7 +20,7 @@ class MonitoringConfig(BaseModel):
     video_monitoring: bool = True
     screenshot_enabled: bool = True
     screenshot_mode: str = Field("time_interval", pattern="^(time_interval|count)$")
-    screenshot_interval_seconds: int | None = Field(None, ge=5)
+    screenshot_interval_seconds: int | None = Field(None, ge=20)
     screenshot_count: int | None = Field(None, ge=1)
 
     @model_validator(mode="after")
@@ -45,7 +45,7 @@ class CandidateMonitoringOverrides(BaseModel):
     video_monitoring: bool | None = None
     screenshot_enabled: bool | None = None
     screenshot_mode: str | None = Field(None, pattern="^(time_interval|count)$")
-    screenshot_interval_seconds: int | None = Field(None, ge=5)
+    screenshot_interval_seconds: int | None = Field(None, ge=20)
     screenshot_count: int | None = Field(None, ge=1)
 
 
@@ -75,6 +75,15 @@ class UpdateAssessmentRequest(BaseModel):
     monitoring_config: MonitoringConfig | None = None
     expected_candidates: int | None = Field(None, ge=1)
     pass_percentage: int | None = Field(None, ge=1, le=100)
+
+
+class CreateBatchRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=50)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_name(cls, v: object) -> object:
+        return v.strip() if isinstance(v, str) else v
 
 
 class GenerateExpirableLinkRequest(BaseModel):
