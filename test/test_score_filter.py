@@ -1,4 +1,4 @@
-"""Score Filter: combined score across several assessments judged against one pass mark."""
+"""Score Filter: a flat list of submissions across several assessments, judged against one mark."""
 
 import pytest
 from bson import ObjectId
@@ -63,22 +63,40 @@ async def _sub(db, assessment_id, candidate_id, correct, total, **overrides):
     await db.assessment_submissions.insert_one(doc)
 
 
-async def _run(db, oids, **kw):
-    args = {
+def _args(**kw):
+    return {
         "pass_percentage": None,
         "result": "all",
         "search": None,
-        "sort_by": "combined_percentage",
+        "sort_by": "percentage",
         "sort_order": "desc",
-        "page": 1,
-        "page_size": 20,
         **kw,
     }
+
+
+async def _run(db, oids, **kw):
+    args = {"page": 1, "page_size": 20, **_args(**kw)}
     return await score_filter_service.get_score_filter(db, [ObjectId(o) for o in oids], **args)
 
 
-def _by_name(data):
-    return {c["candidate"]["name"]: c for c in data["candidates"]}
+async def _export(db, oids, **kw):
+    return await score_filter_service.export_score_filter(
+        db, [ObjectId(o) for o in oids], **_args(**kw)
+    )
+
+
+def _pairs(data):
+    """(candidate, assessment) of each entry, in order."""
+    return [(e["candidate"]["name"], e["assessment"]["name"]) for e in data["entries"]]
+
+
+def _entry(data, candidate, assessment):
+    (match,) = [
+        e
+        for e in data["entries"]
+        if e["candidate"]["name"] == candidate and e["assessment"]["name"] == assessment
+    ]
+    return match
 
 
 @pytest.fixture
@@ -88,64 +106,82 @@ async def two(db, workspace, super_admin):
     return a["id"], b["id"]
 
 
-# ── combined score ───────────────────────────────────────────────────────────
+# ── flat entries ─────────────────────────────────────────────────────────────
 
 
-class TestCombinedScore:
-    async def test_total_correct_over_total_questions(self, db, two):
-        a, b = two
-        cand = await _candidate(db, "Asha", "K")
-        await _sub(db, a, cand, 8, 10)  # 80%
-        await _sub(db, b, cand, 4, 10)  # 40%
-
-        row = _by_name(await _run(db, [a, b], pass_percentage=60))["Asha K"]
-
-        assert (row["combined_score"], row["combined_total"]) == (12, 20)
-        assert row["combined_percentage"] == 60.0
-        assert row["completed_count"] == 2
-
-    async def test_boundary_is_inclusive(self, db, two):
+class TestFlatEntries:
+    async def test_one_entry_per_submission_not_grouped_by_candidate(self, db, two):
         a, b = two
         cand = await _candidate(db, "Asha", "K")
         await _sub(db, a, cand, 8, 10)
         await _sub(db, b, cand, 4, 10)
 
-        assert _by_name(await _run(db, [a, b], pass_percentage=60))["Asha K"]["result"] == "passed"
-        assert (
-            _by_name(await _run(db, [a, b], pass_percentage=60.1))["Asha K"]["result"] == "failed"
-        )
+        data = await _run(db, [a, b])
 
-    async def test_weighted_by_question_count_not_averaged(self, db, two):
-        a, b = two
-        cand = await _candidate(db, "Asha", "K")
-        await _sub(db, a, cand, 9, 10)  # 90%
-        await _sub(db, b, cand, 10, 40)  # 25%  -> average would be 57.5, combined is 38.0
+        assert _pairs(data) == [("Asha K", "Python"), ("Asha K", "SQL")]
+        assert data["summary"]["total"] == 2
+        assert data["pagination"]["total"] == 2
 
-        row = _by_name(await _run(db, [a, b]))["Asha K"]
-
-        assert row["combined_percentage"] == 38.0
-
-    async def test_single_assessment_matches_its_own_percentage(self, db, two):
-        a, _ = two
-        cand = await _candidate(db, "Asha", "K")
-        await _sub(db, a, cand, 7, 10)
-
-        row = _by_name(await _run(db, [a], pass_percentage=70))["Asha K"]
-
-        assert row["combined_percentage"] == 70.0
-        assert row["result"] == "passed"
-
-    async def test_no_pass_percentage_means_no_result_yet(self, db, two):
+    async def test_each_entry_carries_its_own_score(self, db, two):
         a, b = two
         cand = await _candidate(db, "Asha", "K")
         await _sub(db, a, cand, 8, 10)
-        await _sub(db, b, cand, 8, 10)
+        await _sub(db, b, cand, 4, 10)
 
         data = await _run(db, [a, b])
 
-        row = _by_name(data)["Asha K"]
-        assert row["result"] is None
-        assert row["combined_percentage"] == 80.0
+        py, sql = _entry(data, "Asha K", "Python"), _entry(data, "Asha K", "SQL")
+        assert (py["score"], py["total"], py["percentage"]) == (8, 10, 80.0)
+        assert (sql["score"], sql["total"], sql["percentage"]) == (4, 10, 40.0)
+        assert py["assessment"]["id"] == a
+        assert py["status"] == "completed"
+        assert "breakdown" not in py and "combined_percentage" not in py
+
+    async def test_duplicate_entries_are_kept(self, db, two):
+        """Two active submissions for the same candidate and assessment are both listed."""
+        a, _ = two
+        cand = await _candidate(db, "Asha", "K")
+        await _sub(db, a, cand, 8, 10)
+        await _sub(db, a, cand, 3, 10)
+
+        data = await _run(db, [a])
+
+        assert _pairs(data) == [("Asha K", "Python"), ("Asha K", "Python")]
+        assert sorted(e["percentage"] for e in data["entries"]) == [30.0, 80.0]
+        assert data["summary"]["total"] == 2
+
+    async def test_boundary_is_inclusive(self, db, two):
+        a, _ = two
+        cand = await _candidate(db, "Asha", "K")
+        await _sub(db, a, cand, 6, 10)
+
+        at_mark = await _run(db, [a], pass_percentage=60)
+        above_mark = await _run(db, [a], pass_percentage=60.1)
+
+        assert _entry(at_mark, "Asha K", "Python")["result"] == "passed"
+        assert _entry(above_mark, "Asha K", "Python")["result"] == "failed"
+
+    async def test_each_entry_is_judged_on_its_own_percentage(self, db, two):
+        a, b = two
+        cand = await _candidate(db, "Asha", "K")
+        await _sub(db, a, cand, 9, 10)  # 90
+        await _sub(db, b, cand, 2, 10)  # 20
+
+        data = await _run(db, [a, b], pass_percentage=50)
+
+        assert _entry(data, "Asha K", "Python")["result"] == "passed"
+        assert _entry(data, "Asha K", "SQL")["result"] == "failed"
+        assert data["summary"]["passed"] == 1
+        assert data["summary"]["failed"] == 1
+
+    async def test_no_pass_percentage_means_no_result_yet(self, db, two):
+        a, _ = two
+        cand = await _candidate(db, "Asha", "K")
+        await _sub(db, a, cand, 8, 10)
+
+        data = await _run(db, [a])
+
+        assert _entry(data, "Asha K", "Python")["result"] is None
         assert data["pass_percentage"] is None
         assert data["summary"]["passed"] == 0
         assert data["summary"]["failed"] == 0
@@ -153,32 +189,29 @@ class TestCombinedScore:
 
     async def test_no_stored_pass_mark_is_used(self, db, two):
         """The typed percentage decides, whatever the assessments' own pass mark says."""
-        a, b = two
+        a, _ = two
         await db.assessments.update_many({}, {"$set": {"pass_percentage": 99}})
         cand = await _candidate(db, "Asha", "K")
         await _sub(db, a, cand, 5, 10)
-        await _sub(db, b, cand, 5, 10)
 
-        assert _by_name(await _run(db, [a, b], pass_percentage=50))["Asha K"]["result"] == "passed"
+        data = await _run(db, [a], pass_percentage=50)
+
+        assert _entry(data, "Asha K", "Python")["result"] == "passed"
 
 
-# ── incomplete candidates ────────────────────────────────────────────────────
+# ── incomplete entries ───────────────────────────────────────────────────────
 
 
 class TestIncomplete:
-    async def test_missing_second_assessment_is_not_attempted(self, db, two):
+    async def test_assessment_not_taken_has_no_entry(self, db, two):
         a, b = two
         cand = await _candidate(db, "Ravi", "S")
         await _sub(db, a, cand, 10, 10)
 
-        row = _by_name(await _run(db, [a, b], pass_percentage=50))["Ravi S"]
+        data = await _run(db, [a, b], pass_percentage=50)
 
-        assert row["result"] == "incomplete"
-        assert row["combined_percentage"] is None
-        assert row["combined_score"] is None
-        assert row["completed_count"] == 1
-        states = {item["assessment_id"]: item["status"] for item in row["breakdown"]}
-        assert states == {a: "completed", b: "not_attempted"}
+        assert _pairs(data) == [("Ravi S", "Python")]
+        assert data["summary"]["incomplete"] == 0
 
     @pytest.mark.parametrize(
         ("status", "extra", "expected"),
@@ -198,42 +231,43 @@ class TestIncomplete:
         await _sub(db, a, cand, 10, 10)
         await _sub(db, b, cand, 10, 10, status=status, **extra)
 
-        row = _by_name(await _run(db, [a, b], pass_percentage=50))["Ravi S"]
+        data = await _run(db, [a, b], pass_percentage=50)
 
-        assert row["result"] == "incomplete"
-        assert row["breakdown"][1]["status"] == expected
-        assert row["breakdown"][1]["percentage"] is None
+        done = _entry(data, "Ravi S", "Python")
+        open_ = _entry(data, "Ravi S", "SQL")
+        assert done["result"] == "passed"  # the finished assessment is still judged
+        assert open_["result"] == "incomplete"
+        assert open_["status"] == expected
+        assert (open_["score"], open_["total"], open_["percentage"]) == (None, None, None)
 
     async def test_round_without_a_score_is_not_final(self, db, two):
-        a, b = two
+        a, _ = two
         cand = await _candidate(db, "Ravi", "S")
-        await _sub(db, a, cand, 10, 10)
         await _sub(
-            db, b, cand, 5, 10, rounds_data=[{"score": 5, "questions": [{}]}, {"questions": [{}]}]
+            db, a, cand, 5, 10, rounds_data=[{"score": 5, "questions": [{}]}, {"questions": [{}]}]
         )
 
-        row = _by_name(await _run(db, [a, b]))["Ravi S"]
+        data = await _run(db, [a])
 
-        assert row["result"] == "incomplete"
+        assert _entry(data, "Ravi S", "Python")["result"] == "incomplete"
 
-    async def test_soft_deleted_submission_counts_as_not_attempted(self, db, two):
+    async def test_soft_deleted_submission_has_no_entry(self, db, two):
         a, b = two
         cand = await _candidate(db, "Ravi", "S")
         await _sub(db, a, cand, 10, 10)
         await _sub(db, b, cand, 10, 10, is_active=False)
 
-        row = _by_name(await _run(db, [a, b]))["Ravi S"]
+        data = await _run(db, [a, b])
 
-        assert row["breakdown"][1]["status"] == "not_attempted"
+        assert _pairs(data) == [("Ravi S", "Python")]
 
     async def test_reaccess_reset_submission_is_incomplete(self, db, two):
-        a, b = two
+        a, _ = two
         cand = await _candidate(db, "Ravi", "S")
-        await _sub(db, a, cand, 10, 10)
         # What re-access leaves behind: pending, score reset, fresh unscored rounds.
         await _sub(
             db,
-            b,
+            a,
             cand,
             0,
             10,
@@ -242,57 +276,74 @@ class TestIncomplete:
             rounds_data=[{"questions": [{}] * 10}],
         )
 
-        row = _by_name(await _run(db, [a, b], pass_percentage=50))["Ravi S"]
+        data = await _run(db, [a], pass_percentage=50)
 
-        assert row["result"] == "incomplete"
+        assert _entry(data, "Ravi S", "Python")["result"] == "incomplete"
 
 
 # ── filtering, search, sorting, paging, summary ──────────────────────────────
 
 
-class TestListing:
-    @pytest.fixture
-    async def crowd(self, db, two):
-        a, b = two
-        # name -> (python correct, sql correct); 10 questions each, so combined = sum * 5
-        for name, py, sql in (
-            ("Anil A", 9, 9),  # 90
-            ("Bina B", 6, 6),  # 60
-            ("Chet C", 3, 3),  # 30
-        ):
-            cand = await _candidate(db, name.split()[0], name.split()[1])
-            await _sub(db, a, cand, py, 10)
-            await _sub(db, b, cand, sql, 10)
-        half = await _candidate(db, "Dara", "D")
-        await _sub(db, a, half, 10, 10)  # no SQL -> incomplete
-        return a, b
+@pytest.fixture
+async def crowd(db, two):
+    """Seven entries: Anil 90/80, Bina 60/40, Chet 30 (Python only), Dara 100 + SQL open."""
+    a, b = two
+    for first, last, py, sql in (("Anil", "A", 9, 8), ("Bina", "B", 6, 4)):
+        cand = await _candidate(db, first, last)
+        await _sub(db, a, cand, py, 10)
+        await _sub(db, b, cand, sql, 10)
+    await _sub(db, a, await _candidate(db, "Chet", "C"), 3, 10)
+    dara = await _candidate(db, "Dara", "D")
+    await _sub(db, a, dara, 10, 10)
+    await _sub(db, b, dara, 10, 10, status="in_progress")
+    return a, b
 
+
+class TestListing:
     async def test_summary_counts_ignore_the_result_filter(self, db, crowd):
         data = await _run(db, list(crowd), pass_percentage=50, result="passed")
 
         assert data["summary"] == {
-            "total": 4,
-            "completed": 3,
-            "passed": 2,
-            "failed": 1,
+            "total": 7,
+            "completed": 6,
+            "passed": 4,
+            "failed": 2,
             "incomplete": 1,
         }
-        assert sorted(_by_name(data)) == ["Anil A", "Bina B"]
-        assert data["pagination"]["total"] == 2
+        assert data["pagination"]["total"] == 4
 
     @pytest.mark.parametrize(
         ("result", "expected"),
         [
-            ("all", ["Anil A", "Bina B", "Chet C", "Dara D"]),
-            ("passed", ["Anil A", "Bina B"]),
-            ("failed", ["Chet C"]),
-            ("incomplete", ["Dara D"]),
+            (
+                "all",
+                [
+                    ("Dara D", "Python"),
+                    ("Anil A", "Python"),
+                    ("Anil A", "SQL"),
+                    ("Bina B", "Python"),
+                    ("Bina B", "SQL"),
+                    ("Chet C", "Python"),
+                    ("Dara D", "SQL"),
+                ],
+            ),
+            (
+                "passed",
+                [
+                    ("Dara D", "Python"),
+                    ("Anil A", "Python"),
+                    ("Anil A", "SQL"),
+                    ("Bina B", "Python"),
+                ],
+            ),
+            ("failed", [("Bina B", "SQL"), ("Chet C", "Python")]),
+            ("incomplete", [("Dara D", "SQL")]),
         ],
     )
     async def test_result_filter(self, db, crowd, result, expected):
         data = await _run(db, list(crowd), pass_percentage=50, result=result)
 
-        assert [c["candidate"]["name"] for c in data["candidates"]] == expected
+        assert sorted(_pairs(data)) == sorted(expected)
 
     async def test_changing_the_percentage_changes_results_without_storing_anything(
         self, db, crowd
@@ -302,8 +353,8 @@ class TestListing:
         low = await _run(db, list(crowd), pass_percentage=20)
         high = await _run(db, list(crowd), pass_percentage=95)
 
-        assert low["summary"]["passed"] == 3
-        assert high["summary"]["passed"] == 0
+        assert low["summary"]["passed"] == 6
+        assert high["summary"]["passed"] == 1  # only Dara's 100
         assert await db.assessment_submissions.find().to_list(None) == before
 
     @pytest.mark.parametrize("result", ["passed", "failed"])
@@ -311,58 +362,77 @@ class TestListing:
         with pytest.raises(ValidationException):
             await _run(db, list(crowd), result=result)
 
-    async def test_default_sort_is_combined_percentage_desc_incomplete_last(self, db, crowd):
+    async def test_default_sort_is_percentage_desc_unscored_last(self, db, crowd):
         data = await _run(db, list(crowd))
 
-        assert [c["candidate"]["name"] for c in data["candidates"]] == [
-            "Anil A",
-            "Bina B",
-            "Chet C",
-            "Dara D",
+        assert [e["percentage"] for e in data["entries"]] == [
+            100.0,
+            90.0,
+            80.0,
+            60.0,
+            40.0,
+            30.0,
+            None,
         ]
 
-    async def test_sort_ascending_keeps_incomplete_last(self, db, crowd):
+    async def test_sort_ascending_keeps_unscored_last(self, db, crowd):
         data = await _run(db, list(crowd), sort_order="asc")
 
-        assert [c["candidate"]["name"] for c in data["candidates"]] == [
-            "Chet C",
-            "Bina B",
-            "Anil A",
-            "Dara D",
+        assert [e["percentage"] for e in data["entries"]] == [
+            30.0,
+            40.0,
+            60.0,
+            80.0,
+            90.0,
+            100.0,
+            None,
         ]
 
-    async def test_sort_by_name(self, db, crowd):
+    async def test_sort_by_name_keeps_a_candidates_entries_together(self, db, crowd):
         asc = await _run(db, list(crowd), sort_by="name", sort_order="asc")
         desc = await _run(db, list(crowd), sort_by="name", sort_order="desc")
 
-        assert [c["candidate"]["name"] for c in asc["candidates"]][0] == "Anil A"
-        assert [c["candidate"]["name"] for c in desc["candidates"]][0] == "Dara D"
+        assert _pairs(asc) == [
+            ("Anil A", "Python"),
+            ("Anil A", "SQL"),
+            ("Bina B", "Python"),
+            ("Bina B", "SQL"),
+            ("Chet C", "Python"),
+            ("Dara D", "Python"),
+            ("Dara D", "SQL"),
+        ]
+        assert _pairs(desc)[:2] == [("Dara D", "Python"), ("Dara D", "SQL")]
+        assert _pairs(desc)[-2:] == [("Anil A", "Python"), ("Anil A", "SQL")]
+
+    async def test_ties_follow_the_requested_assessment_order(self, db, crowd):
+        a, b = crowd
+
+        data = await _run(db, [b, a], sort_by="name", sort_order="asc")
+
+        assert _pairs(data)[:2] == [("Anil A", "SQL"), ("Anil A", "Python")]
 
     async def test_search_by_name_and_email(self, db, crowd):
         by_name = await _run(db, list(crowd), search="bina")
         by_email = await _run(db, list(crowd), search="chet.c@")
 
-        assert [c["candidate"]["name"] for c in by_name["candidates"]] == ["Bina B"]
-        assert [c["candidate"]["name"] for c in by_email["candidates"]] == ["Chet C"]
+        assert {c for c, _ in _pairs(by_name)} == {"Bina B"}
+        assert len(by_name["entries"]) == 2
+        assert _pairs(by_email) == [("Chet C", "Python")]
 
     async def test_search_treats_input_literally(self, db, crowd):
         data = await _run(db, list(crowd), search=".*")
 
-        assert data["candidates"] == []
+        assert data["entries"] == []
 
-    async def test_pagination(self, db, crowd):
-        first = await _run(db, list(crowd), page=1, page_size=3)
-        second = await _run(db, list(crowd), page=2, page_size=3)
+    async def test_pagination_counts_entries(self, db, crowd):
+        pages = [await _run(db, list(crowd), page=p, page_size=3) for p in (1, 2, 3)]
 
-        assert [c["candidate"]["name"] for c in first["candidates"]] == [
-            "Anil A",
-            "Bina B",
-            "Chet C",
-        ]
-        assert [c["candidate"]["name"] for c in second["candidates"]] == ["Dara D"]
-        assert first["pagination"]["total"] == 4
-        assert first["pagination"]["total_pages"] == 2
-        assert first["pagination"]["has_next"] is True
+        assert [len(p["entries"]) for p in pages] == [3, 3, 1]
+        assert pages[0]["pagination"]["total"] == 7
+        assert pages[0]["pagination"]["total_pages"] == 3
+        assert pages[0]["pagination"]["has_next"] is True
+        assert pages[2]["pagination"]["has_next"] is False
+        assert pages[2]["entries"][0]["status"] == "in_progress"
 
     async def test_assessments_are_returned_in_the_requested_order(self, db, crowd):
         a, b = crowd
@@ -371,7 +441,7 @@ class TestListing:
 
         assert [x["name"] for x in data["assessments"]] == ["SQL", "Python"]
 
-    async def test_candidates_outside_the_selection_are_not_listed(
+    async def test_submissions_outside_the_selection_are_not_listed(
         self, db, two, workspace, super_admin
     ):
         a, b = two
@@ -384,7 +454,78 @@ class TestListing:
 
         data = await _run(db, [a, b])
 
-        assert list(_by_name(data)) == ["Asha K"]
+        assert {c for c, _ in _pairs(data)} == {"Asha K"}
+
+
+# ── export ───────────────────────────────────────────────────────────────────
+
+
+class TestExport:
+    async def test_returns_every_entry_unpaged_as_flat_rows(self, db, crowd):
+        rows = await _export(db, list(crowd), pass_percentage=50)
+
+        assert len(rows) == 7  # more than one default page would hold at page_size=3
+        assert set(rows[0]) == {
+            "name",
+            "email",
+            "assessment",
+            "status",
+            "score",
+            "total",
+            "percentage",
+            "result",
+        }
+        assert rows[0] == {
+            "name": "Dara D",
+            "email": "dara.d@example.com",
+            "assessment": "Python",
+            "status": "completed",
+            "score": 10,
+            "total": 10,
+            "percentage": 100.0,
+            "result": "passed",
+        }
+
+    async def test_keeps_a_candidate_once_per_assessment(self, db, crowd):
+        rows = await _export(db, list(crowd), search="anil")
+
+        assert [(r["name"], r["assessment"]) for r in rows] == [
+            ("Anil A", "Python"),
+            ("Anil A", "SQL"),
+        ]
+
+    async def test_applies_the_same_filters_as_the_list(self, db, crowd):
+        kwargs = {"pass_percentage": 50, "result": "failed", "sort_order": "asc"}
+
+        rows = await _export(db, list(crowd), **kwargs)
+        data = await _run(db, list(crowd), **kwargs)
+
+        assert [(r["name"], r["assessment"]) for r in rows] == _pairs(data)
+        assert [(r["name"], r["assessment"]) for r in rows] == [
+            ("Chet C", "Python"),
+            ("Bina B", "SQL"),
+        ]
+
+    async def test_unfinished_entry_has_no_score_and_is_incomplete(self, db, crowd):
+        rows = await _export(db, list(crowd), result="incomplete")
+
+        assert rows == [
+            {
+                "name": "Dara D",
+                "email": "dara.d@example.com",
+                "assessment": "SQL",
+                "status": "in_progress",
+                "score": None,
+                "total": None,
+                "percentage": None,
+                "result": "incomplete",
+            }
+        ]
+
+    @pytest.mark.parametrize("result", ["passed", "failed"])
+    async def test_passed_failed_filter_needs_a_percentage(self, db, crowd, result):
+        with pytest.raises(ValidationException):
+            await _export(db, list(crowd), result=result)
 
 
 # ── the multi-id tenant guard ────────────────────────────────────────────────
@@ -503,10 +644,11 @@ async def world(mdb):
     }
 
 
-def _url(ws, ids, **params):
+def _url(ws, ids, export=False, **params):
     query = [("assessment_ids", i) for i in ids] + list(params.items())
     qs = "&".join(f"{k}={v}" for k, v in query)
-    return f"/api/workspaces/{ws}/assessments/score-filter?{qs}"
+    suffix = "/export" if export else ""
+    return f"/api/workspaces/{ws}/assessments/score-filter{suffix}?{qs}"
 
 
 class TestRoute:
@@ -524,19 +666,33 @@ class TestRoute:
         assert set(data) == set(ScoreFilterResponse.model_fields)
         assert data["pass_percentage"] == 50
         assert data["summary"] == {
-            "total": 3,
-            "completed": 3,
-            "passed": 2,
-            "failed": 1,
+            "total": 6,
+            "completed": 6,
+            "passed": 4,
+            "failed": 2,
             "incomplete": 0,
         }
-        assert data["pagination"]["total"] == 3
-        top = data["candidates"][0]
+        assert data["pagination"]["total"] == 6
+        assert len(data["entries"]) == 6
+        top = data["entries"][0]
         assert top["candidate"]["name"] == "Anil T"
-        assert top["combined_percentage"] == 90.0
-        assert (top["combined_score"], top["combined_total"]) == (18, 20)
+        assert top["assessment"] == {"id": world["a1"], "name": "Python"}
+        assert top["percentage"] == 90.0
+        assert (top["score"], top["total"]) == (9, 10)
+        assert top["status"] == "completed"
         assert top["result"] == "passed"
-        assert [b["status"] for b in top["breakdown"]] == ["completed", "completed"]
+
+    def test_lists_a_candidate_once_per_assessment(self, client, world):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"], world["a2"]], search="Anil"),
+            headers=_auth(world["adm_a"]),
+        )
+
+        entries = r.json()["data"]["entries"]
+        assert [(e["candidate"]["name"], e["assessment"]["name"]) for e in entries] == [
+            ("Anil T", "Python"),
+            ("Anil T", "SQL"),
+        ]
 
     def test_result_filter_over_http(self, client, world):
         r = client.get(
@@ -544,8 +700,8 @@ class TestRoute:
             headers=_auth(world["adm_a"]),
         )
 
-        names = [c["candidate"]["name"] for c in r.json()["data"]["candidates"]]
-        assert names == ["Chet T"]
+        names = [e["candidate"]["name"] for e in r.json()["data"]["entries"]]
+        assert names == ["Chet T", "Chet T"]
 
     def test_super_admin_may_read_any_workspace(self, client, world):
         r = client.get(_url(world["ws_b"], [world["b1"]]), headers=_auth(world["sup"]))
@@ -592,6 +748,7 @@ class TestRoute:
             {"pass_percentage": -1},
             {"result": "maybe"},
             {"sort_by": "password_hash"},
+            {"sort_by": "combined_percentage"},  # the old, grouped sort key is gone
             {"page": 0},
             {"page_size": 101},
             {"result": "passed"},  # needs pass_percentage
@@ -616,3 +773,87 @@ class TestRoute:
 
         assert r.status_code == 200
         assert r.json()["message"] == "Score filter results retrieved"
+
+
+class TestExportRoute:
+    def test_returns_all_rows_flat_in_the_standard_envelope(self, client, world):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"], world["a2"]], export=True, pass_percentage=50),
+            headers=_auth(world["adm_a"]),
+        )
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["success"] is True
+        assert body["message"] == "Export data retrieved"
+        rows = body["data"]
+        assert len(rows) == 6  # a candidate per assessment, nothing grouped or de-duplicated
+        assert rows[0] == {
+            "name": "Anil T",
+            "email": "anil.t@example.com",
+            "assessment": "Python",
+            "status": "completed",
+            "score": 9,
+            "total": 10,
+            "percentage": 90.0,
+            "result": "passed",
+        }
+
+    def test_filters_apply(self, client, world):
+        r = client.get(
+            _url(
+                world["ws_a"],
+                [world["a1"], world["a2"]],
+                export=True,
+                pass_percentage=50,
+                result="failed",
+            ),
+            headers=_auth(world["adm_a"]),
+        )
+
+        assert [row["name"] for row in r.json()["data"]] == ["Chet T", "Chet T"]
+
+    def test_fixed_path_is_not_captured_by_the_assessment_id_route(self, client, world):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"]], export=True), headers=_auth(world["adm_a"])
+        )
+
+        assert r.status_code == 200
+        assert r.json()["message"] == "Export data retrieved"
+
+    def test_one_foreign_assessment_among_own_is_404(self, client, world):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"], world["b1"]], export=True),
+            headers=_auth(world["adm_a"]),
+        )
+
+        assert r.status_code == 404
+
+    def test_candidate_token_is_forbidden(self, client, world):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"]], export=True), headers=_auth(world["cand"])
+        )
+
+        assert r.status_code == 403
+
+    def test_requires_authentication(self, client, world):
+        r = client.get(_url(world["ws_a"], [world["a1"]], export=True))
+
+        assert r.status_code in (401, 403)
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"pass_percentage": 101},
+            {"result": "maybe"},
+            {"sort_by": "password_hash"},
+            {"result": "failed"},
+        ],
+    )
+    def test_bad_query_is_422(self, client, world, params):
+        r = client.get(
+            _url(world["ws_a"], [world["a1"]], export=True, **params),
+            headers=_auth(world["adm_a"]),
+        )
+
+        assert r.status_code == 422

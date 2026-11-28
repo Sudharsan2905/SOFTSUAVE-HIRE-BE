@@ -25,7 +25,12 @@ class TestBuildQuestionAnswer:
             "question_text": "Pick the diagram",
             "image_key": "question-images/cat1/q.jpg",
             "options": [
-                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {
+                    "id": "a",
+                    "text": "",
+                    "is_correct": True,
+                    "image_key": "question-images/cat1/a.jpg",
+                },
                 {"id": "b", "text": "Option B", "is_correct": False},
             ],
         }
@@ -51,7 +56,11 @@ class TestBuildQuestionAnswerFromEmbedded:
         original = {
             "options": [
                 {"id": "a", "is_correct": True, "image_key": "question-images/cat1/original-a.jpg"},
-                {"id": "b", "is_correct": False, "image_key": "question-images/cat1/original-b.jpg"},
+                {
+                    "id": "b",
+                    "is_correct": False,
+                    "image_key": "question-images/cat1/original-b.jpg",
+                },
             ]
         }
         qa = version_service._build_question_answer_from_embedded(q, original, ["a"], {})

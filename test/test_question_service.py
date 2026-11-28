@@ -140,7 +140,12 @@ class TestCreateQuestion:
             "complexity": "medium",
             "image_key": "question-images/cat1/q.jpg",
             "options": [
-                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {
+                    "id": "a",
+                    "text": "",
+                    "is_correct": True,
+                    "image_key": "question-images/cat1/a.jpg",
+                },
                 {"id": "b", "text": "Option B", "is_correct": False},
             ],
         }
@@ -210,7 +215,12 @@ class TestCreateQuestion:
             "question_type": "mcq_single",
             "complexity": "low",
             "options": [
-                {"id": "a", "text": "", "is_correct": True, "image_key": "question-images/cat1/a.jpg"},
+                {
+                    "id": "a",
+                    "text": "",
+                    "is_correct": True,
+                    "image_key": "question-images/cat1/a.jpg",
+                },
                 {"id": "b", "text": "Option B", "is_correct": False},
             ],
         }
@@ -352,7 +362,9 @@ class TestGetQuestions:
             "options": [],
             "correct_answer": "Answer",
         }
-        await question_service.create_question(db, str(category["_id"]), data, str(super_admin["_id"]))
+        await question_service.create_question(
+            db, str(category["_id"]), data, str(super_admin["_id"])
+        )
         result = await question_service.get_questions(
             db, str(category["_id"]), None, None, None, "created_at", "desc", 1, 20
         )
