@@ -7,6 +7,7 @@ from app.common.constants.messages import ErrorMessages, SuccessMessages
 from app.common.response_models.assessment_responses import (
     AssessmentDetailResponse,
     AssessmentStatsResponse,
+    BatchResponse,
     ScoreFilterResponse,
     ShareLinkResponse,
     SubmissionStatsResponse,
@@ -24,6 +25,7 @@ from app.components.assessment.access import (
 )
 from app.components.assessment.assessment_schemas import (
     CreateAssessmentRequest,
+    CreateBatchRequest,
     CreateShareRequest,
     ReaccessRequest,
     TerminateSubmissionRequest,
@@ -182,6 +184,22 @@ async def update_assessment(
     return success_response(SuccessMessages.ASSESSMENT_UPDATED, result)
 
 
+@router.post(
+    "/{assessment_id}/batches",
+    response_model=ApiResponse[BatchResponse],
+    dependencies=[AssessmentGuard],
+)
+async def create_batch(
+    workspace_id: str,
+    assessment_id: str,
+    request: CreateBatchRequest,
+    db: DB,
+    current_user: AdminUser,
+) -> dict:
+    result = await assessment_service.create_batch(db, workspace_id, assessment_id, request.name)
+    return success_response(SuccessMessages.BATCH_CREATED, result)
+
+
 @router.get("/{assessment_id}/submissions", dependencies=[AssessmentGuard])
 async def list_submissions(
     workspace_id: str,
@@ -197,6 +215,7 @@ async def list_submissions(
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
     result: Annotated[Literal["passed", "failed"] | None, Query()] = None,
+    batch: Annotated[str | None, Query()] = None,
 ) -> dict:
     data = await assessment_service.get_submissions(
         db,
@@ -210,6 +229,7 @@ async def list_submissions(
         from_date=from_date,
         to_date=to_date,
         result=result,
+        batch=batch,
     )
     return success_response(SuccessMessages.SUBMISSIONS_RETRIEVED, data)
 
@@ -227,6 +247,7 @@ async def export_submission_list(
     from_date: Annotated[str | None, Query()] = None,
     to_date: Annotated[str | None, Query()] = None,
     result: Annotated[Literal["passed", "failed"] | None, Query()] = None,
+    batch: Annotated[str | None, Query()] = None,
 ) -> dict:
     data = await assessment_service.export_submissions(
         db,
@@ -238,6 +259,7 @@ async def export_submission_list(
         from_date=from_date,
         to_date=to_date,
         result=result,
+        batch=batch,
     )
     return success_response(SuccessMessages.EXPORT_READY, data)
 

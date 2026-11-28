@@ -14,6 +14,7 @@ class MonitoringConfigResponse(BaseModel):
     screenshot_enabled: bool = False
     screenshot_mode: str = "time_interval"
     screenshot_interval_minutes: int | None = None
+    screenshot_interval_seconds: int | None = None
     screenshot_count: int | None = None
 
 
@@ -21,6 +22,7 @@ class RoundConfigResponse(BaseModel):
     round_number: int
     question_count: int
     max_duration_minutes: int
+    question_ids: list[str] = []
 
 
 class AssessmentStatsResponse(BaseModel):
@@ -90,6 +92,11 @@ class ScoreFilterResponse(BaseModel):
     pagination: PaginationMeta
 
 
+class BatchResponse(BaseModel):
+    bName: str  # noqa: N815 - field names are part of the stored/API contract
+    bId: str  # noqa: N815
+
+
 class AssessmentListItemResponse(BaseModel):
     id: str
     name: str
@@ -109,6 +116,7 @@ class AssessmentDetailResponse(AssessmentListItemResponse):
     restrict_candidate_access: bool | None = False
     restriction_mode: str | None = None
     restricted_emails: list[str] | None = None
+    batch: list[BatchResponse] = []
 
     @model_validator(mode="before")
     @classmethod

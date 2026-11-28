@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, timedelta
 from typing import Any
 
@@ -10,7 +11,7 @@ from app.common.constants.app_constants import (
     SubmissionStatus,
 )
 from app.common.constants.messages import ErrorMessages
-from app.common.exceptions import ForbiddenException, NotFoundException
+from app.common.exceptions import ConflictException, ForbiddenException, NotFoundException
 from app.common.utils import (
     build_pagination_meta,
     decode_sharelink,
@@ -61,6 +62,67 @@ def _build_rounds(rounds_data: list) -> list:
     return result
 
 
+DEFAULT_BATCH_NAME = "Batch-1"
+
+
+def _new_batch(name: str) -> dict:
+    return {"bName": name, "bId": uuid.uuid4().hex}
+
+
+async def ensure_default_batch(db: AsyncIOMotorDatabase, assessment: dict) -> dict:
+    """Lazily give a pre-batch assessment its default Batch-1 and assign existing submissions.
+
+    No-op when the assessment already has batches. Mutates and returns ``assessment``.
+    """
+    if assessment.get("batch"):
+        return assessment
+    default = _new_batch(DEFAULT_BATCH_NAME)
+    # Only set when still empty, so concurrent callers cannot create two defaults.
+    claimed = await db.assessments.update_one(
+        {"_id": assessment["_id"], "$or": [{"batch": {"$exists": False}}, {"batch": []}]},
+        {"$set": {"batch": [default]}},
+    )
+    if claimed.modified_count:
+        assessment["batch"] = [default]
+    else:
+        fresh = await db.assessments.find_one({"_id": assessment["_id"]}, {"batch": 1})
+        assessment["batch"] = (fresh or {}).get("batch") or [default]
+    await db.assessment_submissions.update_many(
+        {"assessment_id": assessment["_id"], "batch": {"$exists": False}},
+        {"$set": {"batch": assessment["batch"][0]["bId"]}},
+    )
+    return assessment
+
+
+async def create_batch(
+    db: AsyncIOMotorDatabase, workspace_id: str, assessment_id: str, name: str
+) -> dict:
+    """Append a new batch to an assessment; later participants join the newest batch.
+
+    Raises:
+        NotFoundException: If the assessment does not exist in the workspace.
+        ConflictException: If a batch with the same name (case-insensitive) already exists.
+    """
+    assessment = await db.assessments.find_one(
+        {"_id": ObjectId(assessment_id), "workspace_id": ObjectId(workspace_id), "is_active": True}
+    )
+    if not assessment:
+        raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
+    await ensure_default_batch(db, assessment)
+
+    name = name.strip()
+    if any(b["bName"].casefold() == name.casefold() for b in assessment["batch"]):
+        raise ConflictException(ErrorMessages.BATCH_NAME_EXISTS)
+
+    batch = _new_batch(name)
+    await db.assessments.update_one(
+        {"_id": assessment["_id"]},
+        {"$push": {"batch": batch}, "$set": {"updated_at": utcnow()}},
+    )
+    logger.info(f"Batch created: '{name}' assessment_id={assessment_id}")
+    return batch
+
+
 async def create_assessment(
     db: AsyncIOMotorDatabase, workspace_id: str, data: dict, user_id: str
 ) -> dict:
@@ -79,6 +141,7 @@ async def create_assessment(
         "monitoring_config": monitoring,
         "expected_candidates": data.get("expected_candidates"),
         "pass_percentage": data.get("pass_percentage") or DEFAULT_PASS_PERCENTAGE,
+        "batch": [_new_batch(DEFAULT_BATCH_NAME)],
         "created_by": ObjectId(user_id),
         "is_active": True,
         "created_at": now,
@@ -257,6 +320,7 @@ async def get_assessment(db: AsyncIOMotorDatabase, workspace_id: str, assessment
     )
     if not doc:
         raise NotFoundException(ErrorMessages.ASSESSMENT_NOT_FOUND)
+    await ensure_default_batch(db, doc)
     doc["pass_percentage"] = effective_pass_percentage(doc)
     return serialize_doc(doc)
 
@@ -433,6 +497,12 @@ async def validate_sharelink(db: AsyncIOMotorDatabase, encoded_link: str) -> dic
     }
 
 
+async def _backfill_batches(db: AsyncIOMotorDatabase, assessment_id: str) -> None:
+    assessment = await db.assessments.find_one({"_id": ObjectId(assessment_id)})
+    if assessment:
+        await ensure_default_batch(db, assessment)
+
+
 async def get_submissions(
     db: AsyncIOMotorDatabase,
     assessment_id: str,
@@ -445,6 +515,7 @@ async def get_submissions(
     from_date: str | None = None,
     to_date: str | None = None,
     result: str | None = None,
+    batch: str | None = None,
 ) -> dict:
     """Return paginated submissions for an assessment, joined with candidate user data.
 
@@ -464,6 +535,10 @@ async def get_submissions(
     match_query: dict = {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}
     if status:
         match_query["status"] = status
+    if batch:
+        # Backfill legacy submissions so they show up under Batch-1.
+        await _backfill_batches(db, assessment_id)
+        match_query["batch"] = batch
     if result:
         match_query = {
             "$and": [match_query, result_query(pass_percentage, passed=result == "passed")]
@@ -729,6 +804,7 @@ async def export_submissions(
     from_date: str | None = None,
     to_date: str | None = None,
     result: str | None = None,
+    batch: str | None = None,
 ) -> list:
     """Return filtered submissions for an assessment in a flat format suitable for Excel export.
 
@@ -743,6 +819,9 @@ async def export_submissions(
     match_query: dict = {"assessment_id": ObjectId(assessment_id), "is_active": {"$ne": False}}
     if status:
         match_query["status"] = status
+    if batch:
+        await _backfill_batches(db, assessment_id)
+        match_query["batch"] = batch
 
     date_match: dict = {}
     if from_date:

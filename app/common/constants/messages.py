@@ -38,6 +38,7 @@ class SuccessMessages:
     ASSESSMENTS_RETRIEVED = "Assessments retrieved"
     ASSESSMENT_RETRIEVED = "Assessment retrieved"
     ASSESSMENT_STATS_RETRIEVED = "Assessment stats retrieved"
+    BATCH_CREATED = "Batch created successfully"
     SCORE_FILTER_RETRIEVED = "Score filter results retrieved"
     SHARE_LINK_CREATED = "Share link created"
     PERMANENT_RESTRICTION_UPDATED = "Permanent link restriction updated"
@@ -126,6 +127,7 @@ class ErrorMessages:
 
     # Assessments
     ASSESSMENT_NOT_FOUND = "Assessment not found"
+    BATCH_NAME_EXISTS = "A batch with this name already exists"
 
     # Questions
     QUESTION_NOT_FOUND = "Question not found"
